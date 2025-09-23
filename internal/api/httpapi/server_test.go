@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -151,6 +152,40 @@ func TestWorkerHeartbeatEndpoint(t *testing.T) {
 	if hbBody.Stale {
 		t.Fatalf("expected heartbeat to mark worker healthy")
 	}
+}
+
+func TestObservabilityEndpoints(t *testing.T) {
+	svc := mustLibraryService(t, library.Config{})
+	srv := NewServer(svc, nil)
+	handler := srv.Routes()
+
+	t.Run("metrics", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		resp := httptest.NewRecorder()
+
+		handler.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected metrics status 200, got %d", resp.Code)
+		}
+		if resp.Body.Len() == 0 {
+			t.Fatalf("expected metrics payload")
+		}
+	})
+
+	t.Run("pprof", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", nil)
+		resp := httptest.NewRecorder()
+
+		handler.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected pprof status 200, got %d", resp.Code)
+		}
+		if !strings.Contains(resp.Body.String(), "profile") {
+			t.Fatalf("expected pprof index output")
+		}
+	})
 }
 
 type stubClock struct{ now time.Time }
