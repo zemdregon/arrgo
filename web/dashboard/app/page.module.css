@@ -1,0 +1,176 @@
+.main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.4em;
+  font-size: 0.75rem;
+  color: #38bdf8;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2.2rem, 5vw, 3.4rem);
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #94a3b8;
+  max-width: 52ch;
+}
+
+.grid {
+  display: grid;
+  gap: 1.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.metricsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.metricCard {
+  flex: 1 1 140px;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 1rem;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.metricValue {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.metricLabel {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.entityList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.entityItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.entityTitle {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.entityType {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #94a3b8;
+}
+
+.emptyState {
+  margin: 0;
+  color: #64748b;
+  font-style: italic;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 480px;
+}
+
+.table th,
+.table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.table th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #94a3b8;
+}
+
+.table td {
+  font-size: 0.9rem;
+}
+
+.jobDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.smallText {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.monospace {
+  font-family: "JetBrains Mono", "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.badgeGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.poolBadge {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  color: #bfdbfe;
+}
+
+@media (max-width: 720px) {
+  .main {
+    padding: 2.5rem 1.25rem 3rem;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

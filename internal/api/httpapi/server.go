@@ -32,6 +32,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/v1/library/entities", s.handleListEntities)
 	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
 	if s.workerService != nil {
+		mux.HandleFunc("/api/v1/workers", s.handleListWorkers)
 		mux.HandleFunc("/api/v1/workers/register", s.handleRegisterWorker)
 		mux.HandleFunc("/api/v1/workers/", s.handleWorkerRoutes)
 	}
@@ -101,6 +102,25 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w, http.MethodGet, http.MethodPost)
 	}
+}
+
+func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {
+	if s.workerService == nil {
+		respondError(w, http.StatusServiceUnavailable, "worker service unavailable")
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	workers, err := s.workerService.ListWorkers(r.Context())
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to list workers")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{"workers": workers})
 }
 
 func (s *Server) handleRegisterWorker(w http.ResponseWriter, r *http.Request) {

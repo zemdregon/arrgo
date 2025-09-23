@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -151,6 +152,35 @@ func TestWorkerHeartbeatEndpoint(t *testing.T) {
 	}
 	if hbBody.Stale {
 		t.Fatalf("expected heartbeat to mark worker healthy")
+	}
+}
+
+func TestListWorkersEndpoint(t *testing.T) {
+	libSvc := mustLibraryService(t, library.Config{})
+	workerSvc := mustWorkerService(t)
+	srv := NewServer(libSvc, workerSvc)
+
+	if _, err := workerSvc.RegisterWorker(context.Background(), worker.RegistrationRequest{Pool: "default"}); err != nil {
+		t.Fatalf("RegisterWorker returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workers", nil)
+	resp := httptest.NewRecorder()
+
+	srv.handleListWorkers(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.Code)
+	}
+
+	var payload struct {
+		Workers []worker.Worker `json:"workers"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+	if len(payload.Workers) != 1 {
+		t.Fatalf("expected 1 worker, got %d", len(payload.Workers))
 	}
 }
 

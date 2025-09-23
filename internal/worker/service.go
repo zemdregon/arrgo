@@ -183,6 +183,31 @@ func (s *Service) RecordHeartbeat(ctx context.Context, input HeartbeatInput) (He
 	return HeartbeatResult{Worker: persisted, Stale: stale}, nil
 }
 
+// ListWorkers returns the currently known worker metadata, preferring cached values when available.
+func (s *Service) ListWorkers(ctx context.Context) ([]Worker, error) {
+	if s.cache != nil {
+		workers, err := s.cache.ListWorkers(ctx)
+		if err != nil {
+			s.logger.Warn("worker: cache list workers failed", "error", err)
+		} else if len(workers) > 0 {
+			return workers, nil
+		}
+	}
+
+	workers, err := s.repo.ListWorkers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.cache != nil {
+		for _, worker := range workers {
+			if err := s.cache.SaveWorker(ctx, worker); err != nil {
+				s.logger.Warn("worker: cache hydrate worker failed", "workerID", worker.ID, "error", err)
+			}
+		}
+	}
+	return workers, nil
+}
+
 // Reconcile refreshes caches and metrics, marking stale workers when necessary.
 func (s *Service) Reconcile(ctx context.Context) {
 	s.updateMetrics(ctx)
