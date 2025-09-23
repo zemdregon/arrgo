@@ -67,9 +67,10 @@ Until the initial release is available, track the following tasks.
 - ✅ Deliver the initial web dashboard for cluster visibility. See [`web/dashboard`](web/dashboard) and the updated front-end workflow guidance in [`docs/development-setup.md`](docs/development-setup.md#web-dashboard-development).
 - ✅ Expand the dashboard with interactive controls for queueing library jobs now that the write APIs are available. See [`web/dashboard`](web/dashboard).
 - ✅ Publish Helm charts and Terraform modules for production-grade deployments. See [`deploy/helm/arrgo`](deploy/helm/arrgo), [`deploy/terraform`](deploy/terraform), and [`docs/deployment/production.md`](docs/deployment/production.md).
+- ✅ Stand up automated performance and regression suites for large media libraries, covering scheduler fan-out and queue drain behavior. See [`docs/performance-regression.md`](docs/performance-regression.md).
 
 ### Up Next
-- [ ] Stand up automated performance and regression suites for large media libraries (Owner: QA).
+- _TBD_
 
 ### Docker Compose development stack
 
