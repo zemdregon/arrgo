@@ -35,7 +35,7 @@ func (c *capturingAuditSink) Events() []AuditEvent {
 	return out
 }
 
-func newRedisService(t *testing.T, cfg Config) *Service {
+func newRedisService(t testing.TB, cfg Config) *Service {
 	t.Helper()
 
 	mr := miniredis.RunT(t)
