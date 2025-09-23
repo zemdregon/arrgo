@@ -60,7 +60,31 @@ Until the initial release is available, track the following tasks.
 - ✅ Author an ADR capturing the Redis Streams job queue selection and retry strategy. See [`docs/adrs/0001-job-queue-selection.md`](docs/adrs/0001-job-queue-selection.md).
 
 ### Up Next
-1. Implement the Redis Streams-backed orchestration queue in the library service layer.
+- [ ] **Implement the Redis Streams-backed orchestration queue** (Owner: Core Services)
+  - Next steps:
+    - Finalize the stream message schema covering job types, payload locations, and idempotency keys.
+    - Wire producer/consumer logic into the `internal/library` service with structured logging for each lifecycle transition.
+    - Add integration tests that simulate worker claim, acknowledgment, and retry flows via the Docker Compose stack.
+- [ ] **Establish worker registration and heartbeat coordination** (Owner: Platform Enablement)
+  - Next steps:
+    - Define the REST/gRPC handshake workers use to announce capabilities and receive assignments.
+    - Persist worker metadata and availability in PostgreSQL with Redis-backed caches for fast lookups.
+    - Emit Prometheus metrics for active workers, heartbeats, and stale node detection.
+- [ ] **Automate scheduled library scans and media imports** (Owner: Library Workflows)
+  - Next steps:
+    - Implement cron-driven scan scheduling with concurrency controls per media type.
+    - Reuse the orchestration queue to fan out import jobs and track completion status.
+    - Publish audit events for completed imports to drive future notification integrations.
+- [ ] **Harden metadata ingestion resilience** (Owner: Data Ingestion)
+  - Next steps:
+    - Introduce rate limit detection and exponential backoff for third-party provider requests.
+    - Expand Redis caching policies to cover provider-specific TTLs and negative cache entries.
+    - Capture tracing spans around external calls and surface aggregated failure metrics.
+- [ ] **Deliver the initial web dashboard for cluster visibility** (Owner: UI/UX)
+  - Next steps:
+    - Scaffold the web UI shell (e.g., Next.js) and connect it to the existing REST endpoints for read-only data.
+    - Visualize library health, queued jobs, and worker status with reusable components.
+    - Document the front-end development workflow, linting rules, and bundler commands in `docs/development-setup.md`.
 
 ### Docker Compose development stack
 
