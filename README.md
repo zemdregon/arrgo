@@ -41,7 +41,7 @@ Each component is provisioned as a dedicated Docker container. Infrastructure-as
 1. Deploy PostgreSQL, Redis, and (optionally) Elasticsearch/OpenSearch using the provided container definitions.
 2. Bring up the arrgo master container, configured with connection strings and cluster metadata.
 3. Scale worker containers horizontally, pinning them to specific hosts or availability zones as required.
-4. Integrate download clients, indexers, and notification services via API keys or OAuth.
+4. Integrate download clients, indexers, and notification services via API keys or OAuth, with future support for per-application tokens.
 5. Monitor via built-in Prometheus metrics, Grafana dashboards, and structured logging exporters.
 
 ## Getting Started TODOs
@@ -66,7 +66,7 @@ Until the initial release is available, track the following tasks.
 
 ### Up Next
 - [ ] Expand the dashboard with interactive controls once write APIs are stabilized (Owner: UI/UX).
-- [ ] Implement role-based access controls with user and API token management workflows (Owner: Platform).
+- [ ] Implement role-based access controls with per-application API key generation, labeling, and rotation workflows (Owner: Platform).
 - [ ] Integrate prioritized download client failover with health-aware routing (Owner: Integrations).
 - [ ] Publish Helm charts and Terraform modules for production-grade deployments (Owner: DevOps).
 - [ ] Stand up automated performance and regression suites for large media libraries (Owner: QA).
@@ -100,16 +100,33 @@ To use the published image locally:
 - Containerized deployment artifacts and observability baseline.
 
 ### Beta (Feature Completeness)
-- Integration with popular indexers and download clients.
+- Integration with popular indexers and download clients via a hardened plugin interface.
 - Policy-driven automation for quality upgrades and post-processing.
 - Search abstraction with optional Elasticsearch/OpenSearch backing.
-- Multi-tenant support and RBAC for shared environments.
+- Multi-tenant support and RBAC for shared environments, including labeled API key issuance for individual applications and automations.
 
 ### General Availability (Scale and Polish)
 - High-availability master election and worker auto-scaling.
 - Advanced analytics dashboards and alerting hooks.
-- Plugin marketplace for metadata providers and automation scripts.
+- Full plugin marketplace covering connectors for download clients, metadata providers, notifications, indexers, media servers, and event automation with curated verification.
 - Migration tooling for import/export from legacy *arr installations.
+
+## Planned Extensibility and Plugin Ecosystem
+High modularity is a core design goal for arrgo once the foundational services stabilize. The platform will expose a plugin SDK, lifecycle hooks, and packaging specifications so that connectors can be built, versioned, and distributed independently of the core release cadence. Planned plugin categories include:
+
+| Plugin type | Purpose |
+| --- | --- |
+| **Notification agents** | Deliver events to chat platforms, webhooks, incident systems, and custom alerting pipelines.
+| **Download client adapters** | Support a broad range of BitTorrent, Usenet, and emerging download clients with health-aware routing and failover strategies.
+| **Metadata providers** | Enrich media entities with external catalog data, artwork, and localization through swappable provider integrations.
+| **Indexer connectors** | Integrate with traditional Usenet/torrent indexers and custom search services, including private catalogs or enterprise content directories.
+| **Media server bridges** | Synchronize libraries, playback status, and artwork with Plex, Jellyfin, Emby, and other media-serving platforms.
+| **Automation and workflow hooks** | Allow bespoke scripting, quality gates, and policy engines to react to job lifecycle events or library state changes.
+| **Storage and delivery targets** | Extend import/export to cloud object stores, cold storage archives, CDN origins, or air-gapped repositories.
+| **Transcoding and analysis modules** | Plug in specialized media processing pipelines, including AI-assisted tagging, loudness normalization, or subtitle enhancement.
+| **Authentication and access providers** | Offer optional SSO, OAuth/OIDC, or custom credential brokers to complement the built-in RBAC model.
+
+Plugin discovery, dependency management, and marketplace distribution will be documented alongside governance guidelines for community submissions. The API surface will also expose per-plugin API keys and secrets scopes so operators can audit and rotate credentials without affecting the entire deployment.
 
 ## Development Best Practices
 - **Language & Tooling:** Services are written in Go. Use Go 1.24+ (the module currently targets Go 1.24.3) and run `go fmt`/`goimports` on touched files. Front-end components (when introduced) should follow the repository’s lint and formatting rules.
