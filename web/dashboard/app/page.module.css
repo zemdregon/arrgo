@@ -58,6 +58,17 @@
   gap: 0.25rem;
 }
 
+.metricCardEmphasis {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25);
+}
+
+.metricCardActive {
+  border-color: rgba(56, 189, 248, 0.7);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35);
+}
+
 .metricValue {
   font-size: 1.8rem;
   font-weight: 600;
@@ -165,6 +176,52 @@
   color: #bfdbfe;
 }
 
+.poolBadgeActive {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: rgba(56, 189, 248, 0.65);
+  color: #e0f2fe;
+}
+
+.panelControls {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.controlGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 150px;
+}
+
+.controlLabel {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.controlSelect {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.75rem;
+  padding: 0.45rem 0.75rem;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  min-width: 160px;
+  cursor: pointer;
+}
+
+.controlSelect:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+
 @media (max-width: 720px) {
   .main {
     padding: 2.5rem 1.25rem 3rem;
@@ -172,5 +229,9 @@
 
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .panelControls {
+    justify-content: flex-start;
   }
 }

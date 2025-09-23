@@ -8,6 +8,7 @@ interface DataPanelProps {
   onRetry?: () => void;
   children?: React.ReactNode;
   footer?: React.ReactNode;
+  actions?: React.ReactNode;
 }
 
 export function DataPanel({
@@ -17,7 +18,8 @@ export function DataPanel({
   error,
   onRetry,
   children,
-  footer
+  footer,
+  actions
 }: DataPanelProps) {
   return (
     <section className={styles.panel} aria-busy={loading}>
@@ -28,15 +30,20 @@ export function DataPanel({
             <p className={styles.description}>{description}</p>
           ) : null}
         </div>
-        {onRetry ? (
-          <button
-            type="button"
-            className={styles.refreshButton}
-            onClick={onRetry}
-            disabled={loading}
-          >
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
+        {actions || onRetry ? (
+          <div className={styles.controls}>
+            {actions ? <div className={styles.actions}>{actions}</div> : null}
+            {onRetry ? (
+              <button
+                type="button"
+                className={styles.refreshButton}
+                onClick={onRetry}
+                disabled={loading}
+              >
+                {loading ? "Refreshing…" : "Refresh"}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </header>
       {error ? (
