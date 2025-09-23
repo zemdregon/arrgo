@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/arrgo/arrgo/internal/auth"
 	"github.com/arrgo/arrgo/internal/library"
@@ -32,12 +33,12 @@ func NewServer(service *library.Service, workerService *worker.Service, authoriz
 // Routes returns the HTTP multiplexer hosting the API endpoints.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/library/entities", s.handleListEntities)
-	mux.HandleFunc("/api/v1/jobs", s.handleJobs)
+	mux.Handle("/api/v1/library/entities", s.instrument("/api/v1/library/entities", http.HandlerFunc(s.handleListEntities)))
+	mux.Handle("/api/v1/jobs", s.instrument("/api/v1/jobs", http.HandlerFunc(s.handleJobs)))
 	if s.workerService != nil {
-		mux.HandleFunc("/api/v1/workers", s.handleListWorkers)
-		mux.HandleFunc("/api/v1/workers/register", s.handleRegisterWorker)
-		mux.HandleFunc("/api/v1/workers/", s.handleWorkerRoutes)
+		mux.Handle("/api/v1/workers", s.instrument("/api/v1/workers", http.HandlerFunc(s.handleListWorkers)))
+		mux.Handle("/api/v1/workers/register", s.instrument("/api/v1/workers/register", http.HandlerFunc(s.handleRegisterWorker)))
+		mux.Handle("/api/v1/workers/", s.instrument("/api/v1/workers/{id}/heartbeat", http.HandlerFunc(s.handleWorkerRoutes)))
 	}
 	mux.Handle("/metrics", promhttp.Handler())
 	registerPprofHandlers(mux)
@@ -248,6 +249,15 @@ func (s *Server) handleWorkerRoutes(w http.ResponseWriter, r *http.Request) {
 		"worker": result.Worker,
 		"stale":  result.Stale,
 	})
+}
+
+func (s *Server) instrument(route string, handler http.Handler) http.Handler {
+	return otelhttp.NewHandler(handler, route,
+		otelhttp.WithSpanNameFormatter(func(operation string, r *http.Request) string {
+			return r.Method + " " + route
+		}),
+		otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
+	)
 }
 
 func respondJSON(w http.ResponseWriter, status int, payload any) {

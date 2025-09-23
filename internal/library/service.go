@@ -12,6 +12,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Entity represents a top-level media record available to the automation stack.
@@ -88,6 +92,7 @@ type Config struct {
 	Logger         *slog.Logger
 	IdempotencyTTL time.Duration
 	AuditSink      AuditSink
+	Tracer         trace.Tracer
 }
 
 // Errors returned by the Service APIs.
@@ -111,6 +116,7 @@ type Service struct {
 	queue        *OrchestrationQueue
 	logger       *slog.Logger
 	auditSink    AuditSink
+	tracer       trace.Tracer
 }
 
 // NewService constructs a library orchestration service with optional seed data.
@@ -142,6 +148,10 @@ func NewService(cfg Config) (*Service, error) {
 	}
 	if svc.auditSink == nil {
 		svc.auditSink = noopAuditSink{}
+	}
+	svc.tracer = cfg.Tracer
+	if svc.tracer == nil {
+		svc.tracer = otel.Tracer("github.com/arrgo/arrgo/internal/library")
 	}
 
 	if len(svc.entities) == 0 {
@@ -177,9 +187,30 @@ func NewService(cfg Config) (*Service, error) {
 	return svc, nil
 }
 
+func (s *Service) startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
+	options := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindInternal)}
+	if len(attrs) > 0 {
+		options = append(options, trace.WithAttributes(attrs...))
+	}
+	return s.tracer.Start(ctx, name, options...)
+}
+
+func endSpan(span trace.Span, err *error) {
+	if err != nil && *err != nil {
+		span.RecordError(*err)
+		span.SetStatus(codes.Error, (*err).Error())
+	} else {
+		span.SetStatus(codes.Ok, "ok")
+	}
+	span.End()
+}
+
 // ListEntities returns entities matching the optional filter.
-func (s *Service) ListEntities(ctx context.Context, filter ListEntitiesFilter) ([]Entity, error) {
-	_ = ctx
+func (s *Service) ListEntities(ctx context.Context, filter ListEntitiesFilter) (entities []Entity, err error) {
+	ctx, span := s.startSpan(ctx, "library.Service.ListEntities",
+		attribute.String("library.entity_type", strings.TrimSpace(filter.EntityType)),
+	)
+	defer endSpan(span, &err)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -194,49 +225,61 @@ func (s *Service) ListEntities(ctx context.Context, filter ListEntitiesFilter) (
 		results = append(results, entity)
 	}
 
-	return append([]Entity(nil), results...), nil
+	entities = append([]Entity(nil), results...)
+	return entities, nil
 }
 
 // ListJobs returns job summaries ordered by submission time (newest first).
-func (s *Service) ListJobs(ctx context.Context) ([]Job, error) {
-	_ = ctx
+func (s *Service) ListJobs(ctx context.Context) (jobs []Job, err error) {
+	ctx, span := s.startSpan(ctx, "library.Service.ListJobs")
+	defer endSpan(span, &err)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	jobs := append([]Job(nil), s.jobs...)
+	jobs = append([]Job(nil), s.jobs...)
 	sort.SliceStable(jobs, func(i, j int) bool {
 		return jobs[i].SubmittedAt.After(jobs[j].SubmittedAt)
 	})
 
+	span.SetAttributes(attribute.Int("library.job_count", len(jobs)))
 	return jobs, nil
 }
 
 // TriggerJob enqueues a new orchestration job targeting a catalog entity.
-func (s *Service) TriggerJob(ctx context.Context, input TriggerJobInput) (Job, error) {
-	_ = ctx
+func (s *Service) TriggerJob(ctx context.Context, input TriggerJobInput) (job Job, err error) {
+	ctx, span := s.startSpan(ctx, "library.Service.TriggerJob",
+		attribute.String("library.job_type", strings.TrimSpace(input.JobType)),
+		attribute.String("library.target_id", strings.TrimSpace(input.TargetID)),
+		attribute.String("library.idempotency_key", strings.TrimSpace(input.IdempotencyKey)),
+	)
+	defer endSpan(span, &err)
 
 	jobType := strings.TrimSpace(input.JobType)
 	if jobType == "" {
-		return Job{}, ErrInvalidJobType
+		err = ErrInvalidJobType
+		return
 	}
 	targetID := strings.TrimSpace(input.TargetID)
 	if targetID == "" {
-		return Job{}, ErrInvalidTarget
+		err = ErrInvalidTarget
+		return
 	}
 
 	if s.queue == nil {
-		return Job{}, ErrQueueUnavailable
+		err = ErrQueueUnavailable
+		return
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if !s.entityExistsLocked(targetID) {
-		return Job{}, ErrUnknownEntity
+		err = ErrUnknownEntity
+		return
 	}
 
-	job := Job{
+	job = Job{
 		ID:             s.idGen(),
 		JobType:        jobType,
 		TargetID:       targetID,
@@ -245,33 +288,41 @@ func (s *Service) TriggerJob(ctx context.Context, input TriggerJobInput) (Job, e
 		PayloadURI:     strings.TrimSpace(input.PayloadURI),
 		IdempotencyKey: strings.TrimSpace(input.IdempotencyKey),
 	}
-	streamID, err := s.queue.Enqueue(ctx, job)
+	var streamID string
+	streamID, err = s.queue.Enqueue(ctx, job)
 	if err != nil {
-		if errors.Is(err, ErrDuplicateJob) {
-			return Job{}, err
-		}
-		return Job{}, err
+		job = Job{}
+		return
 	}
 	job.StreamID = streamID
 	s.jobs = append(s.jobs, job)
 	s.jobIndex[job.ID] = len(s.jobs) - 1
+	span.SetAttributes(
+		attribute.String("library.job_id", job.ID),
+		attribute.String("library.stream_id", streamID),
+	)
 	s.logger.Info("library job queued", "jobID", job.ID, "jobType", job.JobType, "targetID", job.TargetID, "idempotencyKey", job.IdempotencyKey, "streamID", streamID)
 
 	return job, nil
 }
 
 // ClaimJobs reads from the orchestration queue for the provided consumer.
-func (s *Service) ClaimJobs(ctx context.Context, consumer string, count int, block time.Duration) ([]ClaimedJob, error) {
+func (s *Service) ClaimJobs(ctx context.Context, consumer string, count int, block time.Duration) (claimed []ClaimedJob, err error) {
+	ctx, span := s.startSpan(ctx, "library.Service.ClaimJobs",
+		attribute.String("library.consumer", strings.TrimSpace(consumer)),
+		attribute.Int("library.requested_count", count),
+		attribute.String("library.block", block.String()),
+	)
+	defer endSpan(span, &err)
+
 	if s.queue == nil {
-		return nil, ErrQueueUnavailable
+		err = ErrQueueUnavailable
+		return
 	}
 
-	claimed, err := s.queue.Claim(ctx, consumer, count, block)
-	if err != nil {
-		return nil, err
-	}
-	if len(claimed) == 0 {
-		return nil, nil
+	claimed, err = s.queue.Claim(ctx, consumer, count, block)
+	if err != nil || len(claimed) == 0 {
+		return
 	}
 
 	s.mu.Lock()
@@ -294,17 +345,27 @@ func (s *Service) ClaimJobs(ctx context.Context, consumer string, count int, blo
 		s.logger.Info("library job claimed", "jobID", job.ID, "streamID", claimed[i].StreamID, "consumer", consumer, "attempt", job.Attempt)
 	}
 
+	span.SetAttributes(attribute.Int("library.claimed_count", len(claimed)))
 	return claimed, nil
 }
 
 // AckJob acknowledges job completion to the orchestration queue.
-func (s *Service) AckJob(ctx context.Context, job ClaimedJob) error {
+func (s *Service) AckJob(ctx context.Context, job ClaimedJob) (err error) {
+	ctx, span := s.startSpan(ctx, "library.Service.AckJob",
+		attribute.String("library.job_id", job.Job.ID),
+		attribute.String("library.stream_id", job.StreamID),
+		attribute.String("library.job_type", job.Job.JobType),
+		attribute.String("library.target_id", job.Job.TargetID),
+	)
+	defer endSpan(span, &err)
+
 	if s.queue == nil {
-		return ErrQueueUnavailable
+		err = ErrQueueUnavailable
+		return
 	}
 
-	if err := s.queue.Ack(ctx, job.StreamID); err != nil {
-		return err
+	if err = s.queue.Ack(ctx, job.StreamID); err != nil {
+		return
 	}
 
 	completedAt := s.clock.Now()
@@ -318,6 +379,7 @@ func (s *Service) AckJob(ctx context.Context, job ClaimedJob) error {
 	entityType := s.entityTypeLocked(job.Job.TargetID)
 	s.mu.Unlock()
 
+	span.SetAttributes(attribute.String("library.entity_type", entityType))
 	s.logger.Info("library job acknowledged", "jobID", job.Job.ID, "streamID", job.StreamID, "attempt", job.Job.Attempt)
 
 	if strings.EqualFold(job.Job.JobType, JobTypeImport) {
@@ -338,20 +400,29 @@ func (s *Service) AckJob(ctx context.Context, job ClaimedJob) error {
 }
 
 // RetryJob re-queues a claimed job for another attempt.
-func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (Job, error) {
+func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (updated Job, err error) {
+	ctx, span := s.startSpan(ctx, "library.Service.RetryJob",
+		attribute.String("library.job_id", job.Job.ID),
+		attribute.String("library.stream_id", job.StreamID),
+		attribute.String("library.job_type", job.Job.JobType),
+		attribute.String("library.target_id", job.Job.TargetID),
+	)
+	defer endSpan(span, &err)
+
 	if s.queue == nil {
-		return Job{}, ErrQueueUnavailable
+		err = ErrQueueUnavailable
+		return
 	}
 
-	streamID, err := s.queue.Retry(ctx, job.StreamID, job.Job)
+	var streamID string
+	streamID, err = s.queue.Retry(ctx, job.StreamID, job.Job)
 	if err != nil {
-		return Job{}, err
+		return
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var updated Job
 	s.updateJobLocked(job.Job.ID, func(j *Job) {
 		j.State = JobStateQueued
 		j.StreamID = streamID
@@ -363,6 +434,10 @@ func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (Job, error) {
 		updated.State = JobStateQueued
 	}
 
+	span.SetAttributes(
+		attribute.String("library.stream_id", streamID),
+		attribute.Int("library.next_attempt", job.Job.Attempt+1),
+	)
 	s.logger.Info("library job retried", "jobID", updated.ID, "previousStreamID", job.StreamID, "streamID", streamID, "attempt", job.Job.Attempt+1)
 
 	return updated, nil
