@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -112,7 +113,7 @@ func NewPipeline(cfg PipelineConfig) (*Pipeline, error) {
 		p.negativeCacheTTL = 10 * time.Minute
 	}
 	if p.tracer == nil {
-		p.tracer = trace.NewNoopTracerProvider().Tracer("github.com/arrgo/arrgo/internal/metadata")
+		p.tracer = otel.Tracer("github.com/arrgo/arrgo/internal/metadata")
 	}
 
 	for name, ttl := range cfg.ProviderTTLs {

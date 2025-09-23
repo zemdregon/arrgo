@@ -11,6 +11,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -44,6 +48,7 @@ type Config struct {
 	StaleAfter        time.Duration
 	Stream            string
 	ConsumerGroup     string
+	Tracer            trace.Tracer
 }
 
 // Service coordinates worker registration, heartbeats, and associated telemetry.
@@ -58,6 +63,8 @@ type Service struct {
 	heartbeatInterval time.Duration
 	staleAfter        time.Duration
 	assignment        Assignment
+
+	tracer trace.Tracer
 
 	metricsMu    sync.Mutex
 	knownPools   map[string]struct{}
@@ -116,18 +123,51 @@ func NewService(cfg Config) (*Service, error) {
 		knownWorkers: make(map[string]struct{}),
 	}
 
+	svc.tracer = cfg.Tracer
+	if svc.tracer == nil {
+		svc.tracer = otel.Tracer("github.com/arrgo/arrgo/internal/worker")
+	}
+
 	return svc, nil
 }
 
-// RegisterWorker validates and persists worker metadata then returns queue assignment info.
-func (s *Service) RegisterWorker(ctx context.Context, req RegistrationRequest) (RegistrationResult, error) {
-	pool := strings.TrimSpace(req.Pool)
-	if pool == "" {
-		return RegistrationResult{}, ErrInvalidPool
+func (s *Service) startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
+	options := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindInternal)}
+	if len(attrs) > 0 {
+		options = append(options, trace.WithAttributes(attrs...))
 	}
+	return s.tracer.Start(ctx, name, options...)
+}
+
+func finishSpan(span trace.Span, err *error) {
+	if err != nil && *err != nil {
+		span.RecordError(*err)
+		span.SetStatus(codes.Error, (*err).Error())
+	} else {
+		span.SetStatus(codes.Ok, "ok")
+	}
+	span.End()
+}
+
+// RegisterWorker validates and persists worker metadata then returns queue assignment info.
+func (s *Service) RegisterWorker(ctx context.Context, req RegistrationRequest) (result RegistrationResult, err error) {
+	pool := strings.TrimSpace(req.Pool)
 	capabilities := sanitizeCapabilities(req.Capabilities)
 	endpoint := strings.TrimSpace(req.Endpoint)
 	version := strings.TrimSpace(req.Version)
+
+	ctx, span := s.startSpan(ctx, "worker.Service.RegisterWorker",
+		attribute.String("worker.pool", pool),
+		attribute.StringSlice("worker.capabilities", capabilities),
+		attribute.String("worker.endpoint", endpoint),
+		attribute.String("worker.version", version),
+	)
+	defer finishSpan(span, &err)
+
+	if pool == "" {
+		err = ErrInvalidPool
+		return
+	}
 	now := s.clock.Now().UTC()
 
 	worker := Worker{
@@ -141,27 +181,38 @@ func (s *Service) RegisterWorker(ctx context.Context, req RegistrationRequest) (
 		LastHeartbeatAt: now,
 	}
 
-	persisted, err := s.saveWorker(ctx, worker, false)
+	var persisted Worker
+	persisted, err = s.saveWorker(ctx, worker, false)
 	if err != nil {
-		return RegistrationResult{}, err
+		return
 	}
 
 	assignment := s.assignment
 	assignment.HeartbeatInterval = s.heartbeatInterval
 
-	return RegistrationResult{Worker: persisted, Assignment: assignment}, nil
+	span.SetAttributes(attribute.String("worker.id", persisted.ID))
+	result = RegistrationResult{Worker: persisted, Assignment: assignment}
+	return result, nil
 }
 
 // RecordHeartbeat updates worker availability metadata and recalculates metrics.
-func (s *Service) RecordHeartbeat(ctx context.Context, input HeartbeatInput) (HeartbeatResult, error) {
-	id := strings.TrimSpace(input.WorkerID)
-	if id == "" {
-		return HeartbeatResult{}, ErrInvalidWorkerID
+func (s *Service) RecordHeartbeat(ctx context.Context, input HeartbeatInput) (result HeartbeatResult, err error) {
+	trimmedID := strings.TrimSpace(input.WorkerID)
+	ctx, span := s.startSpan(ctx, "worker.Service.RecordHeartbeat",
+		attribute.String("worker.id", trimmedID),
+		attribute.Int("worker.active_jobs", input.ActiveJobs),
+	)
+	defer finishSpan(span, &err)
+
+	if trimmedID == "" {
+		err = ErrInvalidWorkerID
+		return
 	}
 
-	worker, err := s.loadWorker(ctx, id)
+	var worker Worker
+	worker, err = s.loadWorker(ctx, trimmedID)
 	if err != nil {
-		return HeartbeatResult{}, err
+		return
 	}
 
 	now := s.clock.Now().UTC()
@@ -173,28 +224,37 @@ func (s *Service) RecordHeartbeat(ctx context.Context, input HeartbeatInput) (He
 	}
 	worker.Status = StatusHealthy
 
-	persisted, err := s.saveWorker(ctx, worker, false)
+	var persisted Worker
+	persisted, err = s.saveWorker(ctx, worker, false)
 	if err != nil {
-		return HeartbeatResult{}, err
+		return
 	}
 
 	stale := s.clock.Now().Sub(persisted.LastHeartbeatAt) > s.staleAfter
+	span.SetAttributes(attribute.Bool("worker.stale", stale))
 
-	return HeartbeatResult{Worker: persisted, Stale: stale}, nil
+	result = HeartbeatResult{Worker: persisted, Stale: stale}
+	return result, nil
 }
 
 // ListWorkers returns the currently known worker metadata, preferring cached values when available.
-func (s *Service) ListWorkers(ctx context.Context) ([]Worker, error) {
+func (s *Service) ListWorkers(ctx context.Context) (workers []Worker, err error) {
+	ctx, span := s.startSpan(ctx, "worker.Service.ListWorkers",
+		attribute.Bool("worker.cache_enabled", s.cache != nil),
+	)
+	defer finishSpan(span, &err)
+
 	if s.cache != nil {
-		workers, err := s.cache.ListWorkers(ctx)
+		workers, err = s.cache.ListWorkers(ctx)
 		if err != nil {
 			s.logger.Warn("worker: cache list workers failed", "error", err)
 		} else if len(workers) > 0 {
+			span.SetAttributes(attribute.Bool("worker.cache_hit", true), attribute.Int("worker.count", len(workers)))
 			return workers, nil
 		}
 	}
 
-	workers, err := s.repo.ListWorkers(ctx)
+	workers, err = s.repo.ListWorkers(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -205,11 +265,17 @@ func (s *Service) ListWorkers(ctx context.Context) ([]Worker, error) {
 			}
 		}
 	}
+
+	span.SetAttributes(attribute.Bool("worker.cache_hit", false), attribute.Int("worker.count", len(workers)))
 	return workers, nil
 }
 
 // Reconcile refreshes caches and metrics, marking stale workers when necessary.
 func (s *Service) Reconcile(ctx context.Context) {
+	var err error
+	ctx, span := s.startSpan(ctx, "worker.Service.Reconcile")
+	defer finishSpan(span, &err)
+
 	s.updateMetrics(ctx)
 }
 
