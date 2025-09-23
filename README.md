@@ -58,13 +58,9 @@ Until the initial release is available, track the following tasks.
 - ✅ Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups. See [`docs/migration-guidelines.md`](docs/migration-guidelines.md).
 - ✅ Design and document the observability baseline (metrics, tracing, logging dashboards). See [`docs/observability-baseline.md`](docs/observability-baseline.md).
 - ✅ Author an ADR capturing the Redis Streams job queue selection and retry strategy. See [`docs/adrs/0001-job-queue-selection.md`](docs/adrs/0001-job-queue-selection.md).
+- ✅ Implement the Redis Streams-backed orchestration queue with producer/consumer plumbing in the library service.
 
 ### Up Next
-- [ ] **Implement the Redis Streams-backed orchestration queue** (Owner: Core Services)
-  - Next steps:
-    - Finalize the stream message schema covering job types, payload locations, and idempotency keys.
-    - Wire producer/consumer logic into the `internal/library` service with structured logging for each lifecycle transition.
-    - Add integration tests that simulate worker claim, acknowledgment, and retry flows via the Docker Compose stack.
 - [ ] **Establish worker registration and heartbeat coordination** (Owner: Platform Enablement)
   - Next steps:
     - Define the REST/gRPC handshake workers use to announce capabilities and receive assignments.

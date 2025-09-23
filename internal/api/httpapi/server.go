@@ -54,16 +54,20 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
 	case http.MethodPost:
 		var payload struct {
-			JobType  string `json:"job_type"`
-			TargetID string `json:"target_id"`
+			JobType        string `json:"job_type"`
+			TargetID       string `json:"target_id"`
+			PayloadURI     string `json:"payload_uri"`
+			IdempotencyKey string `json:"idempotency_key"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			respondError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
 		job, err := s.service.TriggerJob(r.Context(), library.TriggerJobInput{
-			JobType:  payload.JobType,
-			TargetID: payload.TargetID,
+			JobType:        payload.JobType,
+			TargetID:       payload.TargetID,
+			PayloadURI:     payload.PayloadURI,
+			IdempotencyKey: payload.IdempotencyKey,
 		})
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -72,6 +76,10 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 				status = http.StatusBadRequest
 			case errors.Is(err, library.ErrUnknownEntity):
 				status = http.StatusNotFound
+			case errors.Is(err, library.ErrDuplicateJob):
+				status = http.StatusConflict
+			case errors.Is(err, library.ErrQueueUnavailable):
+				status = http.StatusServiceUnavailable
 			}
 			respondError(w, status, err.Error())
 			return
