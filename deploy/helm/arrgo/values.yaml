@@ -1,0 +1,112 @@
+# Global image configuration
+image:
+  repository: ghcr.io/example-org/arrgo
+  tag: main
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+config:
+  createSecret: true
+  secretName: ""
+  existingSecret: ""
+  databaseURL: ""
+  redisAddr: ""
+  opensearchURL: ""
+  masterURL: ""
+  logLevel: info
+
+# Connection hints used when the chart generates the secret. Leave blank when
+# supplying an existing secret or pre-computed URLs.
+database:
+  host: ""
+  port: 5432
+  user: arrgo
+  password: ""
+  name: arrgo
+  sslMode: disable
+
+redis:
+  host: ""
+  port: 6379
+  password: ""
+
+opensearch:
+  host: ""
+  port: 9200
+  protocol: http
+  username: ""
+  password: ""
+
+master:
+  replicaCount: 2
+  strategy:
+    type: RollingUpdate
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: arrgo.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+  livenessProbe: {}
+  readinessProbe: {}
+  extraEnv: []
+  extraEnvFrom: []
+
+worker:
+  replicaCount: 3
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+  extraEnv: []
+  extraEnvFrom: []
+  command: []
+  args: []
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: null
+
