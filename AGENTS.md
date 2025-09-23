@@ -1,0 +1,32 @@
+# Agent Guidelines for arrgo
+
+## Scope
+These instructions apply to the entire repository. Follow them for all code, configuration, documentation, and asset updates.
+
+## Development Workflow
+- Target Go 1.22+ for all backend services.
+- Format Go sources with `gofmt` (or `go fmt ./...`) before committing.
+- Run `go test ./...` and any additional project-specific checks (e.g., `golangci-lint run`, front-end linters) when touching executable code.
+- Keep commit messages and pull request summaries actionable and reference affected subsystems when possible.
+- Use feature branches; never commit directly to `main`.
+
+## Architectural Expectations
+- The platform uses a master/worker container model. Any changes that alter scheduling, workload distribution, or service boundaries must be reflected in the README and architecture diagrams.
+- PostgreSQL is the system of record, Redis is the cache/event backbone, and Elasticsearch/OpenSearch is optional search. Do not introduce alternative defaults without prior discussion.
+- Prefer gRPC and REST for service communication; document any new protocols or message formats.
+
+## Documentation Standards
+- Use Markdown with descriptive headings, ordered/unordered lists, and tables for clarity.
+- Update the README and related docs whenever new features, deployment requirements, or operational procedures are introduced.
+- Maintain the Roadmap and TODO sections so newcomers understand project status.
+
+## Best Practices
+- Enforce observability: instrument new code with metrics, tracing, and structured logging.
+- Secure secrets through environment variables or secret managers; never commit credentials.
+- When adding third-party dependencies, justify them in commit/PR descriptions and ensure licenses are compatible.
+- Keep Docker, Compose, and Helm artifacts consistent with documented defaults.
+
+## Coordination
+- Tag issues or TODO items with ownership when possible to aid distribution across master/worker teams.
+- Raise architecture decision records (ADRs) for significant platform choices.
+- If unsure about instructions in this file, update it with clarifications as part of your change.
