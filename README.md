@@ -47,12 +47,23 @@ Each component is provisioned as a dedicated Docker container. Infrastructure-as
 ## Getting Started TODOs
 Until the initial release is available, track the following tasks:
 1. ✅ Finalize the domain model for unified media entities (series, movies, artists, albums, tracks). See [`docs/domain-model.md`](docs/domain-model.md).
-2. Stand up Docker Compose assets for Postgres, Redis, Elasticsearch/OpenSearch, master, and worker containers.
+2. ✅ Stand up Docker Compose assets for Postgres, Redis, Elasticsearch/OpenSearch, master, and worker containers.
 3. Implement the metadata ingestion pipeline with Redis-backed caching.
 4. Expose the first iteration of the REST/gRPC APIs for library management and job orchestration.
 5. ✅ Build a GitHub Actions workflow that publishes arrgo container images to GHCR for distribution.
 6. Build CI pipelines for linting and automated testing.
 7. Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups.
+
+### Docker Compose development stack
+
+Local infrastructure is defined under [`deploy/compose`](deploy/compose) to make it easy to boot an end-to-end arrgo topology for experimentation.
+
+1. Change into the compose directory: `cd deploy/compose`.
+2. Copy `.env.example` to `.env` if you want to override the default credentials or container image tag.
+3. Build and start the stack: `docker compose up --build`.
+4. (Optional) Scale workers to simulate a larger cluster: `docker compose up --build --scale arrgo-worker=3`.
+
+The stack provisions PostgreSQL, Redis, OpenSearch, a master container, and at least one worker on an isolated bridge network. Persistent data is stored in named volumes so that containers can be restarted without losing state. The arrgo containers currently run placeholder commands until the application binaries are available.
 
 ## Continuous Integration & Delivery
 
