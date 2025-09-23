@@ -66,6 +66,10 @@ Until the initial release is available, track the following tasks.
 
 ### Up Next
 - [ ] Expand the dashboard with interactive controls once write APIs are stabilized (Owner: UI/UX).
+- [ ] Implement role-based access controls with user and API token management workflows (Owner: Platform).
+- [ ] Integrate prioritized download client failover with health-aware routing (Owner: Integrations).
+- [ ] Publish Helm charts and Terraform modules for production-grade deployments (Owner: DevOps).
+- [ ] Stand up automated performance and regression suites for large media libraries (Owner: QA).
 
 ### Docker Compose development stack
 
