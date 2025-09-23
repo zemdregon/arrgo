@@ -59,13 +59,9 @@ Until the initial release is available, track the following tasks.
 - ✅ Design and document the observability baseline (metrics, tracing, logging dashboards). See [`docs/observability-baseline.md`](docs/observability-baseline.md).
 - ✅ Author an ADR capturing the Redis Streams job queue selection and retry strategy. See [`docs/adrs/0001-job-queue-selection.md`](docs/adrs/0001-job-queue-selection.md).
 - ✅ Implement the Redis Streams-backed orchestration queue with producer/consumer plumbing in the library service.
+- ✅ Establish worker registration and heartbeat coordination across REST and gRPC surfaces. See [`docs/worker-coordination.md`](docs/worker-coordination.md).
 
 ### Up Next
-- [ ] **Establish worker registration and heartbeat coordination** (Owner: Platform Enablement)
-  - Next steps:
-    - Define the REST/gRPC handshake workers use to announce capabilities and receive assignments.
-    - Persist worker metadata and availability in PostgreSQL with Redis-backed caches for fast lookups.
-    - Emit Prometheus metrics for active workers, heartbeats, and stale node detection.
 - [ ] **Automate scheduled library scans and media imports** (Owner: Library Workflows)
   - Next steps:
     - Implement cron-driven scan scheduling with concurrency controls per media type.
