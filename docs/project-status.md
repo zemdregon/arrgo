@@ -36,8 +36,8 @@
 - Observability checklist items remain open for trace propagation, log enrichment, and packaging of dashboards/alerting assets, highlighting instrumentation and operational follow-up work.【F:docs/observability-baseline.md†L130-L138】
 - Library data currently lives in memory with default seed entities, so delivering the roadmap’s Postgres-backed CRUD layer is still ahead.【F:internal/library/service.go†L147-L200】【F:README.md†L92-L96】
 - Published Docker Compose assets launch placeholder commands until binaries are ready, underscoring the need for build integration and deployment hardening.【F:README.md†L74-L79】
-- Broader roadmap items—indexer/download client integrations, policy automation, search abstraction, multi-tenancy, HA workers, analytics, and a multi-surface plugin ecosystem with per-plugin credentials—remain future milestones spanning the beta and GA phases.【F:README.md†L98-L154】
+- Broader roadmap items—indexer/download client integrations, policy automation, search abstraction, multi-tenancy, single sign-on, HA workers, analytics, and a multi-surface plugin ecosystem with per-plugin credentials—remain future milestones spanning the beta and GA phases.【F:README.md†L98-L154】
 
 ## Upcoming milestones
 - Alpha priorities emphasize completing Postgres-backed catalog CRUD, solidifying the distributed Redis queue/worker model, polishing the minimal dashboard, and shipping containerized observability tooling.【F:README.md†L92-L96】
-- Beta targets expand integrations (indexers/download clients), policy automation, search, multi-tenant security with labeled API keys, while GA layers on HA orchestration, analytics, and a curated plugin marketplace.【F:README.md†L98-L150】
+- Beta targets expand integrations (indexers/download clients), policy automation, search, multi-tenant security with labeled API keys, and single sign-on support, while GA layers on HA orchestration, analytics, and a curated plugin marketplace.【F:README.md†L98-L150】

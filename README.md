@@ -104,6 +104,7 @@ To use the published image locally:
 - Policy-driven automation for quality upgrades and post-processing.
 - Search abstraction with optional Elasticsearch/OpenSearch backing.
 - Multi-tenant support and RBAC for shared environments, including labeled API key issuance for individual applications and automations.
+- Single sign-on integration with major identity providers to simplify dashboard and API access management.
 
 ### General Availability (Scale and Polish)
 - High-availability master election and worker auto-scaling.
