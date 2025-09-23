@@ -50,8 +50,19 @@ Until the initial release is available, track the following tasks:
 2. Stand up Docker Compose assets for Postgres, Redis, Elasticsearch/OpenSearch, master, and worker containers.
 3. Implement the metadata ingestion pipeline with Redis-backed caching.
 4. Expose the first iteration of the REST/gRPC APIs for library management and job orchestration.
-5. Build CI pipelines for linting, testing, and container publishing.
-6. Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups.
+5. ✅ Build a GitHub Actions workflow that publishes arrgo container images to GHCR for distribution.
+6. Build CI pipelines for linting and automated testing.
+7. Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups.
+
+## Continuous Integration & Delivery
+
+Container images are automatically built and published to the GitHub Container Registry (GHCR) whenever changes land on the `main` branch or a release is published. The [`publish-image.yml`](.github/workflows/publish-image.yml) workflow authenticates with GHCR using the repository's `GITHUB_TOKEN`, builds the Docker image defined in the repository `Dockerfile`, and pushes tags such as `:main`, release tags, and a commit-specific `:sha` reference.
+
+To use the published image locally:
+
+1. Authenticate with GHCR: `echo $CR_PAT | docker login ghcr.io -u <github-username> --password-stdin`.
+2. Pull the latest image: `docker pull ghcr.io/<github-organization>/arrgo:main`.
+3. Run the container or incorporate it into deployment tooling (e.g., Docker Compose, Helm charts) as they become available.
 
 ## Roadmap
 ### Alpha (Foundational Infrastructure)
