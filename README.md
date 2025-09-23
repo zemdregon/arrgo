@@ -70,7 +70,10 @@ Until the initial release is available, track the following tasks.
 - ✅ Stand up automated performance and regression suites for large media libraries, covering scheduler fan-out and queue drain behavior. See [`docs/performance-regression.md`](docs/performance-regression.md).
 
 ### Up Next
-- _TBD_
+- 🚧 Finish the download client plugin SDK with contract tests so that third-party maintainers can publish adapters alongside arrgo releases.
+- 🚧 Expand the web dashboard with queue analytics, job drill-downs, and configuration editing for master/worker pools.
+- 🚧 Implement cross-region media replication workflows with S3-compatible object storage targets and policy-driven retention.
+- 🚧 Add automated indexer health scoring and discovery to help operators tune failover thresholds without manual intervention.
 
 ### Docker Compose development stack
 
