@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/arrgo/arrgo/internal/auth"
 	"github.com/arrgo/arrgo/internal/library"
 	"github.com/arrgo/arrgo/internal/worker"
 	"github.com/prometheus/client_golang/prometheus"
@@ -19,9 +20,12 @@ import (
 
 func TestListEntitiesEndpoint(t *testing.T) {
 	svc := mustLibraryService(t, library.Config{Entities: []library.Entity{{ID: "1", EntityType: "series", Title: "Series"}}})
-	srv := NewServer(svc, nil)
+	authSvc := mustAuthService(t)
+	token := mustAPIKey(t, authSvc, "observer")
+	srv := NewServer(svc, nil, authSvc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/library/entities", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp := httptest.NewRecorder()
 
 	srv.handleListEntities(resp, req)
@@ -41,6 +45,37 @@ func TestListEntitiesEndpoint(t *testing.T) {
 	}
 }
 
+func TestAuthorizationFailures(t *testing.T) {
+	svc := mustLibraryService(t, library.Config{Entities: []library.Entity{{ID: "1", EntityType: "series", Title: "Series"}}})
+	authSvc := mustAuthService(t)
+	srv := NewServer(svc, nil, authSvc)
+
+	t.Run("missing token", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/library/entities", nil)
+		resp := httptest.NewRecorder()
+
+		srv.handleListEntities(resp, req)
+
+		if resp.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 for missing token, got %d", resp.Code)
+		}
+	})
+
+	t.Run("forbidden", func(t *testing.T) {
+		token := mustAPIKey(t, authSvc, "observer")
+		body, _ := json.Marshal(map[string]string{"job_type": "refresh", "target_id": "1"})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp := httptest.NewRecorder()
+
+		srv.handleJobs(resp, req)
+
+		if resp.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 for insufficient permission, got %d", resp.Code)
+		}
+	})
+}
+
 func TestTriggerJobEndpoint(t *testing.T) {
 	svc := mustRedisBackedService(t, library.Config{
 		Entities: []library.Entity{{ID: "entity-1", EntityType: "movie"}},
@@ -49,10 +84,13 @@ func TestTriggerJobEndpoint(t *testing.T) {
 			return "job-http"
 		},
 	})
-	srv := NewServer(svc, nil)
+	authSvc := mustAuthService(t)
+	token := mustAPIKey(t, authSvc, "admin")
+	srv := NewServer(svc, nil, authSvc)
 
 	body, _ := json.Marshal(map[string]string{"job_type": "refresh", "target_id": "entity-1"})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/jobs", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp := httptest.NewRecorder()
 
 	srv.handleJobs(resp, req)
@@ -75,7 +113,9 @@ func TestTriggerJobEndpoint(t *testing.T) {
 func TestWorkerRegistrationEndpoint(t *testing.T) {
 	libSvc := mustLibraryService(t, library.Config{})
 	workerSvc := mustWorkerService(t)
-	srv := NewServer(libSvc, workerSvc)
+	authSvc := mustAuthService(t)
+	token := mustAPIKey(t, authSvc, "admin")
+	srv := NewServer(libSvc, workerSvc, authSvc)
 
 	payload, _ := json.Marshal(map[string]any{
 		"pool":         "transcode",
@@ -84,6 +124,7 @@ func TestWorkerRegistrationEndpoint(t *testing.T) {
 		"version":      "1.2.3",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/workers/register", bytes.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp := httptest.NewRecorder()
 
 	srv.handleRegisterWorker(resp, req)
@@ -115,10 +156,13 @@ func TestWorkerRegistrationEndpoint(t *testing.T) {
 func TestWorkerHeartbeatEndpoint(t *testing.T) {
 	libSvc := mustLibraryService(t, library.Config{})
 	workerSvc := mustWorkerService(t)
-	srv := NewServer(libSvc, workerSvc)
+	authSvc := mustAuthService(t)
+	token := mustAPIKey(t, authSvc, "admin")
+	srv := NewServer(libSvc, workerSvc, authSvc)
 
 	registerPayload, _ := json.Marshal(map[string]any{"pool": "default"})
 	registerReq := httptest.NewRequest(http.MethodPost, "/api/v1/workers/register", bytes.NewReader(registerPayload))
+	registerReq.Header.Set("Authorization", "Bearer "+token)
 	registerResp := httptest.NewRecorder()
 	srv.handleRegisterWorker(registerResp, registerReq)
 	if registerResp.Code != http.StatusCreated {
@@ -136,6 +180,7 @@ func TestWorkerHeartbeatEndpoint(t *testing.T) {
 	heartbeatPayload, _ := json.Marshal(map[string]any{"active_jobs": 2})
 	heartbeatURL := "/api/v1/workers/" + regBody.Worker.ID + "/heartbeat"
 	heartbeatReq := httptest.NewRequest(http.MethodPost, heartbeatURL, bytes.NewReader(heartbeatPayload))
+	heartbeatReq.Header.Set("Authorization", "Bearer "+token)
 	heartbeatResp := httptest.NewRecorder()
 
 	srv.handleWorkerRoutes(heartbeatResp, heartbeatReq)
@@ -158,13 +203,16 @@ func TestWorkerHeartbeatEndpoint(t *testing.T) {
 func TestListWorkersEndpoint(t *testing.T) {
 	libSvc := mustLibraryService(t, library.Config{})
 	workerSvc := mustWorkerService(t)
-	srv := NewServer(libSvc, workerSvc)
+	authSvc := mustAuthService(t)
+	token := mustAPIKey(t, authSvc, "observer")
+	srv := NewServer(libSvc, workerSvc, authSvc)
 
 	if _, err := workerSvc.RegisterWorker(context.Background(), worker.RegistrationRequest{Pool: "default"}); err != nil {
 		t.Fatalf("RegisterWorker returned error: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workers", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	resp := httptest.NewRecorder()
 
 	srv.handleListWorkers(resp, req)
@@ -186,7 +234,7 @@ func TestListWorkersEndpoint(t *testing.T) {
 
 func TestObservabilityEndpoints(t *testing.T) {
 	svc := mustLibraryService(t, library.Config{})
-	srv := NewServer(svc, nil)
+	srv := NewServer(svc, nil, nil)
 	handler := srv.Routes()
 
 	t.Run("metrics", func(t *testing.T) {
@@ -264,4 +312,24 @@ func mustWorkerService(t *testing.T) *worker.Service {
 		t.Fatalf("worker.NewService returned error: %v", err)
 	}
 	return svc
+}
+
+func mustAuthService(t *testing.T) *auth.Service {
+	t.Helper()
+
+	svc, err := auth.NewService(auth.Config{})
+	if err != nil {
+		t.Fatalf("auth.NewService returned error: %v", err)
+	}
+	return svc
+}
+
+func mustAPIKey(t *testing.T, svc *auth.Service, role string) string {
+	t.Helper()
+
+	material, err := svc.CreateAPIKey(context.Background(), "test-suite", role)
+	if err != nil {
+		t.Fatalf("CreateAPIKey returned error: %v", err)
+	}
+	return material.Token
 }

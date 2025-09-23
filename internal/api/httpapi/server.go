@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/arrgo/arrgo/internal/auth"
 	"github.com/arrgo/arrgo/internal/library"
 	"github.com/arrgo/arrgo/internal/worker"
 )
@@ -19,11 +21,12 @@ import (
 type Server struct {
 	service       *library.Service
 	workerService *worker.Service
+	authorizer    Authorizer
 }
 
 // NewServer wires a REST surface on top of the shared library service.
-func NewServer(service *library.Service, workerService *worker.Service) *Server {
-	return &Server{service: service, workerService: workerService}
+func NewServer(service *library.Service, workerService *worker.Service, authorizer Authorizer) *Server {
+	return &Server{service: service, workerService: workerService, authorizer: authorizer}
 }
 
 // Routes returns the HTTP multiplexer hosting the API endpoints.
@@ -47,6 +50,10 @@ func (s *Server) handleListEntities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := s.requirePermission(w, r, auth.PermissionLibraryRead); !ok {
+		return
+	}
+
 	filter := library.ListEntitiesFilter{EntityType: r.URL.Query().Get("type")}
 	entities, err := s.service.ListEntities(r.Context(), filter)
 	if err != nil {
@@ -60,6 +67,9 @@ func (s *Server) handleListEntities(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		if _, ok := s.requirePermission(w, r, auth.PermissionLibraryRead); !ok {
+			return
+		}
 		jobs, err := s.service.ListJobs(r.Context())
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "failed to list jobs")
@@ -67,6 +77,9 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		}
 		respondJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
 	case http.MethodPost:
+		if _, ok := s.requirePermission(w, r, auth.PermissionLibraryWrite); !ok {
+			return
+		}
 		var payload struct {
 			JobType        string `json:"job_type"`
 			TargetID       string `json:"target_id"`
@@ -114,6 +127,10 @@ func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, ok := s.requirePermission(w, r, auth.PermissionWorkerRead); !ok {
+		return
+	}
+
 	workers, err := s.workerService.ListWorkers(r.Context())
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to list workers")
@@ -130,6 +147,10 @@ func (s *Server) handleRegisterWorker(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.workerService == nil {
 		respondError(w, http.StatusServiceUnavailable, "worker service unavailable")
+		return
+	}
+
+	if _, ok := s.requirePermission(w, r, auth.PermissionWorkerManage); !ok {
 		return
 	}
 
@@ -180,6 +201,10 @@ func (s *Server) handleWorkerRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	if _, ok := s.requirePermission(w, r, auth.PermissionWorkerManage); !ok {
 		return
 	}
 
@@ -238,6 +263,63 @@ func respondError(w http.ResponseWriter, status int, message string) {
 func methodNotAllowed(w http.ResponseWriter, methods ...string) {
 	w.Header().Set("Allow", strings.Join(methods, ", "))
 	respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+// Authorizer verifies API tokens and permission grants.
+type Authorizer interface {
+	Authorize(ctx context.Context, token string, permission auth.Permission) (auth.Principal, error)
+}
+
+const (
+	headerAPIKey        = "X-Arrgo-Api-Key"
+	headerAuthorization = "Authorization"
+)
+
+func (s *Server) requirePermission(w http.ResponseWriter, r *http.Request, permission auth.Permission) (auth.Principal, bool) {
+	if s.authorizer == nil {
+		return auth.Principal{}, true
+	}
+
+	token := extractToken(r)
+	if token == "" {
+		respondError(w, http.StatusUnauthorized, "missing api key")
+		return auth.Principal{}, false
+	}
+
+	principal, err := s.authorizer.Authorize(r.Context(), token, permission)
+	if err == nil {
+		return principal, true
+	}
+
+	status := http.StatusUnauthorized
+	message := "not authorized"
+	switch {
+	case errors.Is(err, auth.ErrPermissionDenied):
+		status = http.StatusForbidden
+		message = "forbidden"
+	case errors.Is(err, auth.ErrAPIKeyRevoked):
+		message = "api key revoked"
+	case errors.Is(err, auth.ErrInvalidToken):
+		message = "invalid api key"
+	default:
+		status = http.StatusInternalServerError
+		message = "authorization failure"
+	}
+
+	respondError(w, status, message)
+	return auth.Principal{}, false
+}
+
+func extractToken(r *http.Request) string {
+	authz := strings.TrimSpace(r.Header.Get(headerAuthorization))
+	if authz != "" {
+		lower := strings.ToLower(authz)
+		if strings.HasPrefix(lower, "bearer ") {
+			return strings.TrimSpace(authz[7:])
+		}
+		return authz
+	}
+	return strings.TrimSpace(r.Header.Get(headerAPIKey))
 }
 
 func registerPprofHandlers(mux *http.ServeMux) {
