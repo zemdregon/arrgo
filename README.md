@@ -52,14 +52,14 @@ Until the initial release is available, track the following tasks.
 - ✅ Stand up Docker Compose assets for Postgres, Redis, Elasticsearch/OpenSearch, master, and worker containers.
 - ✅ Build a GitHub Actions workflow that publishes arrgo container images to GHCR for distribution.
 - ✅ Document the local development bootstrap process for contributors. See [`docs/development-setup.md`](docs/development-setup.md).
+- ✅ Implement the metadata ingestion pipeline with Redis-backed caching. See [`internal/metadata`](internal/metadata) and [`docs/metadata-ingestion.md`](docs/metadata-ingestion.md).
 
 ### Up Next
-1. Implement the metadata ingestion pipeline with Redis-backed caching.
-2. Expose the first iteration of the REST/gRPC APIs for library management and job orchestration.
-3. Build CI pipelines for linting and automated testing.
-4. Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups.
-5. Design and document the observability baseline (metrics, tracing, logging dashboards).
-6. Author an ADR that captures the job queue selection and retry strategy.
+1. Expose the first iteration of the REST/gRPC APIs for library management and job orchestration.
+2. Build CI pipelines for linting and automated testing.
+3. Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups.
+4. Design and document the observability baseline (metrics, tracing, logging dashboards).
+5. Author an ADR that captures the job queue selection and retry strategy.
 
 ### Docker Compose development stack
 
