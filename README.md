@@ -46,7 +46,7 @@ Each component is provisioned as a dedicated Docker container. Infrastructure-as
 
 ## Getting Started TODOs
 Until the initial release is available, track the following tasks:
-1. Finalize the domain model for unified media entities (series, movies, artists, albums, tracks).
+1. ✅ Finalize the domain model for unified media entities (series, movies, artists, albums, tracks). See [`docs/domain-model.md`](docs/domain-model.md).
 2. Stand up Docker Compose assets for Postgres, Redis, Elasticsearch/OpenSearch, master, and worker containers.
 3. Implement the metadata ingestion pipeline with Redis-backed caching.
 4. Expose the first iteration of the REST/gRPC APIs for library management and job orchestration.
