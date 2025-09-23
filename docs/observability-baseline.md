@@ -19,50 +19,42 @@ the master and worker services.
 
 ## Metrics
 
-arrgo adopts Prometheus as the system of record for metrics. All binaries must
-expose an `/metrics` HTTP endpoint using the Go OpenTelemetry SDK with the
-Prometheus exporter. Each metric should be namespaced under `arrgo_`.
+arrgo adopts Prometheus as the system of record for metrics. All binaries expose an
+`/metrics` HTTP endpoint using the `prometheus/client_golang` library, with the handler
+registered through `promhttp`. Each metric is namespaced under `arrgo_`.
 
-### Core Metrics
+### Current metrics
 
 | Metric | Type | Description |
 | --- | --- | --- |
-| `arrgo_http_requests_total` | Counter | Total REST/gRPC requests handled by service and method, labeled with response code and outcome. |
-| `arrgo_http_request_duration_seconds` | Histogram | Latency distribution for API handlers. Buckets should capture sub-10ms through 30s to cover metadata lookups and ingest jobs. |
-| `arrgo_jobs_enqueued_total` | Counter | Number of jobs created by type (scan, import, transcode, metadata refresh). |
-| `arrgo_jobs_running` | Gauge | Count of in-flight jobs per worker pool. |
-| `arrgo_job_duration_seconds` | Histogram | Execution time for jobs, labeled with status (success, retry, failed). |
-| `arrgo_worker_heartbeat_seconds` | Gauge | Time since the most recent heartbeat per worker instance. Enables stale worker detection. |
-| `arrgo_cache_hit_ratio` | Gauge | Rolling hit ratio for Redis-backed metadata caches. |
-| `arrgo_db_query_duration_seconds` | Histogram | Latency for Postgres queries grouped by DAO or query label. |
-| `arrgo_external_dependency_failures_total` | Counter | Number of failures when calling indexers, download clients, or metadata providers. |
+| `arrgo_metadata_provider_failures_total` | Counter | Metadata provider fetch failures grouped by provider and reason. Implemented in [`internal/metadata`](../internal/metadata/metrics.go). |
+| `arrgo_metadata_rate_limit_retries_total` | Counter | Retries triggered when a provider responds with a rate limit. |
+| `arrgo_workers_active` | Gauge | Healthy workers per pool. Updated during registration, heartbeats, and explicit reconciliations. |
+| `arrgo_workers_heartbeat_seconds` | Gauge | Age in seconds of the latest heartbeat per worker (`pool`, `worker_id`). |
+| `arrgo_workers_stale` | Gauge | Workers considered stale per pool. |
+| Go runtime metrics | Mixed | Default Go collector values (goroutines, GC stats) registered automatically by `prometheus/client_golang`. |
 
-### Service-Specific Additions
+### Planned additions
 
-- **Master:**
-  - `arrgo_scheduler_backlog` (Gauge) for queued but unscheduled jobs.
-  - `arrgo_event_dispatch_failures_total` (Counter) for Redis stream publish
-    failures.
-- **Worker:**
-  - `arrgo_worker_queue_lag_seconds` (Gauge) measuring delay between job
-    creation and start.
-  - `arrgo_transcode_resource_seconds_total` (Counter) tracking CPU/GPU seconds
-    consumed by transcoding tasks.
+The following metrics remain on the roadmap and should accompany their respective features:
+
+- `arrgo_http_requests_total` and `arrgo_http_request_duration_seconds` around REST/gRPC surfaces.
+- `arrgo_jobs_enqueued_total`, `arrgo_jobs_running`, and `arrgo_job_duration_seconds` once persistent job storage is added.
+- `arrgo_scheduler_backlog` and `arrgo_event_dispatch_failures_total` for cron scheduling and Redis stream monitoring.
+- `arrgo_worker_queue_lag_seconds` and `arrgo_transcode_resource_seconds_total` once workers execute real media workloads.
 
 ### Metrics Collection
 
-- Deploy Prometheus and Alertmanager alongside the stack (see
-  `deploy/compose`).
+- Deploy Prometheus and Alertmanager alongside the stack (see `deploy/compose`).
 - Scrape master and worker `/metrics` endpoints every 15 seconds.
-- Configure service discovery labels for `cluster`, `service`, `instance`, and
-  `worker_pool` to power multi-cluster dashboards.
-- Record rules to compute availability SLIs (e.g., request success ratio,
-  scheduler latency P95).
+- Configure service discovery labels for `cluster`, `service`, `instance`, and `worker_pool` to power multi-cluster dashboards.
+- Record rules to compute availability SLIs (e.g., request success ratio, scheduler latency P95).
 
 ## Tracing
 
 OpenTelemetry tracing is required for cross-service observability. The Go SDK
-should instrument HTTP/gRPC handlers, Redis interactions, and database calls.
+already instruments metadata provider fan-out and should be extended to HTTP/gRPC
+handlers, Redis interactions, and database calls.
 
 ### Trace Requirements
 
@@ -86,8 +78,8 @@ should instrument HTTP/gRPC handlers, Redis interactions, and database calls.
 
 Structured logging enables reliable correlation and downstream analysis.
 
-- Use a JSON logger (e.g., `zap` or `zerolog`) with RFC3339 timestamps, log
-  levels, and contextual fields.
+- Use Go's standard `slog` package with a JSON handler (or equivalent centralized
+  logging sink) that emits RFC3339 timestamps, log levels, and contextual fields.
 - Minimum fields: `service`, `version`, `instance`, `trace_id`, `span_id`,
   `job.id`, `media.id` (if available), and `worker.pool`.
 - Emit logs at `info` by default. Use `debug` for high-frequency instrumentation

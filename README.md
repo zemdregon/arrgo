@@ -112,7 +112,7 @@ To use the published image locally:
 - Migration tooling for import/export from legacy *arr installations.
 
 ## Development Best Practices
-- **Language & Tooling:** Services are written in Go. Use Go 1.22+ and run `go fmt`/`goimports` on touched files. Front-end components (when introduced) should follow the repository’s lint and formatting rules.
+- **Language & Tooling:** Services are written in Go. Use Go 1.24+ (the module currently targets Go 1.24.3) and run `go fmt`/`goimports` on touched files. Front-end components (when introduced) should follow the repository’s lint and formatting rules.
 - **Testing:** Maintain a healthy unit and integration test suite. Always run `go test ./...` (plus any relevant front-end or end-to-end suites) before submitting changes.
 - **Documentation:** Keep architecture diagrams, API contracts, and configuration docs synchronized with the codebase. Update this README and in-repo ADRs when behavior changes.
 - **Git Workflow:** Work on feature branches, squash commits locally, and open pull requests with descriptive summaries, test evidence, and rollout notes.

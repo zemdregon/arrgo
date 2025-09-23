@@ -32,7 +32,7 @@
 - Metadata pipeline tests exercise cache hits/misses, provider aggregation, negative caching, TTL overrides, and rate-limit retries; HTTP and gRPC adapter suites assert end-to-end request handling and observability endpoints.【F:internal/metadata/pipeline_test.go†L15-L360】【F:internal/api/httpapi/server_test.go†L20-L200】【F:internal/api/grpcapi/server_test.go†L68-L164】
 
 ## Outstanding work and risks
-- Observability checklist items remain open for trace propagation, log enrichment, and packaging of dashboards/alerting assets, highlighting instrumentation and operational follow-up work.【F:docs/observability-baseline.md†L140-L151】
+- Observability checklist items remain open for trace propagation, log enrichment, and packaging of dashboards/alerting assets, highlighting instrumentation and operational follow-up work.【F:docs/observability-baseline.md†L130-L138】
 - The dashboard still needs interactive controls once write APIs stabilize, per the primary README TODO entry.【F:README.md†L67-L68】
 - Library data currently lives in memory with default seed entities, so delivering the roadmap’s Postgres-backed CRUD layer is still ahead.【F:internal/library/service.go†L147-L200】【F:README.md†L92-L96】
 - Published Docker Compose assets launch placeholder commands until binaries are ready, underscoring the need for build integration and deployment hardening.【F:README.md†L74-L79】
