@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/arrgo/arrgo/internal/api/librarypb"
 	"github.com/arrgo/arrgo/internal/library"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -19,8 +21,37 @@ type stubClock struct{ now time.Time }
 
 func (s stubClock) Now() time.Time { return s.now }
 
+func mustLibraryService(t *testing.T, cfg library.Config) *library.Service {
+	t.Helper()
+
+	svc, err := library.NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+	return svc
+}
+
+func mustRedisBackedService(t *testing.T, cfg library.Config) *library.Service {
+	t.Helper()
+
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	cfg.RedisClient = client
+
+	svc, err := library.NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	return svc
+}
+
 func TestListLibraryEntities(t *testing.T) {
-	svc := library.NewService(library.Config{Entities: []library.Entity{{ID: "1", EntityType: "series", Title: "Series"}}})
+	svc := mustLibraryService(t, library.Config{Entities: []library.Entity{{ID: "1", EntityType: "series", Title: "Series"}}})
 	lis := bufconn.Listen(bufSize)
 	grpcServer := grpc.NewServer()
 	librarypb.RegisterLibraryServiceServer(grpcServer, NewServer(svc))
@@ -47,7 +78,7 @@ func TestListLibraryEntities(t *testing.T) {
 }
 
 func TestTriggerJob(t *testing.T) {
-	svc := library.NewService(library.Config{
+	svc := mustRedisBackedService(t, library.Config{
 		Entities: []library.Entity{{ID: "entity-1", EntityType: "movie"}},
 		Clock:    stubClock{now: time.Unix(1700000000, 0)},
 		IDGenerator: func() string {

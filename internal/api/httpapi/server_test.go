@@ -8,11 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/arrgo/arrgo/internal/library"
+	"github.com/redis/go-redis/v9"
 )
 
 func TestListEntitiesEndpoint(t *testing.T) {
-	svc := library.NewService(library.Config{Entities: []library.Entity{{ID: "1", EntityType: "series", Title: "Series"}}})
+	svc := mustLibraryService(t, library.Config{Entities: []library.Entity{{ID: "1", EntityType: "series", Title: "Series"}}})
 	srv := NewServer(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/library/entities", nil)
@@ -36,7 +38,7 @@ func TestListEntitiesEndpoint(t *testing.T) {
 }
 
 func TestTriggerJobEndpoint(t *testing.T) {
-	svc := library.NewService(library.Config{
+	svc := mustRedisBackedService(t, library.Config{
 		Entities: []library.Entity{{ID: "entity-1", EntityType: "movie"}},
 		Clock:    stubClock{now: time.Unix(1700000000, 0)},
 		IDGenerator: func() string {
@@ -69,3 +71,32 @@ func TestTriggerJobEndpoint(t *testing.T) {
 type stubClock struct{ now time.Time }
 
 func (s stubClock) Now() time.Time { return s.now }
+
+func mustLibraryService(t *testing.T, cfg library.Config) *library.Service {
+	t.Helper()
+
+	svc, err := library.NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+	return svc
+}
+
+func mustRedisBackedService(t *testing.T, cfg library.Config) *library.Service {
+	t.Helper()
+
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	cfg.RedisClient = client
+
+	svc, err := library.NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	return svc
+}

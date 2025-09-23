@@ -25,6 +25,10 @@ message JobSummary {
   string target_id = 3;
   string state = 4;
   string submitted_at = 5;
+  string payload_uri = 6;
+  string idempotency_key = 7;
+  int32 attempt = 8;
+  string last_attempt_at = 9;
 }
 
 message ListJobsRequest {}
@@ -36,6 +40,8 @@ message ListJobsResponse {
 message TriggerJobRequest {
   string job_type = 1;
   string target_id = 2;
+  string payload_uri = 3;
+  string idempotency_key = 4;
 }
 
 message TriggerJobResponse {

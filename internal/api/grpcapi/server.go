@@ -60,8 +60,10 @@ func (s *Server) ListJobs(ctx context.Context, req *librarypb.ListJobsRequest) (
 // TriggerJob schedules a new orchestration job for a catalog entity.
 func (s *Server) TriggerJob(ctx context.Context, req *librarypb.TriggerJobRequest) (*librarypb.TriggerJobResponse, error) {
 	job, err := s.service.TriggerJob(ctx, library.TriggerJobInput{
-		JobType:  req.GetJobType(),
-		TargetID: req.GetTargetId(),
+		JobType:        req.GetJobType(),
+		TargetID:       req.GetTargetId(),
+		PayloadURI:     req.GetPayloadUri(),
+		IdempotencyKey: req.GetIdempotencyKey(),
 	})
 	if err != nil {
 		switch err {
@@ -78,11 +80,20 @@ func (s *Server) TriggerJob(ctx context.Context, req *librarypb.TriggerJobReques
 }
 
 func toProtoJob(job library.Job) *librarypb.JobSummary {
+	var lastAttempt string
+	if !job.LastAttemptAt.IsZero() {
+		lastAttempt = job.LastAttemptAt.Format(time.RFC3339)
+	}
+
 	return &librarypb.JobSummary{
-		Id:          job.ID,
-		JobType:     job.JobType,
-		TargetId:    job.TargetID,
-		State:       job.State,
-		SubmittedAt: job.SubmittedAt.Format(time.RFC3339),
+		Id:             job.ID,
+		JobType:        job.JobType,
+		TargetId:       job.TargetID,
+		State:          job.State,
+		SubmittedAt:    job.SubmittedAt.Format(time.RFC3339),
+		PayloadUri:     job.PayloadURI,
+		IdempotencyKey: job.IdempotencyKey,
+		Attempt:        int32(job.Attempt),
+		LastAttemptAt:  lastAttempt,
 	}
 }
