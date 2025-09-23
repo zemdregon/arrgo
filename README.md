@@ -57,9 +57,10 @@ Until the initial release is available, track the following tasks.
 - ✅ Build CI pipelines for linting and automated testing. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 - ✅ Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups. See [`docs/migration-guidelines.md`](docs/migration-guidelines.md).
 - ✅ Design and document the observability baseline (metrics, tracing, logging dashboards). See [`docs/observability-baseline.md`](docs/observability-baseline.md).
+- ✅ Author an ADR capturing the Redis Streams job queue selection and retry strategy. See [`docs/adrs/0001-job-queue-selection.md`](docs/adrs/0001-job-queue-selection.md).
 
 ### Up Next
-1. Author an ADR that captures the job queue selection and retry strategy.
+1. Implement the Redis Streams-backed orchestration queue in the library service layer.
 
 ### Docker Compose development stack
 
