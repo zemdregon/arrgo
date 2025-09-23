@@ -2,9 +2,14 @@ package metadata
 
 import (
 	"context"
+	"errors"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestPipelineReturnsCacheHit(t *testing.T) {
@@ -264,11 +269,186 @@ func TestPipelineReturnsErrorWhenNoData(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error when no metadata returned")
 	}
-	if err != ErrMetadataNotFound {
+	if !errors.Is(err, ErrMetadataNotFound) {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cache.saveCount != 0 {
-		t.Fatalf("expected no cache writes on failure")
+	if cache.saveCount != 1 {
+		t.Fatalf("expected negative cache write, got %d", cache.saveCount)
+	}
+	stored, ok := cache.store["metadata:series:missing"]
+	if !ok {
+		t.Fatalf("expected negative cache entry")
+	}
+	if !stored.NotFound {
+		t.Fatalf("expected stored metadata to be marked as not found")
+	}
+}
+
+func TestPipelineCachesNegativeResults(t *testing.T) {
+	cache := newStubCache()
+	clock := fakeClock{now: time.Date(2024, 7, 1, 9, 0, 0, 0, time.UTC)}
+
+	provider := &stubProvider{name: "tmdb"}
+
+	pipeline, err := NewPipeline(PipelineConfig{
+		Cache:            cache,
+		Providers:        []Provider{provider},
+		DefaultTTL:       time.Hour,
+		NegativeCacheTTL: 5 * time.Minute,
+		Clock:            clock,
+	})
+	if err != nil {
+		t.Fatalf("NewPipeline() error = %v", err)
+	}
+
+	req := Request{EntityType: EntityTypeSeries, EntityID: "series-missing"}
+	_, err = pipeline.Ingest(context.Background(), req)
+	if !errors.Is(err, ErrMetadataNotFound) {
+		t.Fatalf("expected metadata not found error, got %v", err)
+	}
+
+	if cache.saveCount != 1 {
+		t.Fatalf("expected negative cache write, got %d", cache.saveCount)
+	}
+
+	stored, ok := cache.store["metadata:series:series-missing"]
+	if !ok {
+		t.Fatalf("negative cache entry missing")
+	}
+	if !stored.NotFound {
+		t.Fatalf("expected negative cache sentinel, got %+v", stored)
+	}
+
+	if ttl := cache.ttl["metadata:series:series-missing"]; ttl != 5*time.Minute {
+		t.Fatalf("unexpected negative cache ttl: %s", ttl)
+	}
+
+	result, err := pipeline.Ingest(context.Background(), req)
+	if !errors.Is(err, ErrMetadataNotFound) {
+		t.Fatalf("expected metadata not found error on cache hit, got %v", err)
+	}
+	if !result.CacheHit {
+		t.Fatalf("expected cache hit on negative entry")
+	}
+	if provider.calls != 1 {
+		t.Fatalf("expected provider not to be called again, got %d", provider.calls)
+	}
+}
+
+func TestPipelineRetriesOnRateLimit(t *testing.T) {
+	cache := newStubCache()
+	clock := fakeClock{now: time.Date(2024, 8, 1, 12, 0, 0, 0, time.UTC)}
+	metrics := NewMetrics(prometheus.NewRegistry())
+
+	provider := &rateLimitedProvider{
+		name:       "tmdb",
+		resp:       ProviderResponse{Metadata: Metadata{EntityID: "movie-retry", EntityType: EntityTypeMovie, CanonicalTitle: "Retried Movie"}, TTL: 30 * time.Minute},
+		failures:   1,
+		retryAfter: time.Millisecond,
+	}
+
+	pipeline, err := NewPipeline(PipelineConfig{
+		Cache:       cache,
+		Providers:   []Provider{provider},
+		DefaultTTL:  time.Hour,
+		BaseBackoff: time.Millisecond,
+		MaxBackoff:  5 * time.Millisecond,
+		Metrics:     metrics,
+		Clock:       clock,
+	})
+	if err != nil {
+		t.Fatalf("NewPipeline() error = %v", err)
+	}
+
+	req := Request{EntityType: EntityTypeMovie, EntityID: "movie-retry"}
+	result, err := pipeline.Ingest(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+
+	if provider.calls != 2 {
+		t.Fatalf("expected provider to be retried, got %d calls", provider.calls)
+	}
+
+	if got := testutil.ToFloat64(metrics.RateLimitRetries().WithLabelValues("tmdb")); got != 1 {
+		t.Fatalf("unexpected rate limit retry count: %f", got)
+	}
+
+	if result.Metadata.CanonicalTitle != "Retried Movie" {
+		t.Fatalf("expected metadata from successful retry, got %s", result.Metadata.CanonicalTitle)
+	}
+}
+
+func TestPipelineHonorsProviderTTLOffsets(t *testing.T) {
+	cache := newStubCache()
+	clock := fakeClock{now: time.Date(2024, 9, 1, 12, 0, 0, 0, time.UTC)}
+
+	provider := &stubProvider{
+		name: "tmdb",
+		resp: ProviderResponse{
+			Metadata: Metadata{
+				EntityID:       "movie-override",
+				EntityType:     EntityTypeMovie,
+				CanonicalTitle: "Override TTL Movie",
+			},
+		},
+	}
+
+	pipeline, err := NewPipeline(PipelineConfig{
+		Cache:        cache,
+		Providers:    []Provider{provider},
+		DefaultTTL:   time.Hour,
+		ProviderTTLs: map[string]time.Duration{"tmdb": 2 * time.Hour},
+		Clock:        clock,
+	})
+	if err != nil {
+		t.Fatalf("NewPipeline() error = %v", err)
+	}
+
+	req := Request{EntityType: EntityTypeMovie, EntityID: "movie-override"}
+	_, err = pipeline.Ingest(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+
+	ttl, ok := cache.ttl["metadata:movie:movie-override"]
+	if !ok {
+		t.Fatalf("expected cache entry to be written")
+	}
+	if ttl != 2*time.Hour {
+		t.Fatalf("expected ttl override of 2h, got %s", ttl)
+	}
+}
+
+func TestPipelineRecordsFailureMetrics(t *testing.T) {
+	cache := newStubCache()
+	metrics := NewMetrics(prometheus.NewRegistry())
+
+	provider := &stubProvider{
+		name: "tmdb",
+		err:  errors.New("boom"),
+	}
+
+	pipeline, err := NewPipeline(PipelineConfig{
+		Cache:            cache,
+		Providers:        []Provider{provider},
+		DefaultTTL:       time.Hour,
+		Metrics:          metrics,
+		NegativeCacheTTL: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("NewPipeline() error = %v", err)
+	}
+
+	req := Request{EntityType: EntityTypeMovie, EntityID: "movie-error"}
+	_, err = pipeline.Ingest(context.Background(), req)
+	if !errors.Is(err, ErrMetadataNotFound) {
+		t.Fatalf("expected metadata not found after provider failure, got %v", err)
+	}
+
+	got := testutil.ToFloat64(metrics.ProviderFailures().WithLabelValues("tmdb", "error"))
+	if got != 1 {
+		t.Fatalf("unexpected provider failure metric: %f", got)
 	}
 }
 
@@ -297,6 +477,29 @@ func (s *stubProvider) Fetch(ctx context.Context, req Request) (ProviderResponse
 		return ProviderResponse{}, s.err
 	}
 	return s.resp, nil
+}
+
+type rateLimitedProvider struct {
+	name       string
+	resp       ProviderResponse
+	failures   int
+	retryAfter time.Duration
+	calls      int
+	mu         sync.Mutex
+}
+
+func (r *rateLimitedProvider) Name() string { return r.name }
+
+func (r *rateLimitedProvider) Supports(entityType EntityType) bool { return true }
+
+func (r *rateLimitedProvider) Fetch(ctx context.Context, req Request) (ProviderResponse, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls++
+	if r.calls <= r.failures {
+		return ProviderResponse{}, NewRateLimitError("provider rate limited", r.retryAfter)
+	}
+	return r.resp, nil
 }
 
 type stubCache struct {

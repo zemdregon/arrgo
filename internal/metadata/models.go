@@ -104,6 +104,7 @@ type Metadata struct {
 	RuntimeMinutes    int                 `json:"runtime_minutes,omitempty"`
 	SourceAttribution []SourceAttribution `json:"source_attribution,omitempty"`
 	LastRefreshed     time.Time           `json:"last_refreshed"`
+	NotFound          bool                `json:"not_found,omitempty"`
 }
 
 // SourceAttribution documents which provider supplied particular fields.
