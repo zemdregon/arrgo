@@ -62,13 +62,10 @@ Until the initial release is available, track the following tasks.
 - ✅ Author an ADR capturing the Redis Streams job queue selection and retry strategy. See [`docs/adrs/0001-job-queue-selection.md`](docs/adrs/0001-job-queue-selection.md).
 - ✅ Implement the Redis Streams-backed orchestration queue with producer/consumer plumbing in the library service.
 - ✅ Establish worker registration and heartbeat coordination across REST and gRPC surfaces. See [`docs/worker-coordination.md`](docs/worker-coordination.md).
+- ✅ Deliver the initial web dashboard for cluster visibility. See [`web/dashboard`](web/dashboard) and the updated front-end workflow guidance in [`docs/development-setup.md`](docs/development-setup.md#web-dashboard-development).
 
 ### Up Next
-- [ ] **Deliver the initial web dashboard for cluster visibility** (Owner: UI/UX)
-  - Next steps:
-    - Scaffold the web UI shell (e.g., Next.js) and connect it to the existing REST endpoints for read-only data.
-    - Visualize library health, queued jobs, and worker status with reusable components.
-    - Document the front-end development workflow, linting rules, and bundler commands in `docs/development-setup.md`.
+- [ ] Expand the dashboard with interactive controls once write APIs are stabilized (Owner: UI/UX).
 
 ### Docker Compose development stack
 

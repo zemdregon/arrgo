@@ -1,0 +1,8 @@
+# Node and front-end artifacts
+node_modules/
+web/dashboard/.next/
+web/dashboard/out/
+web/dashboard/.turbo/
+
+# Editor noise
+.DS_Store

@@ -145,6 +145,51 @@ func TestHeartbeatAndStaleDetection(t *testing.T) {
 	}
 }
 
+func TestListWorkersFallsBackToRepositoryWhenCacheEmpty(t *testing.T) {
+	repo := NewInMemoryRepository()
+	cache := newRedisCache(t)
+	metrics := NewMetrics(prometheus.NewRegistry())
+	clock := &stubClock{now: time.Unix(1_700_000_000, 0)}
+
+	svc, err := NewService(Config{
+		Repository:  repo,
+		Cache:       cache,
+		Metrics:     metrics,
+		Clock:       clock,
+		IDGenerator: func() string { return "worker-list" },
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	if _, err := svc.RegisterWorker(context.Background(), RegistrationRequest{Pool: "default"}); err != nil {
+		t.Fatalf("RegisterWorker returned error: %v", err)
+	}
+
+	if err := cache.RemoveWorker(context.Background(), "worker-list"); err != nil {
+		t.Fatalf("RemoveWorker returned error: %v", err)
+	}
+
+	workers, err := svc.ListWorkers(context.Background())
+	if err != nil {
+		t.Fatalf("ListWorkers returned error: %v", err)
+	}
+	if len(workers) != 1 {
+		t.Fatalf("expected 1 worker, got %d", len(workers))
+	}
+	if workers[0].ID != "worker-list" {
+		t.Fatalf("unexpected worker id %s", workers[0].ID)
+	}
+
+	cached, err := cache.ListWorkers(context.Background())
+	if err != nil {
+		t.Fatalf("cache ListWorkers returned error: %v", err)
+	}
+	if len(cached) != 1 {
+		t.Fatalf("expected cache to be repopulated, got %d entries", len(cached))
+	}
+}
+
 func newRedisCache(t *testing.T) *RedisCache {
 	t.Helper()
 

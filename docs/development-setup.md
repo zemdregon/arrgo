@@ -4,6 +4,7 @@ This guide helps contributors quickly bootstrap a local arrgo environment for ex
 
 ## Prerequisites
 - **Go 1.22+** installed and added to your `PATH`.
+- **Node.js 18+ and npm** for building and running the web dashboard (`web/dashboard`).
 - **Docker** and **Docker Compose v2** for running the distributed stack.
 - **Make** (optional) for running common automation commands when they become available.
 - Access to a Unix-like shell (macOS, Linux, or WSL2 on Windows).
@@ -42,6 +43,16 @@ The stack uses named volumes so data survives container restarts. Use `docker co
 - Run `go fmt ./...` to format Go sources.
 - Execute `go test ./...` before pushing changes.
 - Consider installing `golangci-lint` for advanced linting once configured for the repository.
+
+## Web Dashboard Development
+The read-only cluster dashboard lives in [`web/dashboard`](../web/dashboard) and is implemented with Next.js and React.
+
+1. Install dependencies: `cd web/dashboard && npm install`.
+2. Start the development server: `npm run dev` (defaults to <http://localhost:3000>).
+3. Point the dashboard at your API host by setting `NEXT_PUBLIC_ARRGO_API_URL` (defaults to `http://localhost:8080`).
+4. Run linting with `npm run lint` and build with `npm run build`. Use `npm start` to serve the production build locally.
+
+The dashboard fetches data from the REST API exposed by the Go services (`/api/v1/library/entities`, `/api/v1/jobs`, `/api/v1/workers`). Each panel uses reusable components so additional views can piggyback on the existing layout and status badges.
 
 ## Observability During Development
 - Access container logs with `docker compose logs -f <service>`.
