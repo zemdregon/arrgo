@@ -33,9 +33,16 @@ type Job struct {
 	IdempotencyKey string
 	Attempt        int
 	LastAttemptAt  time.Time
+	CompletedAt    time.Time
 
 	StreamID string `json:"-"`
 }
+
+// Canonical job types emitted by the scheduler.
+const (
+	JobTypeScan   = "scan"
+	JobTypeImport = "import"
+)
 
 // Job states returned by the orchestration API.
 const (
@@ -80,6 +87,7 @@ type Config struct {
 	ConsumerGroup  string
 	Logger         *slog.Logger
 	IdempotencyTTL time.Duration
+	AuditSink      AuditSink
 }
 
 // Errors returned by the Service APIs.
@@ -93,25 +101,28 @@ var (
 
 // Service exposes read/write helpers that back both REST and gRPC front-ends.
 type Service struct {
-	mu       sync.RWMutex
-	entities []Entity
-	jobs     []Job
-	jobIndex map[string]int
-	clock    Clock
-	idGen    IDGenerator
-	queue    *OrchestrationQueue
-	logger   *slog.Logger
+	mu           sync.RWMutex
+	entities     []Entity
+	entitiesByID map[string]Entity
+	jobs         []Job
+	jobIndex     map[string]int
+	clock        Clock
+	idGen        IDGenerator
+	queue        *OrchestrationQueue
+	logger       *slog.Logger
+	auditSink    AuditSink
 }
 
 // NewService constructs a library orchestration service with optional seed data.
 func NewService(cfg Config) (*Service, error) {
 	svc := &Service{
-		entities: make([]Entity, len(cfg.Entities)),
-		jobs:     make([]Job, len(cfg.Jobs)),
-		jobIndex: make(map[string]int, len(cfg.Jobs)),
-		clock:    cfg.Clock,
-		idGen:    cfg.IDGenerator,
-		logger:   cfg.Logger,
+		entities:  make([]Entity, len(cfg.Entities)),
+		jobs:      make([]Job, len(cfg.Jobs)),
+		jobIndex:  make(map[string]int, len(cfg.Jobs)),
+		clock:     cfg.Clock,
+		idGen:     cfg.IDGenerator,
+		logger:    cfg.Logger,
+		auditSink: cfg.AuditSink,
 	}
 
 	copy(svc.entities, cfg.Entities)
@@ -129,6 +140,9 @@ func NewService(cfg Config) (*Service, error) {
 	if svc.logger == nil {
 		svc.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	if svc.auditSink == nil {
+		svc.auditSink = noopAuditSink{}
+	}
 
 	if len(svc.entities) == 0 {
 		svc.entities = append(svc.entities, defaultEntities()...)
@@ -137,6 +151,11 @@ func NewService(cfg Config) (*Service, error) {
 	sort.Slice(svc.entities, func(i, j int) bool {
 		return svc.entities[i].Title < svc.entities[j].Title
 	})
+
+	svc.entitiesByID = make(map[string]Entity, len(svc.entities))
+	for _, entity := range svc.entities {
+		svc.entitiesByID[entity.ID] = entity
+	}
 
 	if cfg.RedisClient != nil {
 		queue, err := NewOrchestrationQueue(OrchestrationQueueConfig{
@@ -288,14 +307,32 @@ func (s *Service) AckJob(ctx context.Context, job ClaimedJob) error {
 		return err
 	}
 
+	completedAt := s.clock.Now()
+
 	s.mu.Lock()
 	s.updateJobLocked(job.Job.ID, func(j *Job) {
 		j.State = JobStateDone
 		j.StreamID = ""
+		j.CompletedAt = completedAt
 	})
+	entityType := s.entityTypeLocked(job.Job.TargetID)
 	s.mu.Unlock()
 
 	s.logger.Info("library job acknowledged", "jobID", job.Job.ID, "streamID", job.StreamID, "attempt", job.Job.Attempt)
+
+	if strings.EqualFold(job.Job.JobType, JobTypeImport) {
+		event := AuditEvent{
+			EventType:   AuditEventImportCompleted,
+			JobID:       job.Job.ID,
+			JobType:     job.Job.JobType,
+			TargetID:    job.Job.TargetID,
+			EntityType:  entityType,
+			CompletedAt: completedAt,
+		}
+		if err := s.auditSink.Publish(ctx, event); err != nil {
+			s.logger.Warn("library: audit sink publish failed", "error", err)
+		}
+	}
 
 	return nil
 }
@@ -332,12 +369,8 @@ func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (Job, error) {
 }
 
 func (s *Service) entityExistsLocked(id string) bool {
-	for _, entity := range s.entities {
-		if entity.ID == id {
-			return true
-		}
-	}
-	return false
+	_, ok := s.entitiesByID[id]
+	return ok
 }
 
 func (s *Service) updateJobLocked(id string, fn func(*Job)) {
@@ -348,6 +381,13 @@ func (s *Service) updateJobLocked(id string, fn func(*Job)) {
 	job := s.jobs[idx]
 	fn(&job)
 	s.jobs[idx] = job
+}
+
+func (s *Service) entityTypeLocked(id string) string {
+	if entity, ok := s.entitiesByID[id]; ok {
+		return entity.EntityType
+	}
+	return ""
 }
 
 func defaultEntities() []Entity {
