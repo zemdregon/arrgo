@@ -45,14 +45,21 @@ Each component is provisioned as a dedicated Docker container. Infrastructure-as
 5. Monitor via built-in Prometheus metrics, Grafana dashboards, and structured logging exporters.
 
 ## Getting Started TODOs
-Until the initial release is available, track the following tasks:
-1. ✅ Finalize the domain model for unified media entities (series, movies, artists, albums, tracks). See [`docs/domain-model.md`](docs/domain-model.md).
-2. ✅ Stand up Docker Compose assets for Postgres, Redis, Elasticsearch/OpenSearch, master, and worker containers.
-3. Implement the metadata ingestion pipeline with Redis-backed caching.
-4. Expose the first iteration of the REST/gRPC APIs for library management and job orchestration.
-5. ✅ Build a GitHub Actions workflow that publishes arrgo container images to GHCR for distribution.
-6. Build CI pipelines for linting and automated testing.
-7. Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups.
+Until the initial release is available, track the following tasks.
+
+### Completed
+- ✅ Finalize the domain model for unified media entities (series, movies, artists, albums, tracks). See [`docs/domain-model.md`](docs/domain-model.md).
+- ✅ Stand up Docker Compose assets for Postgres, Redis, Elasticsearch/OpenSearch, master, and worker containers.
+- ✅ Build a GitHub Actions workflow that publishes arrgo container images to GHCR for distribution.
+- ✅ Document the local development bootstrap process for contributors. See [`docs/development-setup.md`](docs/development-setup.md).
+
+### Up Next
+1. Implement the metadata ingestion pipeline with Redis-backed caching.
+2. Expose the first iteration of the REST/gRPC APIs for library management and job orchestration.
+3. Build CI pipelines for linting and automated testing.
+4. Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups.
+5. Design and document the observability baseline (metrics, tracing, logging dashboards).
+6. Author an ADR that captures the job queue selection and retry strategy.
 
 ### Docker Compose development stack
 
