@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,26 @@ import (
 type stubClock struct{ now time.Time }
 
 func (s stubClock) Now() time.Time { return s.now }
+
+type capturingAuditSink struct {
+	mu     sync.Mutex
+	events []AuditEvent
+}
+
+func (c *capturingAuditSink) Publish(_ context.Context, event AuditEvent) error {
+	c.mu.Lock()
+	c.events = append(c.events, event)
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *capturingAuditSink) Events() []AuditEvent {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]AuditEvent, len(c.events))
+	copy(out, c.events)
+	return out
+}
 
 func newRedisService(t *testing.T, cfg Config) *Service {
 	t.Helper()
@@ -79,6 +100,9 @@ func TestTriggerJobValidatesAndPersists(t *testing.T) {
 	if job.Attempt != 0 {
 		t.Fatalf("expected initial attempt count 0, got %d", job.Attempt)
 	}
+	if !job.CompletedAt.IsZero() {
+		t.Fatalf("expected zero completion timestamp for new job")
+	}
 
 	jobs, err := svc.ListJobs(context.Background())
 	if err != nil {
@@ -86,6 +110,9 @@ func TestTriggerJobValidatesAndPersists(t *testing.T) {
 	}
 	if len(jobs) != 1 {
 		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if !jobs[0].CompletedAt.IsZero() {
+		t.Fatalf("expected stored job completion timestamp to be zero")
 	}
 }
 
@@ -159,6 +186,9 @@ func TestClaimAckFlowUpdatesState(t *testing.T) {
 	if jobs[0].State != JobStateDone {
 		t.Fatalf("expected job to be completed, got %s", jobs[0].State)
 	}
+	if jobs[0].CompletedAt.IsZero() {
+		t.Fatalf("expected job completion timestamp to be set")
+	}
 }
 
 func TestRetryJobRequeuesWithIncrementedAttempt(t *testing.T) {
@@ -194,5 +224,53 @@ func TestRetryJobRequeuesWithIncrementedAttempt(t *testing.T) {
 	}
 	if claimedAgain[0].Job.Attempt != 2 {
 		t.Fatalf("expected attempt 2 after retry, got %d", claimedAgain[0].Job.Attempt)
+	}
+}
+
+func TestAckJobPublishesAuditEventForImports(t *testing.T) {
+	now := time.Date(2024, 7, 1, 15, 30, 0, 0, time.UTC)
+	sink := &capturingAuditSink{}
+	svc := newRedisService(t, Config{
+		Entities:  []Entity{{ID: "entity-1", EntityType: "movie"}},
+		Clock:     stubClock{now: now},
+		AuditSink: sink,
+	})
+
+	_, err := svc.TriggerJob(context.Background(), TriggerJobInput{JobType: JobTypeImport, TargetID: "entity-1"})
+	if err != nil {
+		t.Fatalf("TriggerJob returned error: %v", err)
+	}
+
+	claimed, err := svc.ClaimJobs(context.Background(), "worker-1", 1, 0)
+	if err != nil {
+		t.Fatalf("ClaimJobs returned error: %v", err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("expected 1 claimed job, got %d", len(claimed))
+	}
+
+	if err := svc.AckJob(context.Background(), claimed[0]); err != nil {
+		t.Fatalf("AckJob returned error: %v", err)
+	}
+
+	events := sink.Events()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 audit event, got %d", len(events))
+	}
+	event := events[0]
+	if event.EventType != AuditEventImportCompleted {
+		t.Fatalf("unexpected event type %s", event.EventType)
+	}
+	if event.JobID != claimed[0].Job.ID {
+		t.Fatalf("unexpected job id %s", event.JobID)
+	}
+	if event.TargetID != "entity-1" {
+		t.Fatalf("unexpected target id %s", event.TargetID)
+	}
+	if event.EntityType != "movie" {
+		t.Fatalf("unexpected entity type %s", event.EntityType)
+	}
+	if !event.CompletedAt.Equal(now) {
+		t.Fatalf("expected completion timestamp %v, got %v", now, event.CompletedAt)
 	}
 }

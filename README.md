@@ -48,6 +48,7 @@ Each component is provisioned as a dedicated Docker container. Infrastructure-as
 Until the initial release is available, track the following tasks.
 
 ### Completed
+- ✅ Automate scheduled library scans and media imports with cron-driven orchestration and audit fan-out. See [`docs/library-scheduling.md`](docs/library-scheduling.md).
 - ✅ Finalize the domain model for unified media entities (series, movies, artists, albums, tracks). See [`docs/domain-model.md`](docs/domain-model.md).
 - ✅ Stand up Docker Compose assets for Postgres, Redis, Elasticsearch/OpenSearch, master, and worker containers.
 - ✅ Build a GitHub Actions workflow that publishes arrgo container images to GHCR for distribution.
@@ -62,11 +63,6 @@ Until the initial release is available, track the following tasks.
 - ✅ Establish worker registration and heartbeat coordination across REST and gRPC surfaces. See [`docs/worker-coordination.md`](docs/worker-coordination.md).
 
 ### Up Next
-- [ ] **Automate scheduled library scans and media imports** (Owner: Library Workflows)
-  - Next steps:
-    - Implement cron-driven scan scheduling with concurrency controls per media type.
-    - Reuse the orchestration queue to fan out import jobs and track completion status.
-    - Publish audit events for completed imports to drive future notification integrations.
 - [ ] **Harden metadata ingestion resilience** (Owner: Data Ingestion)
   - Next steps:
     - Introduce rate limit detection and exponential backoff for third-party provider requests.
