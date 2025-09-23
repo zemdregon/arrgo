@@ -190,6 +190,10 @@
   justify-content: flex-end;
 }
 
+.inlineForm {
+  justify-content: flex-start;
+}
+
 .controlGroup {
   display: flex;
   flex-direction: column;
@@ -205,7 +209,8 @@
   color: #94a3b8;
 }
 
-.controlSelect {
+.controlSelect,
+.controlInput {
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 0.75rem;
@@ -216,10 +221,75 @@
   cursor: pointer;
 }
 
-.controlSelect:focus {
+.controlInput {
+  min-width: 220px;
+  cursor: text;
+}
+
+.controlSelect:focus,
+.controlInput:focus {
   outline: none;
   border-color: #38bdf8;
   box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+
+.primaryButton {
+  background: linear-gradient(135deg, #22c55e, #38bdf8);
+  border: none;
+  color: #0f172a;
+  padding: 0.6rem 1.4rem;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.primaryButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.primaryButton:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.formMessage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px solid transparent;
+  font-size: 0.9rem;
+}
+
+.formMessageSuccess {
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #bbf7d0;
+}
+
+.formMessageError {
+  background: rgba(248, 113, 113, 0.16);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+}
+
+.messageDismiss {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.messageDismiss:hover {
+  background: rgba(148, 163, 184, 0.14);
 }
 
 @media (max-width: 720px) {

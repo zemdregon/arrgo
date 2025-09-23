@@ -25,7 +25,7 @@
 - The gRPC server mirrors library and worker APIs with appropriate status mappings, enabling clients to adopt either protocol without behavioral drift.【F:internal/api/grpcapi/server.go†L15-L178】
 
 ### Dashboard experience
-- A Next.js dashboard pulls library entities, jobs, and worker metadata via typed fetch helpers, summarizing totals, breakdowns, and latest activity with reusable panels and retry-aware data hooks.【F:web/dashboard/app/page.tsx†L1-L362】【F:web/dashboard/lib/api.ts†L1-L147】【F:web/dashboard/hooks/useApiData.ts†L1-L31】
+- A Next.js dashboard pulls library entities, jobs, and worker metadata via typed fetch helpers, summarizing totals, breakdowns, and latest activity with reusable panels, retry-aware data hooks, and interactive job queue controls for library actions.【F:web/dashboard/app/page.tsx†L1-L362】【F:web/dashboard/lib/api.ts†L1-L214】【F:web/dashboard/hooks/useApiData.ts†L1-L31】
 
 ### Automated verification
 - Unit tests cover library validation, idempotency, queue claim/ack, retries, and audit emission, giving confidence that orchestration primitives behave as expected.【F:internal/library/service_test.go†L57-L214】
@@ -34,7 +34,6 @@
 
 ## Outstanding work and risks
 - Observability checklist items remain open for trace propagation, log enrichment, and packaging of dashboards/alerting assets, highlighting instrumentation and operational follow-up work.【F:docs/observability-baseline.md†L130-L138】
-- The dashboard still needs interactive controls once write APIs stabilize, per the primary README TODO entry.【F:README.md†L67-L68】
 - Library data currently lives in memory with default seed entities, so delivering the roadmap’s Postgres-backed CRUD layer is still ahead.【F:internal/library/service.go†L147-L200】【F:README.md†L92-L96】
 - Published Docker Compose assets launch placeholder commands until binaries are ready, underscoring the need for build integration and deployment hardening.【F:README.md†L74-L79】
 - Broader roadmap items—indexer/download client integrations, policy automation, search abstraction, multi-tenancy, HA workers, analytics, and a multi-surface plugin ecosystem with per-plugin credentials—remain future milestones spanning the beta and GA phases.【F:README.md†L98-L154】
