@@ -48,6 +48,7 @@ Each component is provisioned as a dedicated Docker container. Infrastructure-as
 Until the initial release is available, track the following tasks.
 
 ### Completed
+- ✅ Integrate prioritized download client failover with health-aware routing. See [`docs/download-client-failover.md`](docs/download-client-failover.md).
 - ✅ Implement role-based access controls with per-application API key generation, labeling, and rotation workflows. See [`docs/access-control.md`](docs/access-control.md).
 - ✅ Harden metadata ingestion resilience with rate limit backoff, provider-specific cache TTLs, tracing, and failure metrics.
 - ✅ Automate scheduled library scans and media imports with cron-driven orchestration and audit fan-out. See [`docs/library-scheduling.md`](docs/library-scheduling.md).
@@ -67,7 +68,6 @@ Until the initial release is available, track the following tasks.
 - ✅ Expand the dashboard with interactive controls for queueing library jobs now that the write APIs are available. See [`web/dashboard`](web/dashboard).
 
 ### Up Next
-- [ ] Integrate prioritized download client failover with health-aware routing (Owner: Integrations).
 - [ ] Publish Helm charts and Terraform modules for production-grade deployments (Owner: DevOps).
 - [ ] Stand up automated performance and regression suites for large media libraries (Owner: QA).
 
