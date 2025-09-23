@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { DataPanel } from "../components/DataPanel";
 import { StatusPill } from "../components/StatusPill";
 import { useApiData } from "../hooks/useApiData";
@@ -10,6 +10,7 @@ import {
   fetchWorkers,
   JobSummary,
   LibraryEntity,
+  triggerJob,
   WorkerSummary
 } from "../lib/api";
 import styles from "./page.module.css";
@@ -87,6 +88,17 @@ type SelectOption = {
   value: string;
   label: string;
 };
+
+type EntityOption = {
+  value: string;
+  label: string;
+  entityType: string;
+};
+
+const JOB_TYPE_OPTIONS: SelectOption[] = [
+  { value: "scan", label: "Scan" },
+  { value: "import", label: "Import" }
+];
 
 function normalize(value?: string, fallback = "unknown"): string {
   const trimmed = value?.trim();
@@ -184,6 +196,16 @@ export default function DashboardPage() {
   const [jobStateFilter, setJobStateFilter] = useState("all");
   const [workerPoolFilter, setWorkerPoolFilter] = useState("all");
   const [workerStatusFilter, setWorkerStatusFilter] = useState("all");
+  const [jobTypeSelection, setJobTypeSelection] = useState(
+    JOB_TYPE_OPTIONS[0]?.value ?? "scan"
+  );
+  const [jobTargetSelection, setJobTargetSelection] = useState("");
+  const [jobPayloadURI, setJobPayloadURI] = useState("");
+  const [jobIdempotencyKey, setJobIdempotencyKey] = useState("");
+  const [jobSubmitting, setJobSubmitting] = useState(false);
+  const [jobFeedback, setJobFeedback] = useState<
+    { kind: "success" | "error"; message: string } | null
+  >(null);
 
   const libraryStats = useMemo(() => buildLibraryStats(library.data), [
     library.data
@@ -192,6 +214,17 @@ export default function DashboardPage() {
   const workerStats = useMemo(() => buildWorkerStats(workers.data), [
     workers.data
   ]);
+  const libraryEntityOptions = useMemo(
+    () =>
+      (library.data ?? [])
+        .map<EntityOption>((entity) => ({
+          value: entity.id,
+          label: entity.title || entity.id,
+          entityType: entity.entityType || "Unknown"
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [library.data]
+  );
 
   const libraryTypeOptions = useMemo(
     () =>
@@ -266,6 +299,20 @@ export default function DashboardPage() {
     }
   }, [workerStatusFilter, workerStatusOptions]);
 
+  useEffect(() => {
+    if (!libraryEntityOptions.length) {
+      setJobTargetSelection("");
+      return;
+    }
+    if (
+      jobTargetSelection &&
+      libraryEntityOptions.some((option) => option.value === jobTargetSelection)
+    ) {
+      return;
+    }
+    setJobTargetSelection(libraryEntityOptions[0].value);
+  }, [jobTargetSelection, libraryEntityOptions]);
+
   const visibleLibrary = useMemo(() => {
     const entities = library.data ?? [];
     if (libraryTypeFilter === "all") {
@@ -303,6 +350,9 @@ export default function DashboardPage() {
     });
   }, [workers.data, workerPoolFilter, workerStatusFilter]);
 
+  const jobSubmitDisabled =
+    !libraryEntityOptions.length || !jobTargetSelection || jobSubmitting;
+
   const libraryFooter = libraryStats.total
     ? `Showing ${Math.min(visibleLibrary.length, 5)} of ${visibleLibrary.length} ${
         libraryTypeFilter === "all" ? "entities" : "matches"
@@ -320,6 +370,52 @@ export default function DashboardPage() {
           : "matches"
       } (${workerStats.total} total)`
     : undefined;
+
+  const handleTriggerJob = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!jobTargetSelection) {
+      setJobFeedback({
+        kind: "error",
+        message: "Select a target entity before queueing a job."
+      });
+      return;
+    }
+
+    const jobTypeValue = jobTypeSelection;
+    const jobTargetValue = jobTargetSelection;
+    const jobTargetOption = libraryEntityOptions.find(
+      (option) => option.value === jobTargetValue
+    );
+    const jobTargetDescription = jobTargetOption
+      ? `${jobTargetOption.label} · ${jobTargetOption.entityType}`
+      : jobTargetValue;
+    const jobTypeLabel =
+      JOB_TYPE_OPTIONS.find((option) => option.value === jobTypeValue)?.label ??
+      jobTypeValue;
+
+    setJobSubmitting(true);
+    setJobFeedback(null);
+    try {
+      await triggerJob({
+        jobType: jobTypeValue,
+        targetID: jobTargetValue,
+        payloadURI: jobPayloadURI,
+        idempotencyKey: jobIdempotencyKey
+      });
+      setJobFeedback({
+        kind: "success",
+        message: `Queued ${jobTypeLabel} job for ${jobTargetDescription}.`
+      });
+      setJobPayloadURI("");
+      setJobIdempotencyKey("");
+      jobs.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setJobFeedback({ kind: "error", message });
+    } finally {
+      setJobSubmitting(false);
+    }
+  };
 
   const selectedLibraryLabel =
     libraryTypeFilter === "all"
@@ -366,26 +462,128 @@ export default function DashboardPage() {
           onRetry={library.refresh}
           actions={
             libraryStats.total ? (
-              <div className={styles.panelControls}>
-                <div className={styles.controlGroup}>
-                  <label className={styles.controlLabel} htmlFor="library-type-filter">
-                    Entity type
-                  </label>
-                  <select
-                    id="library-type-filter"
-                    className={styles.controlSelect}
-                    value={libraryTypeFilter}
-                    onChange={(event) => setLibraryTypeFilter(event.target.value)}
-                  >
-                    <option value="all">All types</option>
-                    {libraryTypeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+              <>
+                <div className={styles.panelControls}>
+                  <div className={styles.controlGroup}>
+                    <label
+                      className={styles.controlLabel}
+                      htmlFor="library-type-filter"
+                    >
+                      Entity type
+                    </label>
+                    <select
+                      id="library-type-filter"
+                      className={styles.controlSelect}
+                      value={libraryTypeFilter}
+                      onChange={(event) => setLibraryTypeFilter(event.target.value)}
+                    >
+                      <option value="all">All types</option>
+                      {libraryTypeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
+                {libraryEntityOptions.length ? (
+                  <form
+                    className={`${styles.panelControls} ${styles.inlineForm}`}
+                    onSubmit={handleTriggerJob}
+                  >
+                    <div className={styles.controlGroup}>
+                      <label className={styles.controlLabel} htmlFor="job-type-select">
+                        Job type
+                      </label>
+                      <select
+                        id="job-type-select"
+                        className={styles.controlSelect}
+                        value={jobTypeSelection}
+                        onChange={(event) => {
+                          setJobTypeSelection(event.target.value);
+                          setJobFeedback(null);
+                        }}
+                      >
+                        {JOB_TYPE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className={styles.controlGroup}>
+                      <label
+                        className={styles.controlLabel}
+                        htmlFor="job-target-select"
+                      >
+                        Target entity
+                      </label>
+                      <select
+                        id="job-target-select"
+                        className={styles.controlSelect}
+                        value={jobTargetSelection}
+                        onChange={(event) => {
+                          setJobTargetSelection(event.target.value);
+                          setJobFeedback(null);
+                        }}
+                      >
+                        {libraryEntityOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {`${option.label} · ${option.entityType}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className={styles.controlGroup}>
+                      <label
+                        className={styles.controlLabel}
+                        htmlFor="job-payload-input"
+                      >
+                        Payload URI
+                      </label>
+                      <input
+                        id="job-payload-input"
+                        className={styles.controlInput}
+                        type="text"
+                        value={jobPayloadURI}
+                        onChange={(event) => {
+                          setJobPayloadURI(event.target.value);
+                          setJobFeedback(null);
+                        }}
+                        placeholder="Optional"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className={styles.controlGroup}>
+                      <label
+                        className={styles.controlLabel}
+                        htmlFor="job-idempotency-input"
+                      >
+                        Idempotency key
+                      </label>
+                      <input
+                        id="job-idempotency-input"
+                        className={styles.controlInput}
+                        type="text"
+                        value={jobIdempotencyKey}
+                        onChange={(event) => {
+                          setJobIdempotencyKey(event.target.value);
+                          setJobFeedback(null);
+                        }}
+                        placeholder="Optional"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className={styles.primaryButton}
+                      disabled={jobSubmitDisabled}
+                    >
+                      {jobSubmitting ? "Queueing…" : "Queue job"}
+                    </button>
+                  </form>
+                ) : null}
+              </>
             ) : null
           }
           footer={libraryFooter}
@@ -393,6 +591,28 @@ export default function DashboardPage() {
           {libraryStats.total ? (
             visibleLibrary.length ? (
               <>
+                {jobFeedback ? (
+                  <div
+                    className={`${styles.formMessage} ${
+                      jobFeedback.kind === "success"
+                        ? styles.formMessageSuccess
+                        : styles.formMessageError
+                    }`}
+                    role={jobFeedback.kind === "error" ? "alert" : "status"}
+                    aria-live={
+                      jobFeedback.kind === "error" ? "assertive" : "polite"
+                    }
+                  >
+                    <span>{jobFeedback.message}</span>
+                    <button
+                      type="button"
+                      className={styles.messageDismiss}
+                      onClick={() => setJobFeedback(null)}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                ) : null}
                 <div className={styles.metricsRow}>
                   <div
                     className={`${styles.metricCard} ${

@@ -63,9 +63,9 @@ Until the initial release is available, track the following tasks.
 - ✅ Implement the Redis Streams-backed orchestration queue with producer/consumer plumbing in the library service.
 - ✅ Establish worker registration and heartbeat coordination across REST and gRPC surfaces. See [`docs/worker-coordination.md`](docs/worker-coordination.md).
 - ✅ Deliver the initial web dashboard for cluster visibility. See [`web/dashboard`](web/dashboard) and the updated front-end workflow guidance in [`docs/development-setup.md`](docs/development-setup.md#web-dashboard-development).
+- ✅ Expand the dashboard with interactive controls for queueing library jobs now that the write APIs are available. See [`web/dashboard`](web/dashboard).
 
 ### Up Next
-- [ ] Expand the dashboard with interactive controls once write APIs are stabilized (Owner: UI/UX).
 - [ ] Implement role-based access controls with per-application API key generation, labeling, and rotation workflows (Owner: Platform).
 - [ ] Integrate prioritized download client failover with health-aware routing (Owner: Integrations).
 - [ ] Publish Helm charts and Terraform modules for production-grade deployments (Owner: DevOps).
