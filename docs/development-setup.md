@@ -3,7 +3,7 @@
 This guide helps contributors quickly bootstrap a local arrgo environment for experimentation and feature work.
 
 ## Prerequisites
-- **Go 1.22+** installed and added to your `PATH`.
+- **Go 1.24+** installed and added to your `PATH` (the module is pinned to Go 1.24.3).
 - **Node.js 18+ and npm** for building and running the web dashboard (`web/dashboard`).
 - **Docker** and **Docker Compose v2** for running the distributed stack.
 - **Make** (optional) for running common automation commands when they become available.
