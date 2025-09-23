@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DataPanel } from "../components/DataPanel";
 import { StatusPill } from "../components/StatusPill";
 import { useApiData } from "../hooks/useApiData";
@@ -83,6 +83,52 @@ type WorkerStats = {
   pools: BreakdownEntry[];
 };
 
+type SelectOption = {
+  value: string;
+  label: string;
+};
+
+function normalize(value?: string, fallback = "unknown"): string {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  return trimmed.toLowerCase();
+}
+
+function buildOptions(
+  values: Array<string | undefined>,
+  fallbackLabel = "Unknown",
+  fallbackValue = "unknown"
+): SelectOption[] {
+  const map = new Map<string, string>();
+  for (const raw of values) {
+    const trimmed = raw?.trim();
+    if (!trimmed) {
+      if (!map.has(fallbackValue)) {
+        map.set(fallbackValue, fallbackLabel);
+      }
+      continue;
+    }
+    const normalized = trimmed.toLowerCase();
+    if (!map.has(normalized)) {
+      map.set(normalized, trimmed);
+    }
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([value, label]) => ({ value, label }));
+}
+
+function optionLabel(
+  options: SelectOption[],
+  value: string,
+  fallback: string
+): string {
+  const match = options.find((option) => option.value === value);
+  return match ? match.label : fallback;
+}
+
 function buildLibraryStats(data?: LibraryEntity[]): LibraryStats {
   const entities = data ?? [];
   const counts = new Map<string, number>();
@@ -134,6 +180,11 @@ export default function DashboardPage() {
   const jobs = useApiData(fetchJobs);
   const workers = useApiData(fetchWorkers);
 
+  const [libraryTypeFilter, setLibraryTypeFilter] = useState("all");
+  const [jobStateFilter, setJobStateFilter] = useState("all");
+  const [workerPoolFilter, setWorkerPoolFilter] = useState("all");
+  const [workerStatusFilter, setWorkerStatusFilter] = useState("all");
+
   const libraryStats = useMemo(() => buildLibraryStats(library.data), [
     library.data
   ]);
@@ -141,6 +192,160 @@ export default function DashboardPage() {
   const workerStats = useMemo(() => buildWorkerStats(workers.data), [
     workers.data
   ]);
+
+  const libraryTypeOptions = useMemo(
+    () =>
+      buildOptions(
+        (library.data ?? []).map((entity) => entity.entityType),
+        "Unknown",
+        "unknown"
+      ),
+    [library.data]
+  );
+  const jobStateOptions = useMemo(
+    () =>
+      buildOptions(
+        (jobs.data ?? []).map((job) => job.state),
+        "Unknown state",
+        "unknown"
+      ),
+    [jobs.data]
+  );
+  const workerPoolOptions = useMemo(
+    () =>
+      buildOptions(
+        (workers.data ?? []).map((worker) => worker.pool),
+        "Unassigned",
+        "unassigned"
+      ),
+    [workers.data]
+  );
+  const workerStatusOptions = useMemo(
+    () =>
+      buildOptions(
+        (workers.data ?? []).map((worker) => worker.status),
+        "Unknown status",
+        "unknown"
+      ),
+    [workers.data]
+  );
+
+  useEffect(() => {
+    if (
+      libraryTypeFilter !== "all" &&
+      !libraryTypeOptions.some((option) => option.value === libraryTypeFilter)
+    ) {
+      setLibraryTypeFilter("all");
+    }
+  }, [libraryTypeFilter, libraryTypeOptions]);
+
+  useEffect(() => {
+    if (
+      jobStateFilter !== "all" &&
+      !jobStateOptions.some((option) => option.value === jobStateFilter)
+    ) {
+      setJobStateFilter("all");
+    }
+  }, [jobStateFilter, jobStateOptions]);
+
+  useEffect(() => {
+    if (
+      workerPoolFilter !== "all" &&
+      !workerPoolOptions.some((option) => option.value === workerPoolFilter)
+    ) {
+      setWorkerPoolFilter("all");
+    }
+  }, [workerPoolFilter, workerPoolOptions]);
+
+  useEffect(() => {
+    if (
+      workerStatusFilter !== "all" &&
+      !workerStatusOptions.some((option) => option.value === workerStatusFilter)
+    ) {
+      setWorkerStatusFilter("all");
+    }
+  }, [workerStatusFilter, workerStatusOptions]);
+
+  const visibleLibrary = useMemo(() => {
+    const entities = library.data ?? [];
+    if (libraryTypeFilter === "all") {
+      return entities;
+    }
+    return entities.filter(
+      (entity) => normalize(entity.entityType) === libraryTypeFilter
+    );
+  }, [library.data, libraryTypeFilter]);
+
+  const visibleJobs = useMemo(() => {
+    const items = jobs.data ?? [];
+    if (jobStateFilter === "all") {
+      return items;
+    }
+    return items.filter((job) => normalize(job.state) === jobStateFilter);
+  }, [jobs.data, jobStateFilter]);
+
+  const visibleWorkers = useMemo(() => {
+    const nodes = workers.data ?? [];
+    return nodes.filter((worker) => {
+      if (
+        workerPoolFilter !== "all" &&
+        normalize(worker.pool, "unassigned") !== workerPoolFilter
+      ) {
+        return false;
+      }
+      if (
+        workerStatusFilter !== "all" &&
+        normalize(worker.status) !== workerStatusFilter
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [workers.data, workerPoolFilter, workerStatusFilter]);
+
+  const libraryFooter = libraryStats.total
+    ? `Showing ${Math.min(visibleLibrary.length, 5)} of ${visibleLibrary.length} ${
+        libraryTypeFilter === "all" ? "entities" : "matches"
+      } (${libraryStats.total} total)`
+    : undefined;
+  const jobFooter = jobStats.total
+    ? `Showing ${Math.min(visibleJobs.length, 8)} of ${visibleJobs.length} ${
+        jobStateFilter === "all" ? "jobs" : "matches"
+      } (${jobStats.total} total)`
+    : undefined;
+  const workerFooter = workerStats.total
+    ? `Showing ${Math.min(visibleWorkers.length, 8)} of ${visibleWorkers.length} ${
+        workerPoolFilter === "all" && workerStatusFilter === "all"
+          ? "workers"
+          : "matches"
+      } (${workerStats.total} total)`
+    : undefined;
+
+  const selectedLibraryLabel =
+    libraryTypeFilter === "all"
+      ? "All types"
+      : optionLabel(libraryTypeOptions, libraryTypeFilter, "Selected type");
+  const selectedJobLabel =
+    jobStateFilter === "all"
+      ? "All states"
+      : optionLabel(jobStateOptions, jobStateFilter, "Selected state");
+  const selectedPoolLabel =
+    workerPoolFilter === "all"
+      ? "All pools"
+      : optionLabel(workerPoolOptions, workerPoolFilter, "Selected pool");
+  const selectedStatusLabel =
+    workerStatusFilter === "all"
+      ? "All statuses"
+      : optionLabel(workerStatusOptions, workerStatusFilter, "Selected status");
+  const workerFiltersActive =
+    workerPoolFilter !== "all" || workerStatusFilter !== "all";
+  const workerFilterDescription =
+    [
+      workerStatusFilter !== "all" ? selectedStatusLabel : null,
+      workerPoolFilter !== "all" ? selectedPoolLabel : null
+    ]
+      .filter(Boolean)
+      .join(" · ") || "Selected filters";
 
   return (
     <main className={styles.main}>
@@ -159,37 +364,88 @@ export default function DashboardPage() {
           loading={library.loading}
           error={library.error}
           onRetry={library.refresh}
-          footer={
-            libraryStats.total
-              ? `Tracking ${libraryStats.total} entities`
-              : undefined
+          actions={
+            libraryStats.total ? (
+              <div className={styles.panelControls}>
+                <div className={styles.controlGroup}>
+                  <label className={styles.controlLabel} htmlFor="library-type-filter">
+                    Entity type
+                  </label>
+                  <select
+                    id="library-type-filter"
+                    className={styles.controlSelect}
+                    value={libraryTypeFilter}
+                    onChange={(event) => setLibraryTypeFilter(event.target.value)}
+                  >
+                    <option value="all">All types</option>
+                    {libraryTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : null
           }
+          footer={libraryFooter}
         >
           {libraryStats.total ? (
-            <>
-              <div className={styles.metricsRow}>
-                <div className={styles.metricCard}>
-                  <span className={styles.metricValue}>{libraryStats.total}</span>
-                  <span className={styles.metricLabel}>Total entities</span>
-                </div>
-                {libraryStats.breakdown.map(([type, count]) => (
-                  <div key={type} className={styles.metricCard}>
-                    <span className={styles.metricValue}>{count}</span>
-                    <span className={styles.metricLabel}>{type}</span>
-                  </div>
-                ))}
-              </div>
-              <ul className={styles.entityList}>
-                {(library.data ?? []).slice(0, 5).map((entity) => (
-                  <li key={entity.id} className={styles.entityItem}>
-                    <span className={styles.entityTitle}>
-                      {entity.title || entity.id}
+            visibleLibrary.length ? (
+              <>
+                <div className={styles.metricsRow}>
+                  <div
+                    className={`${styles.metricCard} ${
+                      libraryTypeFilter !== "all" ? styles.metricCardEmphasis : ""
+                    }`}
+                  >
+                    <span className={styles.metricValue}>{visibleLibrary.length}</span>
+                    <span className={styles.metricLabel}>
+                      {libraryTypeFilter === "all"
+                        ? "Total entities"
+                        : `Filtered · ${selectedLibraryLabel}`}
                     </span>
-                    <span className={styles.entityType}>{entity.entityType}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
+                  </div>
+                  {libraryTypeFilter !== "all" ? (
+                    <div className={styles.metricCard}>
+                      <span className={styles.metricValue}>{libraryStats.total}</span>
+                      <span className={styles.metricLabel}>Cluster total</span>
+                    </div>
+                  ) : null}
+                  {libraryStats.breakdown.map(([type, count]) => {
+                    const isActive =
+                      libraryTypeFilter !== "all" &&
+                      normalize(type) === libraryTypeFilter;
+                    return (
+                      <div
+                        key={type}
+                        className={`${styles.metricCard} ${
+                          isActive ? styles.metricCardActive : ""
+                        }`}
+                      >
+                        <span className={styles.metricValue}>{count}</span>
+                        <span className={styles.metricLabel}>{type}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <ul className={styles.entityList}>
+                  {visibleLibrary.slice(0, 5).map((entity) => (
+                    <li key={entity.id} className={styles.entityItem}>
+                      <span className={styles.entityTitle}>
+                        {entity.title || entity.id}
+                      </span>
+                      <span className={styles.entityType}>{entity.entityType}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className={styles.emptyState}>
+                No entities match the selected filter yet. Adjust the filters to
+                explore other media types.
+              </p>
+            )
           ) : (
             <p className={styles.emptyState}>
               No entities have been indexed yet. Once ingestion runs you&apos;ll see
@@ -203,61 +459,116 @@ export default function DashboardPage() {
           loading={jobs.loading}
           error={jobs.error}
           onRetry={jobs.refresh}
-          footer={
-            jobStats.total
-              ? `Showing ${Math.min(jobStats.total, 8)} of ${jobStats.total} jobs`
-              : undefined
+          actions={
+            jobStats.total ? (
+              <div className={styles.panelControls}>
+                <div className={styles.controlGroup}>
+                  <label className={styles.controlLabel} htmlFor="job-state-filter">
+                    Job state
+                  </label>
+                  <select
+                    id="job-state-filter"
+                    className={styles.controlSelect}
+                    value={jobStateFilter}
+                    onChange={(event) => setJobStateFilter(event.target.value)}
+                  >
+                    <option value="all">All states</option>
+                    {jobStateOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : null
           }
+          footer={jobFooter}
         >
           {jobStats.total ? (
-            <>
-              <div className={styles.metricsRow}>
-                {jobStats.counts.map(([state, count]) => (
-                  <div key={state} className={styles.metricCard}>
-                    <span className={styles.metricValue}>{count}</span>
-                    <span className={styles.metricLabel}>{state}</span>
+            visibleJobs.length ? (
+              <>
+                <div className={styles.metricsRow}>
+                  <div
+                    className={`${styles.metricCard} ${
+                      jobStateFilter !== "all" ? styles.metricCardEmphasis : ""
+                    }`}
+                  >
+                    <span className={styles.metricValue}>{visibleJobs.length}</span>
+                    <span className={styles.metricLabel}>
+                      {jobStateFilter === "all"
+                        ? "Total jobs"
+                        : `Filtered · ${selectedJobLabel}`}
+                    </span>
                   </div>
-                ))}
-              </div>
-              <div className={styles.tableWrapper}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th scope="col">Job</th>
-                      <th scope="col">Target</th>
-                      <th scope="col">State</th>
-                      <th scope="col">Submitted</th>
-                      <th scope="col">Attempt</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(jobs.data ?? []).slice(0, 8).map((job) => (
-                      <tr key={job.id}>
-                        <td>
-                          <div className={styles.jobDetails}>
-                            <span className={`${styles.monospace}`}>
-                              {job.jobType}
-                            </span>
-                            {job.payloadURI ? (
-                              <span className={styles.smallText}>{job.payloadURI}</span>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className={styles.monospace}>{job.targetID}</td>
-                        <td>
-                          <StatusPill
-                            label={job.state || "unknown"}
-                            tone={jobTone(job.state)}
-                          />
-                        </td>
-                        <td>{formatTimestamp(job.submittedAt)}</td>
-                        <td>{job.attempt}</td>
+                  {jobStateFilter !== "all" ? (
+                    <div className={styles.metricCard}>
+                      <span className={styles.metricValue}>{jobStats.total}</span>
+                      <span className={styles.metricLabel}>Cluster total</span>
+                    </div>
+                  ) : null}
+                  {jobStats.counts.map(([state, count]) => {
+                    const isActive =
+                      jobStateFilter !== "all" &&
+                      normalize(state) === jobStateFilter;
+                    return (
+                      <div
+                        key={state}
+                        className={`${styles.metricCard} ${
+                          isActive ? styles.metricCardActive : ""
+                        }`}
+                      >
+                        <span className={styles.metricValue}>{count}</span>
+                        <span className={styles.metricLabel}>{state}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className={styles.tableWrapper}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th scope="col">Job</th>
+                        <th scope="col">Target</th>
+                        <th scope="col">State</th>
+                        <th scope="col">Submitted</th>
+                        <th scope="col">Attempt</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
+                    </thead>
+                    <tbody>
+                      {visibleJobs.slice(0, 8).map((job) => (
+                        <tr key={job.id}>
+                          <td>
+                            <div className={styles.jobDetails}>
+                              <span className={`${styles.monospace}`}>
+                                {job.jobType}
+                              </span>
+                              {job.payloadURI ? (
+                                <span className={styles.smallText}>{job.payloadURI}</span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className={styles.monospace}>{job.targetID}</td>
+                          <td>
+                            <StatusPill
+                              label={job.state || "unknown"}
+                              tone={jobTone(job.state)}
+                            />
+                          </td>
+                          <td>{formatTimestamp(job.submittedAt)}</td>
+                          <td>{job.attempt}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className={styles.emptyState}>
+                No jobs match the selected state yet. Try a different filter to
+                inspect other workloads.
+              </p>
+            )
           ) : (
             <p className={styles.emptyState}>
               The job queue is empty. Schedule a library scan or import to see
@@ -271,87 +582,163 @@ export default function DashboardPage() {
           loading={workers.loading}
           error={workers.error}
           onRetry={workers.refresh}
-          footer={
-            workerStats.total
-              ? `Workers across ${workerStats.pools.length} pool${
-                  workerStats.pools.length === 1 ? "" : "s"
-                }`
-              : undefined
+          actions={
+            workerStats.total ? (
+              <div className={styles.panelControls}>
+                <div className={styles.controlGroup}>
+                  <label className={styles.controlLabel} htmlFor="worker-pool-filter">
+                    Worker pool
+                  </label>
+                  <select
+                    id="worker-pool-filter"
+                    className={styles.controlSelect}
+                    value={workerPoolFilter}
+                    onChange={(event) => setWorkerPoolFilter(event.target.value)}
+                  >
+                    <option value="all">All pools</option>
+                    {workerPoolOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.controlGroup}>
+                  <label className={styles.controlLabel} htmlFor="worker-status-filter">
+                    Status
+                  </label>
+                  <select
+                    id="worker-status-filter"
+                    className={styles.controlSelect}
+                    value={workerStatusFilter}
+                    onChange={(event) => setWorkerStatusFilter(event.target.value)}
+                  >
+                    <option value="all">All statuses</option>
+                    {workerStatusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : null
           }
+          footer={workerFooter}
         >
           {workerStats.total ? (
-            <>
-              <div className={styles.metricsRow}>
-                <div className={styles.metricCard}>
-                  <span className={styles.metricValue}>{workerStats.total}</span>
-                  <span className={styles.metricLabel}>Total</span>
-                </div>
-                <div className={styles.metricCard}>
-                  <span className={styles.metricValue}>{workerStats.healthy}</span>
-                  <span className={styles.metricLabel}>Healthy</span>
-                </div>
-                <div className={styles.metricCard}>
-                  <span className={styles.metricValue}>{workerStats.stale}</span>
-                  <span className={styles.metricLabel}>Stale</span>
-                </div>
-              </div>
-              {workerStats.pools.length ? (
-                <div className={styles.badgeGroup}>
-                  {workerStats.pools.map(([pool, count]) => (
-                    <span
-                      key={pool}
-                      className={`${styles.poolBadge} ${styles.monospace}`}
-                      title={`${count} worker${count === 1 ? "" : "s"}`}
-                    >
-                      {pool} · {count}
+            visibleWorkers.length ? (
+              <>
+                <div className={styles.metricsRow}>
+                  <div
+                    className={`${styles.metricCard} ${
+                      workerFiltersActive ? styles.metricCardEmphasis : ""
+                    }`}
+                  >
+                    <span className={styles.metricValue}>{visibleWorkers.length}</span>
+                    <span className={styles.metricLabel}>
+                      {workerFiltersActive
+                        ? `Filtered · ${workerFilterDescription}`
+                        : "Total workers"}
                     </span>
-                  ))}
+                  </div>
+                  {workerFiltersActive ? (
+                    <div className={styles.metricCard}>
+                      <span className={styles.metricValue}>{workerStats.total}</span>
+                      <span className={styles.metricLabel}>Cluster total</span>
+                    </div>
+                  ) : null}
+                  <div
+                    className={`${styles.metricCard} ${
+                      workerStatusFilter === "healthy"
+                        ? styles.metricCardActive
+                        : ""
+                    }`}
+                  >
+                    <span className={styles.metricValue}>{workerStats.healthy}</span>
+                    <span className={styles.metricLabel}>Healthy</span>
+                  </div>
+                  <div
+                    className={`${styles.metricCard} ${
+                      workerStatusFilter === "stale"
+                        ? styles.metricCardActive
+                        : ""
+                    }`}
+                  >
+                    <span className={styles.metricValue}>{workerStats.stale}</span>
+                    <span className={styles.metricLabel}>Stale</span>
+                  </div>
                 </div>
-              ) : null}
-              <div className={styles.tableWrapper}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th scope="col">Worker</th>
-                      <th scope="col">Pool</th>
-                      <th scope="col">Status</th>
-                      <th scope="col">Active jobs</th>
-                      <th scope="col">Last heartbeat</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(workers.data ?? []).slice(0, 8).map((worker) => (
-                      <tr key={worker.id}>
-                        <td>
-                          <div className={styles.jobDetails}>
-                            <span
-                              className={`${styles.monospace}`}
-                              title={worker.id}
-                            >
-                              {shortenIdentifier(worker.id)}
-                            </span>
-                            <span className={styles.smallText}>{worker.version}</span>
-                          </div>
-                        </td>
-                        <td>{worker.pool}</td>
-                        <td>
-                          <StatusPill
-                            label={worker.status || "unknown"}
-                            tone={workerTone(worker.status)}
-                          />
-                        </td>
-                        <td>{worker.activeJobs}</td>
-                        <td>
-                          <span className={styles.smallText}>
-                            {formatTimestamp(worker.lastHeartbeatAt)}
-                          </span>
-                        </td>
+                {workerStats.pools.length ? (
+                  <div className={styles.badgeGroup}>
+                    {workerStats.pools.map(([pool, count]) => {
+                      const isActive =
+                        workerPoolFilter !== "all" &&
+                        normalize(pool, "unassigned") === workerPoolFilter;
+                      return (
+                        <span
+                          key={pool}
+                          className={`${styles.poolBadge} ${styles.monospace} ${
+                            isActive ? styles.poolBadgeActive : ""
+                          }`}
+                          title={`${count} worker${count === 1 ? "" : "s"}`}
+                        >
+                          {pool} · {count}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                <div className={styles.tableWrapper}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th scope="col">Worker</th>
+                        <th scope="col">Pool</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Active jobs</th>
+                        <th scope="col">Last heartbeat</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
+                    </thead>
+                    <tbody>
+                      {visibleWorkers.slice(0, 8).map((worker) => (
+                        <tr key={worker.id}>
+                          <td>
+                            <div className={styles.jobDetails}>
+                              <span
+                                className={`${styles.monospace}`}
+                                title={worker.id}
+                              >
+                                {shortenIdentifier(worker.id)}
+                              </span>
+                              <span className={styles.smallText}>{worker.version}</span>
+                            </div>
+                          </td>
+                          <td>{worker.pool}</td>
+                          <td>
+                            <StatusPill
+                              label={worker.status || "unknown"}
+                              tone={workerTone(worker.status)}
+                            />
+                          </td>
+                          <td>{worker.activeJobs}</td>
+                          <td>
+                            <span className={styles.smallText}>
+                              {formatTimestamp(worker.lastHeartbeatAt)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className={styles.emptyState}>
+                No workers match the current filters. Broaden the filters to view
+                other pools or statuses.
+              </p>
+            )
           ) : (
             <p className={styles.emptyState}>
               No workers are currently registered. Bring a worker online or send a
