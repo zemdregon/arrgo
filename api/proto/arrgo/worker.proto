@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package arrgo.api.v1;
+
+option go_package = "github.com/arrgo/arrgo/internal/api/workerpb";
+
+message WorkerRegistrationRequest {
+  string pool = 1;
+  repeated string capabilities = 2;
+  string endpoint = 3;
+  string version = 4;
+}
+
+message WorkerAssignment {
+  string stream = 1;
+  string consumer_group = 2;
+  int64 heartbeat_interval_seconds = 3;
+}
+
+message WorkerDescriptor {
+  string id = 1;
+  string pool = 2;
+  repeated string capabilities = 3;
+  string endpoint = 4;
+  string version = 5;
+  string status = 6;
+  string registered_at = 7;
+  string last_heartbeat_at = 8;
+  int32 active_jobs = 9;
+}
+
+message WorkerRegistrationResponse {
+  WorkerDescriptor worker = 1;
+  WorkerAssignment assignment = 2;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  int32 active_jobs = 2;
+}
+
+message HeartbeatResponse {
+  WorkerDescriptor worker = 1;
+  bool stale = 2;
+}
+
+service WorkerService {
+  rpc RegisterWorker(WorkerRegistrationRequest) returns (WorkerRegistrationResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
