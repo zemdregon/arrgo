@@ -1,0 +1,113 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ARRGO_DB_USER:-arrgo}
+      POSTGRES_PASSWORD: ${ARRGO_DB_PASSWORD:-arrgo}
+      POSTGRES_DB: ${ARRGO_DB_NAME:-arrgo}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - arrgo
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - arrgo
+
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      cluster.name: arrgo-dev
+      network.host: 0.0.0.0
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD", "curl", "-s", "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=1s"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - arrgo
+
+  arrgo-master:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: ${ARRGO_IMAGE:-arrgo:dev}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    environment:
+      ARRGO_ROLE: master
+      ARRGO_LOG_LEVEL: info
+      ARRGO_DATABASE_URL: >-
+        postgres://${ARRGO_DB_USER:-arrgo}:${ARRGO_DB_PASSWORD:-arrgo}@postgres:5432/${ARRGO_DB_NAME:-arrgo}?sslmode=disable
+      ARRGO_REDIS_ADDR: redis:6379
+      ARRGO_OPENSEARCH_URL: http://opensearch:9200
+    ports:
+      - "8080:8080"
+    command: ["/bin/sh", "-c", "echo 'arrgo master placeholder running'; sleep infinity"]
+    networks:
+      - arrgo
+
+  arrgo-worker:
+    image: ${ARRGO_IMAGE:-arrgo:dev}
+    restart: unless-stopped
+    depends_on:
+      arrgo-master:
+        condition: service_started
+    environment:
+      ARRGO_ROLE: worker
+      ARRGO_LOG_LEVEL: info
+      ARRGO_MASTER_URL: http://arrgo-master:8080
+      ARRGO_REDIS_ADDR: redis:6379
+    command: ["/bin/sh", "-c", "echo 'arrgo worker placeholder running'; sleep infinity"]
+    networks:
+      - arrgo
+
+volumes:
+  postgres-data:
+  redis-data:
+  opensearch-data:
+
+networks:
+  arrgo:
+    driver: bridge
