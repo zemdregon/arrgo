@@ -145,22 +145,22 @@ func (r *PostgresRepository) GetWorker(ctx context.Context, id string) (Worker, 
 		worker  Worker
 	)
 	worker.ID = id
-        if err := row.Scan(
-                &worker.ID,
-                &worker.Pool,
-                &worker.Endpoint,
-                &worker.Version,
-                &payload,
-                &worker.Status,
-                &worker.RegisteredAt,
-                &worker.LastHeartbeatAt,
-                &worker.ActiveJobs,
-        ); err != nil {
-                if errors.Is(err, pgx.ErrNoRows) {
-                        return Worker{}, ErrUnknownWorker
-                }
-                return Worker{}, fmt.Errorf("worker: query worker: %w", err)
-        }
+	if err := row.Scan(
+		&worker.ID,
+		&worker.Pool,
+		&worker.Endpoint,
+		&worker.Version,
+		&payload,
+		&worker.Status,
+		&worker.RegisteredAt,
+		&worker.LastHeartbeatAt,
+		&worker.ActiveJobs,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Worker{}, ErrUnknownWorker
+		}
+		return Worker{}, fmt.Errorf("worker: query worker: %w", err)
+	}
 	if len(payload) > 0 {
 		if err := json.Unmarshal(payload, &worker.Capabilities); err != nil {
 			return Worker{}, fmt.Errorf("worker: decode capabilities: %w", err)
