@@ -95,6 +95,40 @@ type EntityOption = {
   entityType: string;
 };
 
+type TodoItem = {
+  id: string;
+  label: string;
+  completed: boolean;
+  createdAt: string;
+};
+
+const TODO_STORAGE_KEY = "arrgo.dashboard.todos";
+
+const DEFAULT_TODO_SEEDS: ReadonlyArray<TodoItem> = [
+  {
+    id: "seed-review-failures",
+    label: "Review overnight job failures and retry stuck imports",
+    completed: false,
+    createdAt: "2024-01-15T09:00:00.000Z"
+  },
+  {
+    id: "seed-sync-workers",
+    label: "Sync worker pool configuration with new transcode nodes",
+    completed: false,
+    createdAt: "2024-01-16T14:30:00.000Z"
+  },
+  {
+    id: "seed-update-playbooks",
+    label: "Update runbooks with the latest queue drain benchmarks",
+    completed: false,
+    createdAt: "2024-01-17T17:45:00.000Z"
+  }
+];
+
+function createDefaultTodos(): TodoItem[] {
+  return DEFAULT_TODO_SEEDS.map((seed) => ({ ...seed }));
+}
+
 const JOB_TYPE_OPTIONS: SelectOption[] = [
   { value: "scan", label: "Scan" },
   { value: "import", label: "Import" }
@@ -187,6 +221,59 @@ function buildWorkerStats(data?: WorkerSummary[]): WorkerStats {
   };
 }
 
+function generateTodoId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `todo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createTodoItem(label: string): TodoItem {
+  return {
+    id: generateTodoId(),
+    label,
+    completed: false,
+    createdAt: new Date().toISOString()
+  };
+}
+
+function normalizeStoredTodo(entry: unknown): TodoItem | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+  const raw = entry as Partial<Record<keyof TodoItem, unknown>>;
+  const labelValue = typeof raw.label === "string" ? raw.label.trim() : "";
+  if (!labelValue) {
+    return null;
+  }
+  const idValue =
+    typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : generateTodoId();
+  const createdAtValue =
+    typeof raw.createdAt === "string" && raw.createdAt.trim()
+      ? raw.createdAt
+      : new Date().toISOString();
+  return {
+    id: idValue,
+    label: labelValue,
+    completed: Boolean(raw.completed),
+    createdAt: createdAtValue
+  };
+}
+
+function parseStoredTodos(input: unknown): TodoItem[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  const normalized: TodoItem[] = [];
+  for (const entry of input) {
+    const todo = normalizeStoredTodo(entry);
+    if (todo) {
+      normalized.push(todo);
+    }
+  }
+  return normalized;
+}
+
 export default function DashboardPage() {
   const library = useApiData(fetchEntities);
   const jobs = useApiData(fetchJobs);
@@ -206,6 +293,9 @@ export default function DashboardPage() {
   const [jobFeedback, setJobFeedback] = useState<
     { kind: "success" | "error"; message: string } | null
   >(null);
+  const [todoItems, setTodoItems] = useState<TodoItem[]>(() => createDefaultTodos());
+  const [todoHydrated, setTodoHydrated] = useState(false);
+  const [todoDraft, setTodoDraft] = useState("");
 
   const libraryStats = useMemo(() => buildLibraryStats(library.data), [
     library.data
@@ -313,6 +403,44 @@ export default function DashboardPage() {
     setJobTargetSelection(libraryEntityOptions[0].value);
   }, [jobTargetSelection, libraryEntityOptions]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const stored = window.localStorage.getItem(TODO_STORAGE_KEY);
+      if (!stored) {
+        setTodoHydrated(true);
+        return;
+      }
+      const parsed = JSON.parse(stored) as unknown;
+      const normalized = parseStoredTodos(parsed);
+      setTodoItems(normalized);
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Failed to load dashboard to-do list from storage:", error);
+      }
+    } finally {
+      setTodoHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!todoHydrated || typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        TODO_STORAGE_KEY,
+        JSON.stringify(todoItems)
+      );
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Failed to persist dashboard to-do list:", error);
+      }
+    }
+  }, [todoItems, todoHydrated]);
+
   const visibleLibrary = useMemo(() => {
     const entities = library.data ?? [];
     if (libraryTypeFilter === "all") {
@@ -350,6 +478,38 @@ export default function DashboardPage() {
     });
   }, [workers.data, workerPoolFilter, workerStatusFilter]);
 
+  const todoMetrics = useMemo(() => {
+    const total = todoItems.length;
+    let completed = 0;
+    for (const item of todoItems) {
+      if (item.completed) {
+        completed += 1;
+      }
+    }
+    return {
+      total,
+      completed,
+      active: total - completed
+    };
+  }, [todoItems]);
+
+  const sortedTodos = useMemo(() => {
+    const open: TodoItem[] = [];
+    const done: TodoItem[] = [];
+    for (const item of todoItems) {
+      if (item.completed) {
+        done.push(item);
+      } else {
+        open.push(item);
+      }
+    }
+    const sortByCreatedAtDesc = (a: TodoItem, b: TodoItem) =>
+      (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+    open.sort(sortByCreatedAtDesc);
+    done.sort(sortByCreatedAtDesc);
+    return [...open, ...done];
+  }, [todoItems]);
+
   const jobSubmitDisabled =
     !libraryEntityOptions.length || !jobTargetSelection || jobSubmitting;
 
@@ -370,6 +530,11 @@ export default function DashboardPage() {
           : "matches"
       } (${workerStats.total} total)`
     : undefined;
+  const todoFooter = todoMetrics.total
+    ? `${todoMetrics.completed} of ${todoMetrics.total} completed`
+    : undefined;
+  const todoInputDisabled = !todoDraft.trim();
+  const hasCompletedTodos = todoMetrics.completed > 0;
 
   const handleTriggerJob = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -417,6 +582,38 @@ export default function DashboardPage() {
     }
   };
 
+  const handleAddTodo = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const label = todoDraft.trim();
+    if (!label) {
+      setTodoDraft("");
+      return;
+    }
+    setTodoItems((items) => [createTodoItem(label), ...items]);
+    setTodoDraft("");
+  };
+
+  const handleToggleTodo = (id: string) => {
+    setTodoItems((items) =>
+      items.map((item) =>
+        item.id === id ? { ...item, completed: !item.completed } : item
+      )
+    );
+  };
+
+  const handleRemoveTodo = (id: string) => {
+    setTodoItems((items) => items.filter((item) => item.id !== id));
+  };
+
+  const handleClearCompletedTodos = () => {
+    setTodoItems((items) => items.filter((item) => !item.completed));
+  };
+
+  const handleResetTodos = () => {
+    setTodoItems(createDefaultTodos());
+    setTodoDraft("");
+  };
+
   const selectedLibraryLabel =
     libraryTypeFilter === "all"
       ? "All types"
@@ -454,6 +651,130 @@ export default function DashboardPage() {
         </p>
       </header>
       <div className={styles.grid}>
+        <DataPanel
+          title="Operations to-do"
+          description="Track operational follow-ups and rollout tasks for your arrgo cluster."
+          actions={
+            <div className={styles.todoActions}>
+              <button
+                type="button"
+                className={styles.todoActionButton}
+                onClick={handleClearCompletedTodos}
+                disabled={!hasCompletedTodos}
+              >
+                Clear completed
+              </button>
+              <button
+                type="button"
+                className={styles.todoActionButton}
+                onClick={handleResetTodos}
+              >
+                Reset list
+              </button>
+            </div>
+          }
+          footer={todoFooter}
+        >
+          <form
+            className={`${styles.panelControls} ${styles.todoForm}`}
+            onSubmit={handleAddTodo}
+          >
+            <div className={`${styles.controlGroup} ${styles.todoInputGroup}`}>
+              <label className={styles.controlLabel} htmlFor="todo-input">
+                Add a task
+              </label>
+              <input
+                id="todo-input"
+                className={styles.controlInput}
+                type="text"
+                value={todoDraft}
+                onChange={(event) => setTodoDraft(event.target.value)}
+                placeholder="Record the next operational follow-up…"
+                autoComplete="off"
+              />
+            </div>
+            <button
+              type="submit"
+              className={styles.primaryButton}
+              disabled={todoInputDisabled}
+            >
+              Add task
+            </button>
+          </form>
+          {todoMetrics.total ? (
+            <>
+              <div className={styles.metricsRow}>
+                <div
+                  className={`${styles.metricCard} ${
+                    todoMetrics.active > 0 ? styles.metricCardEmphasis : ""
+                  }`}
+                >
+                  <span className={styles.metricValue}>{todoMetrics.active}</span>
+                  <span className={styles.metricLabel}>
+                    {todoMetrics.active === 1 ? "Active task" : "Active tasks"}
+                  </span>
+                </div>
+                <div className={styles.metricCard}>
+                  <span className={styles.metricValue}>{todoMetrics.completed}</span>
+                  <span className={styles.metricLabel}>
+                    {todoMetrics.completed === 1
+                      ? "Completed task"
+                      : "Completed tasks"}
+                  </span>
+                </div>
+                <div className={styles.metricCard}>
+                  <span className={styles.metricValue}>{todoMetrics.total}</span>
+                  <span className={styles.metricLabel}>
+                    {todoMetrics.total === 1 ? "Tracked task" : "Tracked tasks"}
+                  </span>
+                </div>
+              </div>
+              <ul className={styles.todoList}>
+                {sortedTodos.map((item) => (
+                  <li
+                    key={item.id}
+                    className={`${styles.todoItem} ${
+                      item.completed ? styles.todoItemCompleted : ""
+                    }`}
+                  >
+                    <div className={styles.todoItemHeader}>
+                      <label className={styles.todoLabel}>
+                        <input
+                          type="checkbox"
+                          className={styles.todoCheckbox}
+                          checked={item.completed}
+                          onChange={() => handleToggleTodo(item.id)}
+                        />
+                        <span
+                          className={`${styles.todoText} ${
+                            item.completed ? styles.todoTextCompleted : ""
+                          }`}
+                        >
+                          {item.label}
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        className={styles.todoRemoveButton}
+                        onClick={() => handleRemoveTodo(item.id)}
+                        aria-label={`Remove ${item.label}`}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <span className={styles.todoMeta}>
+                      Added {formatTimestamp(item.createdAt)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className={styles.emptyState}>
+              Capture follow-up actions to keep your rollout plan on track.
+            </p>
+          )}
+        </DataPanel>
         <DataPanel
           title="Library health"
           description="Snapshot of tracked media entities grouped by type."
