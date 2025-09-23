@@ -1,0 +1,57 @@
+# arrgo Development Setup
+
+This guide helps contributors quickly bootstrap a local arrgo environment for experimentation and feature work.
+
+## Prerequisites
+- **Go 1.22+** installed and added to your `PATH`.
+- **Docker** and **Docker Compose v2** for running the distributed stack.
+- **Make** (optional) for running common automation commands when they become available.
+- Access to a Unix-like shell (macOS, Linux, or WSL2 on Windows).
+
+## Repository Bootstrapping
+1. Clone the repository: `git clone https://github.com/<your-org>/arrgo.git`.
+2. Change into the project directory: `cd arrgo`.
+3. Ensure submodules are initialized if they are introduced in the future: `git submodule update --init --recursive`.
+
+## Configure Environment Variables
+Copy the example environment file to create local overrides:
+
+```bash
+cd deploy/compose
+cp .env.example .env
+```
+
+Adjust the values in `.env` for image tags, port mappings, and service credentials as needed. The defaults work for most local workflows.
+
+## Launch the Docker Compose Stack
+From the `deploy/compose` directory:
+
+```bash
+docker compose up --build
+```
+
+The command provisions PostgreSQL, Redis, OpenSearch, and arrgo master/worker containers with sensible defaults. To simulate a larger cluster, scale workers:
+
+```bash
+docker compose up --build --scale arrgo-worker=3
+```
+
+The stack uses named volumes so data survives container restarts. Use `docker compose down -v` to stop the stack and remove volumes when you need a clean slate.
+
+## Go Tooling
+- Run `go fmt ./...` to format Go sources.
+- Execute `go test ./...` before pushing changes.
+- Consider installing `golangci-lint` for advanced linting once configured for the repository.
+
+## Observability During Development
+- Access container logs with `docker compose logs -f <service>`.
+- When Prometheus/Grafana assets are introduced, expose their ports locally for dashboard access.
+- Use structured logging fields to correlate master and worker events.
+
+## Troubleshooting Tips
+- If ports collide with existing services, adjust them in `deploy/compose/*.yml` or override via `.env`.
+- Ensure Docker has sufficient CPU and memory assigned (at least 4 CPUs / 6 GB RAM recommended).
+- Remove stale volumes if migrations or schema changes fail: `docker volume prune`.
+
+## Next Steps
+With the environment running, begin iterating on arrgo services, write tests, and document findings in Architecture Decision Records (ADRs) when design decisions change the platform trajectory.
