@@ -1,0 +1,11 @@
+1. Get the arrgo master service URL by running these commands:
+  {{- if contains "LoadBalancer" .Values.master.service.type }}
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "arrgo.master.serviceName" . }} --template "{{`{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}`}}");
+  echo "Master endpoint: http://${SERVICE_IP}:{{ .Values.master.service.port }}"
+  {{- else if contains "ClusterIP" .Values.master.service.type }}
+  echo "Master endpoint is available inside the cluster at http://{{ include "arrgo.master.serviceName" . }}:{{ .Values.master.service.port }}"
+  {{- else }}
+  kubectl get svc --namespace {{ .Release.Namespace }} {{ include "arrgo.master.serviceName" . }}
+  {{- end }}
+2. Workers automatically discover the master URL from the generated secret. Update
+   `values.yaml` when deploying to external clusters or managed services.

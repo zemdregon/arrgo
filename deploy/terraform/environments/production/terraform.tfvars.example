@@ -1,0 +1,16 @@
+# Example configuration for the arrgo production environment module.
+# Copy to terraform.tfvars and replace placeholder values before applying.
+release_name        = "arrgo"
+namespace           = "media-automation"
+config_secret_name  = "arrgo-production-config"
+database_url        = "postgres://arrgo:REPLACE_ME@postgres.example.com:5432/arrgo?sslmode=require"
+redis_addr          = "redis.example.com:6379"
+opensearch_url      = "https://opensearch.example.com:9200"
+master_url          = "https://arrgo.example.com"
+log_level           = "info"
+image_repository    = "ghcr.io/example-org/arrgo"
+image_tag           = "v0.1.0"
+master_service_type = "LoadBalancer"
+worker_min_replicas = 3
+worker_max_replicas = 15
+worker_cpu_target   = 65
