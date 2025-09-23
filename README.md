@@ -56,10 +56,10 @@ Until the initial release is available, track the following tasks.
 - ✅ Expose the first iteration of the REST/gRPC APIs for library management and job orchestration. See [`docs/api-first-iteration.md`](docs/api-first-iteration.md).
 - ✅ Build CI pipelines for linting and automated testing. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 - ✅ Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups. See [`docs/migration-guidelines.md`](docs/migration-guidelines.md).
+- ✅ Design and document the observability baseline (metrics, tracing, logging dashboards). See [`docs/observability-baseline.md`](docs/observability-baseline.md).
 
 ### Up Next
-1. Design and document the observability baseline (metrics, tracing, logging dashboards).
-2. Author an ADR that captures the job queue selection and retry strategy.
+1. Author an ADR that captures the job queue selection and retry strategy.
 
 ### Docker Compose development stack
 
