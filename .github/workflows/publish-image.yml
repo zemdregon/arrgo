@@ -1,12 +1,7 @@
 name: Build and publish container image
 
 on:
-  push:
-    branches:
-      - main
-  release:
-    types:
-      - published
+  # Temporarily disable automatic execution while the publish workflow is paused.
   workflow_dispatch:
 
 permissions:
@@ -19,6 +14,7 @@ env:
 
 jobs:
   publish:
+    if: false
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
