@@ -48,6 +48,7 @@ Each component is provisioned as a dedicated Docker container. Infrastructure-as
 Until the initial release is available, track the following tasks.
 
 ### Completed
+- ✅ Harden metadata ingestion resilience with rate limit backoff, provider-specific cache TTLs, tracing, and failure metrics.
 - ✅ Automate scheduled library scans and media imports with cron-driven orchestration and audit fan-out. See [`docs/library-scheduling.md`](docs/library-scheduling.md).
 - ✅ Finalize the domain model for unified media entities (series, movies, artists, albums, tracks). See [`docs/domain-model.md`](docs/domain-model.md).
 - ✅ Stand up Docker Compose assets for Postgres, Redis, Elasticsearch/OpenSearch, master, and worker containers.
@@ -63,11 +64,6 @@ Until the initial release is available, track the following tasks.
 - ✅ Establish worker registration and heartbeat coordination across REST and gRPC surfaces. See [`docs/worker-coordination.md`](docs/worker-coordination.md).
 
 ### Up Next
-- [ ] **Harden metadata ingestion resilience** (Owner: Data Ingestion)
-  - Next steps:
-    - Introduce rate limit detection and exponential backoff for third-party provider requests.
-    - Expand Redis caching policies to cover provider-specific TTLs and negative cache entries.
-    - Capture tracing spans around external calls and surface aggregated failure metrics.
 - [ ] **Deliver the initial web dashboard for cluster visibility** (Owner: UI/UX)
   - Next steps:
     - Scaffold the web UI shell (e.g., Next.js) and connect it to the existing REST endpoints for read-only data.

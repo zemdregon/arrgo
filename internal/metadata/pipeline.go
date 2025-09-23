@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -9,24 +10,51 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // PipelineConfig configures a metadata ingestion pipeline instance.
 type PipelineConfig struct {
-	Cache      Cache
-	Providers  []Provider
-	DefaultTTL time.Duration
-	Logger     *slog.Logger
-	Clock      Clock
+	Cache            Cache
+	Providers        []Provider
+	DefaultTTL       time.Duration
+	Logger           *slog.Logger
+	Clock            Clock
+	MaxAttempts      int
+	BaseBackoff      time.Duration
+	MaxBackoff       time.Duration
+	NegativeCacheTTL time.Duration
+	ProviderTTLs     map[string]time.Duration
+	Metrics          *Metrics
+	Tracer           trace.Tracer
 }
 
 // Pipeline coordinates metadata ingestion across providers with Redis caching.
 type Pipeline struct {
-	cache      Cache
-	providers  []Provider
-	defaultTTL time.Duration
-	logger     *slog.Logger
-	clock      Clock
+	cache            Cache
+	providers        []Provider
+	defaultTTL       time.Duration
+	logger           *slog.Logger
+	clock            Clock
+	maxAttempts      int
+	baseBackoff      time.Duration
+	maxBackoff       time.Duration
+	negativeCacheTTL time.Duration
+	providerTTLs     map[string]time.Duration
+	metrics          *Metrics
+	tracer           trace.Tracer
+}
+
+type providerOutcome struct {
+	name     string
+	status   ProviderStatus
+	resp     ProviderResponse
+	err      error
+	duration time.Duration
+	attempts int
 }
 
 // Clock abstracts time retrieval for deterministic testing.
@@ -45,11 +73,18 @@ func NewPipeline(cfg PipelineConfig) (*Pipeline, error) {
 	}
 
 	p := &Pipeline{
-		cache:      cfg.Cache,
-		providers:  make([]Provider, 0, len(cfg.Providers)),
-		defaultTTL: cfg.DefaultTTL,
-		logger:     cfg.Logger,
-		clock:      cfg.Clock,
+		cache:            cfg.Cache,
+		providers:        make([]Provider, 0, len(cfg.Providers)),
+		defaultTTL:       cfg.DefaultTTL,
+		logger:           cfg.Logger,
+		clock:            cfg.Clock,
+		maxAttempts:      cfg.MaxAttempts,
+		baseBackoff:      cfg.BaseBackoff,
+		maxBackoff:       cfg.MaxBackoff,
+		negativeCacheTTL: cfg.NegativeCacheTTL,
+		providerTTLs:     make(map[string]time.Duration, len(cfg.ProviderTTLs)),
+		metrics:          cfg.Metrics,
+		tracer:           cfg.Tracer,
 	}
 
 	if p.defaultTTL <= 0 {
@@ -60,6 +95,30 @@ func NewPipeline(cfg PipelineConfig) (*Pipeline, error) {
 	}
 	if p.clock == nil {
 		p.clock = systemClock{}
+	}
+	if p.maxAttempts <= 0 {
+		p.maxAttempts = 3
+	}
+	if p.baseBackoff <= 0 {
+		p.baseBackoff = 500 * time.Millisecond
+	}
+	if p.maxBackoff <= 0 {
+		p.maxBackoff = 5 * time.Second
+	}
+	if p.negativeCacheTTL < 0 {
+		p.negativeCacheTTL = 0
+	}
+	if p.negativeCacheTTL == 0 {
+		p.negativeCacheTTL = 10 * time.Minute
+	}
+	if p.tracer == nil {
+		p.tracer = trace.NewNoopTracerProvider().Tracer("github.com/arrgo/arrgo/internal/metadata")
+	}
+
+	for name, ttl := range cfg.ProviderTTLs {
+		if ttl > 0 {
+			p.providerTTLs[strings.ToLower(name)] = ttl
+		}
 	}
 
 	for _, provider := range cfg.Providers {
@@ -115,7 +174,19 @@ func (p *Pipeline) Ingest(ctx context.Context, req Request) (Result, error) {
 			return Result{}, fmt.Errorf("metadata: cache fetch: %w", err)
 		}
 		if ok {
+			if cached.NotFound {
+				p.logger.Debug("metadata negative cache hit", "cacheKey", cacheKey, "entityType", req.EntityType, "entityID", req.EntityID)
+				return Result{
+					CacheHit: true,
+					CacheKey: cacheKey,
+					ProviderReports: []ProviderReport{{
+						Name:   "cache",
+						Status: ProviderStatusCached,
+					}},
+				}, ErrMetadataNotFound
+			}
 			p.logger.Debug("metadata cache hit", "cacheKey", cacheKey, "entityType", req.EntityType, "entityID", req.EntityID)
+			cached.NotFound = false
 			return Result{
 				Metadata: cached,
 				CacheHit: true,
@@ -130,14 +201,6 @@ func (p *Pipeline) Ingest(ctx context.Context, req Request) (Result, error) {
 	}
 
 	agg := newAggregator(req)
-
-	type providerOutcome struct {
-		name     string
-		status   ProviderStatus
-		resp     ProviderResponse
-		err      error
-		duration time.Duration
-	}
 
 	outcomes := make([]providerOutcome, 0, len(p.providers))
 	var wg sync.WaitGroup
@@ -167,27 +230,7 @@ func (p *Pipeline) Ingest(ctx context.Context, req Request) (Result, error) {
 		wg.Add(1)
 		go func(pr Provider) {
 			defer wg.Done()
-
-			start := time.Now()
-			resp, err := pr.Fetch(ctx, req)
-			duration := time.Since(start)
-
-			outcome := providerOutcome{
-				name:     pr.Name(),
-				duration: duration,
-			}
-
-			if err != nil {
-				outcome.status = ProviderStatusError
-				outcome.err = err
-			} else {
-				outcome.status = ProviderStatusFetched
-				if resp.RetrievedAt.IsZero() {
-					resp.RetrievedAt = p.clock.Now()
-				}
-				outcome.resp = resp
-			}
-
+			outcome := p.runProvider(ctx, pr, req)
 			mu.Lock()
 			outcomes = append(outcomes, outcome)
 			mu.Unlock()
@@ -211,9 +254,12 @@ func (p *Pipeline) Ingest(ctx context.Context, req Request) (Result, error) {
 			report.Priority = outcome.resp.Priority
 			used := agg.merge(outcome.resp, outcome.name)
 			report.Used = used
-			if outcome.resp.TTL > 0 {
-				if ttl == 0 || outcome.resp.TTL < ttl {
-					ttl = outcome.resp.TTL
+			if used {
+				providerTTL := p.providerTTL(outcome.name, outcome.resp.TTL)
+				if providerTTL > 0 {
+					if ttl == 0 || providerTTL < ttl {
+						ttl = providerTTL
+					}
 				}
 			}
 		case ProviderStatusError:
@@ -229,8 +275,27 @@ func (p *Pipeline) Ingest(ctx context.Context, req Request) (Result, error) {
 	metadata, ok := agg.finalize(now)
 	if !ok {
 		p.logger.Warn("metadata ingestion produced no results", "cacheKey", cacheKey, "entityType", req.EntityType, "entityID", req.EntityID)
+		if p.cache != nil && p.negativeCacheTTL > 0 {
+			negative := Metadata{
+				EntityID:      req.EntityID,
+				EntityType:    req.EntityType,
+				LastRefreshed: now,
+				NotFound:      true,
+			}
+			if len(req.ExternalIDs) > 0 {
+				negative.ExternalIDs = make(map[string]string, len(req.ExternalIDs))
+				for provider, value := range req.ExternalIDs {
+					negative.ExternalIDs[strings.ToLower(provider)] = value
+				}
+			}
+			if err := p.cache.Save(ctx, cacheKey, negative, p.negativeCacheTTL); err != nil {
+				p.logger.Warn("metadata negative cache save failed", "cacheKey", cacheKey, "err", err)
+			}
+		}
 		return Result{CacheKey: cacheKey, ProviderReports: reports}, ErrMetadataNotFound
 	}
+
+	metadata.NotFound = false
 
 	result := Result{
 		Metadata:        metadata,
@@ -253,6 +318,168 @@ func (p *Pipeline) Ingest(ctx context.Context, req Request) (Result, error) {
 	p.logger.Info("metadata ingested", "cacheKey", cacheKey, "entityType", req.EntityType, "entityID", metadata.EntityID, "ttl", effectiveTTL)
 
 	return result, nil
+}
+
+func (p *Pipeline) runProvider(ctx context.Context, pr Provider, req Request) providerOutcome {
+	outcome := providerOutcome{name: pr.Name()}
+
+	attempts := 0
+	var lastErr error
+	var duration time.Duration
+
+forLoop:
+	for attempts < p.maxAttempts {
+		attempts++
+
+		attemptCtx, span := p.tracer.Start(ctx, "metadata.provider.fetch",
+			trace.WithSpanKind(trace.SpanKindClient),
+			trace.WithAttributes(
+				attribute.String("metadata.provider", pr.Name()),
+				attribute.String("metadata.entity_type", string(req.EntityType)),
+				attribute.String("metadata.entity_id", req.EntityID),
+				attribute.Bool("metadata.force_refresh", req.ForceRefresh),
+				attribute.Int("metadata.attempt", attempts),
+			),
+		)
+
+		start := time.Now()
+		resp, err := pr.Fetch(attemptCtx, req)
+		attemptDuration := time.Since(start)
+		duration += attemptDuration
+
+		var retryAfter time.Duration
+		rateLimited := false
+
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "provider fetch failed")
+			if rl, ok := AsRateLimitError(err); ok {
+				rateLimited = true
+				retryAfter = rl.RetryAfter()
+				span.AddEvent("rate_limited", trace.WithAttributes(
+					attribute.String("metadata.retry_after", retryAfter.String()),
+				))
+			}
+		} else {
+			span.SetStatus(codes.Ok, "provider fetch succeeded")
+		}
+		span.End()
+
+		if err == nil {
+			if resp.RetrievedAt.IsZero() {
+				resp.RetrievedAt = p.clock.Now()
+			}
+			outcome.status = ProviderStatusFetched
+			outcome.resp = resp
+			outcome.duration = duration
+			outcome.attempts = attempts
+			return outcome
+		}
+
+		lastErr = err
+
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			lastErr = ctxErr
+			break
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			break
+		}
+
+		if rateLimited && attempts < p.maxAttempts {
+			if p.metrics != nil {
+				p.metrics.RateLimitRetries().WithLabelValues(pr.Name()).Inc()
+			}
+			backoff := p.computeBackoff(attempts, retryAfter)
+			if p.logger != nil {
+				p.logger.Warn("metadata provider rate limited", "provider", pr.Name(), "attempt", attempts, "backoff", backoff, "retryAfter", retryAfter)
+			}
+			if backoff > 0 {
+				timer := time.NewTimer(backoff)
+				select {
+				case <-ctx.Done():
+					if !timer.Stop() {
+						<-timer.C
+					}
+					lastErr = ctx.Err()
+					break forLoop
+				case <-timer.C:
+				}
+			}
+			continue
+		}
+
+		break
+	}
+
+	outcome.status = ProviderStatusError
+	outcome.err = lastErr
+	outcome.duration = duration
+	outcome.attempts = attempts
+
+	if lastErr != nil && p.metrics != nil {
+		reason := failureReason(lastErr)
+		p.metrics.ProviderFailures().WithLabelValues(pr.Name(), reason).Inc()
+	}
+
+	if lastErr != nil && p.logger != nil {
+		reason := failureReason(lastErr)
+		if reason == "context" {
+			p.logger.Debug("metadata provider context ended", "provider", pr.Name(), "attempts", attempts, "err", lastErr)
+		} else {
+			p.logger.Warn("metadata provider fetch failed", "provider", pr.Name(), "attempts", attempts, "err", lastErr)
+		}
+	}
+
+	return outcome
+}
+
+func (p *Pipeline) providerTTL(provider string, reported time.Duration) time.Duration {
+	if provider == "" {
+		if reported <= 0 {
+			return p.defaultTTL
+		}
+		return reported
+	}
+
+	ttl := reported
+	if override, ok := p.providerTTLs[strings.ToLower(provider)]; ok && override > 0 {
+		if ttl <= 0 || override < ttl {
+			ttl = override
+		}
+	}
+	if ttl <= 0 {
+		ttl = p.defaultTTL
+	}
+	return ttl
+}
+
+func (p *Pipeline) computeBackoff(attempt int, retryAfter time.Duration) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	multiplier := 1 << uint(attempt-1)
+	backoff := p.baseBackoff * time.Duration(multiplier)
+	if retryAfter > backoff {
+		backoff = retryAfter
+	}
+	if p.maxBackoff > 0 && backoff > p.maxBackoff {
+		backoff = p.maxBackoff
+	}
+	return backoff
+}
+
+func failureReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return "context"
+	}
+	if _, ok := AsRateLimitError(err); ok {
+		return "rate_limit"
+	}
+	return "error"
 }
 
 // aggregator combines provider responses into a single metadata document.
