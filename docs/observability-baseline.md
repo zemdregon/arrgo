@@ -137,7 +137,7 @@ Alerting rules should balance responsiveness with noise reduction.
 
 ## Operational Checklist
 
-- [ ] Master and worker binaries expose `/metrics` and `/debug/pprof` endpoints.
+- [x] Master and worker binaries expose `/metrics` and `/debug/pprof` endpoints.
 - [ ] Services propagate trace context and export spans to the collector.
 - [ ] Structured logs include trace IDs and job identifiers.
 - [ ] Prometheus, Grafana, Alertmanager, and the OpenTelemetry Collector are

@@ -5,8 +5,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/pprof"
 	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/arrgo/arrgo/internal/library"
 	"github.com/arrgo/arrgo/internal/worker"
@@ -32,6 +35,8 @@ func (s *Server) Routes() http.Handler {
 		mux.HandleFunc("/api/v1/workers/register", s.handleRegisterWorker)
 		mux.HandleFunc("/api/v1/workers/", s.handleWorkerRoutes)
 	}
+	mux.Handle("/metrics", promhttp.Handler())
+	registerPprofHandlers(mux)
 	return mux
 }
 
@@ -213,4 +218,18 @@ func respondError(w http.ResponseWriter, status int, message string) {
 func methodNotAllowed(w http.ResponseWriter, methods ...string) {
 	w.Header().Set("Allow", strings.Join(methods, ", "))
 	respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+}
+
+func registerPprofHandlers(mux *http.ServeMux) {
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	mux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+	mux.Handle("/debug/pprof/block", pprof.Handler("block"))
+	mux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	mux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	mux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+	mux.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
 }
