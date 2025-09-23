@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package arrgo.api.v1;
+
+option go_package = "github.com/arrgo/arrgo/internal/api/librarypb";
+
+message LibraryEntity {
+  string id = 1;
+  string entity_type = 2;
+  string title = 3;
+  string synopsis = 4;
+}
+
+message ListLibraryEntitiesRequest {
+  string entity_type = 1;
+}
+
+message ListLibraryEntitiesResponse {
+  repeated LibraryEntity entities = 1;
+}
+
+message JobSummary {
+  string id = 1;
+  string job_type = 2;
+  string target_id = 3;
+  string state = 4;
+  string submitted_at = 5;
+}
+
+message ListJobsRequest {}
+
+message ListJobsResponse {
+  repeated JobSummary jobs = 1;
+}
+
+message TriggerJobRequest {
+  string job_type = 1;
+  string target_id = 2;
+}
+
+message TriggerJobResponse {
+  JobSummary job = 1;
+}
+
+service LibraryService {
+  rpc ListLibraryEntities(ListLibraryEntitiesRequest) returns (ListLibraryEntitiesResponse);
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+  rpc TriggerJob(TriggerJobRequest) returns (TriggerJobResponse);
+}
