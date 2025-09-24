@@ -39,6 +39,8 @@ func (s *Server) Routes() http.Handler {
 		mux.Handle("/api/v1/workers", s.instrument("/api/v1/workers", http.HandlerFunc(s.handleListWorkers)))
 		mux.Handle("/api/v1/workers/register", s.instrument("/api/v1/workers/register", http.HandlerFunc(s.handleRegisterWorker)))
 		mux.Handle("/api/v1/workers/", s.instrument("/api/v1/workers/{id}/heartbeat", http.HandlerFunc(s.handleWorkerRoutes)))
+		mux.Handle("/api/v1/worker-pools", s.instrument("/api/v1/worker-pools", http.HandlerFunc(s.handleWorkerPools)))
+		mux.Handle("/api/v1/worker-pools/", s.instrument("/api/v1/worker-pools/{pool}", http.HandlerFunc(s.handleWorkerPoolConfig)))
 	}
 	mux.Handle("/metrics", promhttp.Handler())
 	registerPprofHandlers(mux)
@@ -249,6 +251,109 @@ func (s *Server) handleWorkerRoutes(w http.ResponseWriter, r *http.Request) {
 		"worker": result.Worker,
 		"stale":  result.Stale,
 	})
+}
+
+func (s *Server) handleWorkerPools(w http.ResponseWriter, r *http.Request) {
+	if s.workerService == nil {
+		respondError(w, http.StatusServiceUnavailable, "worker service unavailable")
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	if _, ok := s.requirePermission(w, r, auth.PermissionWorkerRead); !ok {
+		return
+	}
+
+	configs, err := s.workerService.ListPoolConfigs(r.Context())
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to list worker pools")
+		return
+	}
+
+	pools := make([]map[string]any, 0, len(configs))
+	for _, cfg := range configs {
+		pools = append(pools, poolConfigPayload(cfg))
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{"pools": pools})
+}
+
+func (s *Server) handleWorkerPoolConfig(w http.ResponseWriter, r *http.Request) {
+	if s.workerService == nil {
+		respondError(w, http.StatusServiceUnavailable, "worker service unavailable")
+		return
+	}
+	if r.Method != http.MethodPut {
+		methodNotAllowed(w, http.MethodPut)
+		return
+	}
+
+	if _, ok := s.requirePermission(w, r, auth.PermissionWorkerManage); !ok {
+		return
+	}
+
+	trimmed := strings.TrimPrefix(r.URL.Path, "/api/v1/worker-pools/")
+	pool := strings.Trim(trimmed, "/")
+	if pool == "" {
+		respondError(w, http.StatusBadRequest, "pool name required")
+		return
+	}
+
+	var payload struct {
+		Description              string `json:"description"`
+		Stream                   string `json:"stream"`
+		ConsumerGroup            string `json:"consumer_group"`
+		HeartbeatIntervalSeconds *int   `json:"heartbeat_interval_seconds"`
+		StaleAfterSeconds        *int   `json:"stale_after_seconds"`
+		MaxConcurrentJobs        *int   `json:"max_concurrent_jobs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	cfg := worker.PoolConfig{
+		Pool:          pool,
+		Description:   payload.Description,
+		Stream:        payload.Stream,
+		ConsumerGroup: payload.ConsumerGroup,
+	}
+	if payload.HeartbeatIntervalSeconds != nil {
+		cfg.HeartbeatInterval = time.Duration(*payload.HeartbeatIntervalSeconds) * time.Second
+	}
+	if payload.StaleAfterSeconds != nil {
+		cfg.StaleAfter = time.Duration(*payload.StaleAfterSeconds) * time.Second
+	}
+	if payload.MaxConcurrentJobs != nil {
+		cfg.MaxConcurrentJobs = *payload.MaxConcurrentJobs
+	}
+
+	updated, err := s.workerService.UpsertPoolConfig(r.Context(), cfg)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, worker.ErrInvalidPool) {
+			status = http.StatusBadRequest
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{"pool": poolConfigPayload(updated)})
+}
+
+func poolConfigPayload(cfg worker.PoolConfig) map[string]any {
+	return map[string]any{
+		"pool":                       cfg.Pool,
+		"description":                cfg.Description,
+		"stream":                     cfg.Stream,
+		"consumer_group":             cfg.ConsumerGroup,
+		"heartbeat_interval_seconds": int(cfg.HeartbeatInterval / time.Second),
+		"stale_after_seconds":        int(cfg.StaleAfter / time.Second),
+		"max_concurrent_jobs":        cfg.MaxConcurrentJobs,
+	}
 }
 
 func (s *Server) instrument(route string, handler http.Handler) http.Handler {

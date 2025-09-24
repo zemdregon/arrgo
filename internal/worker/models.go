@@ -57,3 +57,14 @@ type HeartbeatResult struct {
 	Worker Worker
 	Stale  bool
 }
+
+// PoolConfig captures tunable settings for a worker pool.
+type PoolConfig struct {
+	Pool              string        `json:"pool"`
+	Description       string        `json:"description"`
+	Stream            string        `json:"stream"`
+	ConsumerGroup     string        `json:"consumer_group"`
+	HeartbeatInterval time.Duration `json:"heartbeat_interval"`
+	StaleAfter        time.Duration `json:"stale_after"`
+	MaxConcurrentJobs int           `json:"max_concurrent_jobs"`
+}

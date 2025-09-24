@@ -232,6 +232,93 @@ func TestListWorkersEndpoint(t *testing.T) {
 	}
 }
 
+func TestWorkerPoolEndpoints(t *testing.T) {
+	libSvc := mustLibraryService(t, library.Config{})
+	workerSvc := mustWorkerService(t)
+	authSvc := mustAuthService(t)
+	readToken := mustAPIKey(t, authSvc, "observer")
+	manageToken := mustAPIKey(t, authSvc, "admin")
+	srv := NewServer(libSvc, workerSvc, authSvc)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/worker-pools", nil)
+	listReq.Header.Set("Authorization", "Bearer "+readToken)
+	listResp := httptest.NewRecorder()
+
+	srv.handleWorkerPools(listResp, listReq)
+
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected list status 200, got %d", listResp.Code)
+	}
+
+	var listPayload struct {
+		Pools []map[string]any `json:"pools"`
+	}
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listPayload); err != nil {
+		t.Fatalf("failed to decode list payload: %v", err)
+	}
+	if len(listPayload.Pools) == 0 {
+		t.Fatalf("expected at least one pool configuration")
+	}
+
+	updateBody := map[string]any{
+		"description":                "Transcode pool",
+		"stream":                     "arrgo:library:transcode",
+		"consumer_group":             "arrgo-transcode",
+		"heartbeat_interval_seconds": 25,
+		"stale_after_seconds":        70,
+		"max_concurrent_jobs":        6,
+	}
+	rawUpdate, _ := json.Marshal(updateBody)
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/worker-pools/transcode", bytes.NewReader(rawUpdate))
+	updateReq.Header.Set("Authorization", "Bearer "+manageToken)
+	updateResp := httptest.NewRecorder()
+
+	srv.handleWorkerPoolConfig(updateResp, updateReq)
+
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("expected update status 200, got %d", updateResp.Code)
+	}
+
+	var updatePayload struct {
+		Pool struct {
+			Pool                     string `json:"pool"`
+			ConsumerGroup            string `json:"consumer_group"`
+			HeartbeatIntervalSeconds int    `json:"heartbeat_interval_seconds"`
+			StaleAfterSeconds        int    `json:"stale_after_seconds"`
+			MaxConcurrentJobs        int    `json:"max_concurrent_jobs"`
+		} `json:"pool"`
+	}
+	if err := json.Unmarshal(updateResp.Body.Bytes(), &updatePayload); err != nil {
+		t.Fatalf("failed to decode update payload: %v", err)
+	}
+	if updatePayload.Pool.Pool != "transcode" {
+		t.Fatalf("expected pool name transcode, got %s", updatePayload.Pool.Pool)
+	}
+	if updatePayload.Pool.ConsumerGroup != "arrgo-transcode" {
+		t.Fatalf("expected consumer group override to persist")
+	}
+	if updatePayload.Pool.HeartbeatIntervalSeconds != 25 {
+		t.Fatalf("expected heartbeat interval seconds to match override")
+	}
+
+	configs, err := workerSvc.ListPoolConfigs(context.Background())
+	if err != nil {
+		t.Fatalf("ListPoolConfigs returned error: %v", err)
+	}
+	found := false
+	for _, cfg := range configs {
+		if cfg.Pool == "transcode" {
+			found = true
+			if cfg.ConsumerGroup != "arrgo-transcode" || cfg.HeartbeatInterval != 25*time.Second {
+				t.Fatalf("unexpected persisted pool configuration: %#v", cfg)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected transcode pool configuration to be stored")
+	}
+}
+
 func TestObservabilityEndpoints(t *testing.T) {
 	svc := mustLibraryService(t, library.Config{})
 	srv := NewServer(svc, nil, nil)

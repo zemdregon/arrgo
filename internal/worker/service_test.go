@@ -190,6 +190,97 @@ func TestListWorkersFallsBackToRepositoryWhenCacheEmpty(t *testing.T) {
 	}
 }
 
+func TestPoolConfigurationOverrides(t *testing.T) {
+	repo := NewInMemoryRepository()
+	metrics := NewMetrics(prometheus.NewRegistry())
+	clock := &stubClock{now: time.Unix(1_700_000_000, 0)}
+
+	svc, err := NewService(Config{
+		Repository:        repo,
+		Metrics:           metrics,
+		Clock:             clock,
+		HeartbeatInterval: 10 * time.Second,
+		StaleAfter:        30 * time.Second,
+		IDGenerator: func() string {
+			return "worker-config"
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	configs, err := svc.ListPoolConfigs(context.Background())
+	if err != nil {
+		t.Fatalf("ListPoolConfigs returned error: %v", err)
+	}
+	if len(configs) == 0 {
+		t.Fatalf("expected default pool configuration to be present")
+	}
+
+	override, err := svc.UpsertPoolConfig(context.Background(), PoolConfig{
+		Pool:              "transcode",
+		Description:       "GPU accelerated jobs",
+		Stream:            "arrgo:library:transcode",
+		ConsumerGroup:     "arrgo-transcode",
+		HeartbeatInterval: 20 * time.Second,
+		StaleAfter:        50 * time.Second,
+		MaxConcurrentJobs: 4,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPoolConfig returned error: %v", err)
+	}
+	if override.HeartbeatInterval != 20*time.Second {
+		t.Fatalf("expected heartbeat interval override to persist")
+	}
+	if override.Stream != "arrgo:library:transcode" {
+		t.Fatalf("unexpected stream override %s", override.Stream)
+	}
+
+	result, err := svc.RegisterWorker(context.Background(), RegistrationRequest{Pool: "transcode"})
+	if err != nil {
+		t.Fatalf("RegisterWorker returned error: %v", err)
+	}
+	if result.Assignment.ConsumerGroup != "arrgo-transcode" {
+		t.Fatalf("expected assignment to use pool consumer group override")
+	}
+	if result.Assignment.HeartbeatInterval != 20*time.Second {
+		t.Fatalf("expected assignment to use pool heartbeat override")
+	}
+
+	clock.now = clock.now.Add(35 * time.Second)
+	svc.Reconcile(context.Background())
+
+	stored, err := repo.GetWorker(context.Background(), "worker-config")
+	if err != nil {
+		t.Fatalf("GetWorker returned error: %v", err)
+	}
+	if stored.Status != StatusHealthy {
+		t.Fatalf("expected worker to remain healthy before stale threshold, got %s", stored.Status)
+	}
+
+	clock.now = clock.now.Add(20 * time.Second)
+	svc.Reconcile(context.Background())
+
+	stored, err = repo.GetWorker(context.Background(), "worker-config")
+	if err != nil {
+		t.Fatalf("GetWorker returned error: %v", err)
+	}
+	if stored.Status != StatusStale {
+		t.Fatalf("expected worker to be marked stale after pool threshold, got %s", stored.Status)
+	}
+
+	configs, err = svc.ListPoolConfigs(context.Background())
+	if err != nil {
+		t.Fatalf("ListPoolConfigs returned error: %v", err)
+	}
+	if len(configs) != 2 {
+		t.Fatalf("expected two pool configs after override, got %d", len(configs))
+	}
+	if configs[0].Pool != "default" || configs[1].Pool != "transcode" {
+		t.Fatalf("expected configs to be sorted by pool name, got %#v", configs)
+	}
+}
+
 func newRedisCache(t *testing.T) *RedisCache {
 	t.Helper()
 

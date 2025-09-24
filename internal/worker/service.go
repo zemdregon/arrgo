@@ -69,6 +69,9 @@ type Service struct {
 	metricsMu    sync.Mutex
 	knownPools   map[string]struct{}
 	knownWorkers map[string]struct{}
+
+	configMu    sync.RWMutex
+	poolConfigs map[string]PoolConfig
 }
 
 // NewService constructs a worker coordination service.
@@ -121,12 +124,16 @@ func NewService(cfg Config) (*Service, error) {
 		},
 		knownPools:   make(map[string]struct{}),
 		knownWorkers: make(map[string]struct{}),
+		poolConfigs:  make(map[string]PoolConfig),
 	}
 
 	svc.tracer = cfg.Tracer
 	if svc.tracer == nil {
 		svc.tracer = otel.Tracer("github.com/arrgo/arrgo/internal/worker")
 	}
+
+	svc.poolConfigs["default"] = svc.sanitizePoolConfig(PoolConfig{Pool: "default"})
+	svc.knownPools["default"] = struct{}{}
 
 	return svc, nil
 }
@@ -168,6 +175,9 @@ func (s *Service) RegisterWorker(ctx context.Context, req RegistrationRequest) (
 		err = ErrInvalidPool
 		return
 	}
+
+	cfg := s.ensurePoolConfig(pool)
+
 	now := s.clock.Now().UTC()
 
 	worker := Worker{
@@ -187,8 +197,11 @@ func (s *Service) RegisterWorker(ctx context.Context, req RegistrationRequest) (
 		return
 	}
 
-	assignment := s.assignment
-	assignment.HeartbeatInterval = s.heartbeatInterval
+	assignment := Assignment{
+		Stream:            cfg.Stream,
+		ConsumerGroup:     cfg.ConsumerGroup,
+		HeartbeatInterval: cfg.HeartbeatInterval,
+	}
 
 	span.SetAttributes(attribute.String("worker.id", persisted.ID))
 	result = RegistrationResult{Worker: persisted, Assignment: assignment}
@@ -230,7 +243,8 @@ func (s *Service) RecordHeartbeat(ctx context.Context, input HeartbeatInput) (re
 		return
 	}
 
-	stale := s.clock.Now().Sub(persisted.LastHeartbeatAt) > s.staleAfter
+	cfg := s.poolConfig(persisted.Pool)
+	stale := s.clock.Now().Sub(persisted.LastHeartbeatAt) > cfg.StaleAfter
 	span.SetAttributes(attribute.Bool("worker.stale", stale))
 
 	result = HeartbeatResult{Worker: persisted, Stale: stale}
@@ -337,6 +351,7 @@ func (s *Service) updateMetrics(ctx context.Context) {
 
 	for _, worker := range workers {
 		currentPools[worker.Pool] = struct{}{}
+		cfg := s.poolConfig(worker.Pool)
 		key := worker.Pool + "\x00" + worker.ID
 		currentWorkers[key] = struct{}{}
 
@@ -346,7 +361,7 @@ func (s *Service) updateMetrics(ctx context.Context) {
 		}
 		s.metrics.heartbeatAge.WithLabelValues(worker.Pool, worker.ID).Set(age.Seconds())
 
-		if age > s.staleAfter {
+		if age > cfg.StaleAfter {
 			staleCounts[worker.Pool]++
 			if worker.Status != StatusStale {
 				worker.Status = StatusStale
@@ -385,6 +400,111 @@ func (s *Service) updateMetrics(ctx context.Context) {
 		s.metrics.staleWorkers.WithLabelValues(pool).Set(float64(staleCounts[pool]))
 	}
 	s.knownPools = currentPools
+}
+
+// ListPoolConfigs returns sanitized configuration for known worker pools.
+func (s *Service) ListPoolConfigs(ctx context.Context) ([]PoolConfig, error) {
+	_ = ctx
+
+	s.configMu.RLock()
+	pools := make([]string, 0, len(s.poolConfigs))
+	for pool := range s.poolConfigs {
+		pools = append(pools, pool)
+	}
+	s.configMu.RUnlock()
+
+	sort.Strings(pools)
+	configs := make([]PoolConfig, 0, len(pools))
+	for _, pool := range pools {
+		configs = append(configs, s.ensurePoolConfig(pool))
+	}
+	return configs, nil
+}
+
+// UpsertPoolConfig stores configuration overrides for a worker pool.
+func (s *Service) UpsertPoolConfig(ctx context.Context, cfg PoolConfig) (PoolConfig, error) {
+	cfg.Pool = strings.TrimSpace(cfg.Pool)
+	if cfg.Pool == "" {
+		return PoolConfig{}, ErrInvalidPool
+	}
+
+	sanitized := s.sanitizePoolConfig(cfg)
+
+	s.configMu.Lock()
+	s.poolConfigs[sanitized.Pool] = sanitized
+	s.configMu.Unlock()
+
+	if s.metrics != nil {
+		s.metricsMu.Lock()
+		s.knownPools[sanitized.Pool] = struct{}{}
+		s.metricsMu.Unlock()
+	}
+
+	s.updateMetrics(ctx)
+
+	return sanitized, nil
+}
+
+func (s *Service) poolConfig(pool string) PoolConfig {
+	pool = strings.TrimSpace(pool)
+	if pool == "" {
+		return s.ensurePoolConfig("default")
+	}
+
+	s.configMu.RLock()
+	cfg, ok := s.poolConfigs[pool]
+	s.configMu.RUnlock()
+	if ok && cfg.Stream != "" && cfg.ConsumerGroup != "" && cfg.HeartbeatInterval > 0 && cfg.StaleAfter > 0 {
+		return cfg
+	}
+	return s.ensurePoolConfig(pool)
+}
+
+func (s *Service) ensurePoolConfig(pool string) PoolConfig {
+	pool = strings.TrimSpace(pool)
+	if pool == "" {
+		pool = "default"
+	}
+
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+
+	if cfg, ok := s.poolConfigs[pool]; ok {
+		cfg = s.sanitizePoolConfig(cfg)
+		s.poolConfigs[pool] = cfg
+		return cfg
+	}
+
+	cfg := s.sanitizePoolConfig(PoolConfig{Pool: pool})
+	s.poolConfigs[pool] = cfg
+	return cfg
+}
+
+func (s *Service) sanitizePoolConfig(cfg PoolConfig) PoolConfig {
+	cfg.Pool = strings.TrimSpace(cfg.Pool)
+	if cfg.Pool == "" {
+		cfg.Pool = "default"
+	}
+
+	cfg.Description = strings.TrimSpace(cfg.Description)
+	cfg.Stream = strings.TrimSpace(cfg.Stream)
+	if cfg.Stream == "" {
+		cfg.Stream = s.assignment.Stream
+	}
+	cfg.ConsumerGroup = strings.TrimSpace(cfg.ConsumerGroup)
+	if cfg.ConsumerGroup == "" {
+		cfg.ConsumerGroup = s.assignment.ConsumerGroup
+	}
+	if cfg.HeartbeatInterval <= 0 {
+		cfg.HeartbeatInterval = s.heartbeatInterval
+	}
+	if cfg.StaleAfter <= 0 {
+		cfg.StaleAfter = s.staleAfter
+	}
+	if cfg.MaxConcurrentJobs < 0 {
+		cfg.MaxConcurrentJobs = 0
+	}
+	return cfg
 }
 
 func sanitizeCapabilities(values []string) []string {
