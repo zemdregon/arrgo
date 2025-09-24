@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { PageHeader } from "../../components/layout/PageHeader";
 import { useEnvironment } from "../../components/environment/EnvironmentContext";
 import { useAuth } from "../../components/auth/AuthContext";
@@ -24,7 +25,9 @@ import styles from "./page.module.css";
 export default function DashboardPage() {
   const { current } = useEnvironment();
   const { status: authStatus, hasPermission } = useAuth();
+  const searchParams = useSearchParams();
   const apiBaseUrl = current.apiUrl;
+  const focusEntityId = searchParams.get("focusEntity");
 
   const isAuthenticated = authStatus === "authenticated";
   const canReadLibrary = isAuthenticated && hasPermission("library:read");
@@ -155,6 +158,29 @@ export default function DashboardPage() {
     refreshPools();
   }, [refreshJobs, refreshLibrary, refreshPools, refreshWorkers]);
 
+  useEffect(() => {
+    if (!focusEntityId || libraryLoading || !(libraryData?.length ?? 0)) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const escapeSelector = (value: string) => {
+      if (window.CSS && typeof window.CSS.escape === "function") {
+        return window.CSS.escape(value);
+      }
+      return value.replace(/"/g, '\\"').replace(/\\/g, "\\\\");
+    };
+    const selector = `[data-entity-id="${escapeSelector(focusEntityId)}"]`;
+    const element = document.querySelector<HTMLElement>(selector);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (typeof element.focus === "function") {
+        element.focus({ preventScroll: true });
+      }
+    }
+  }, [focusEntityId, libraryData, libraryLoading]);
+
   return (
     <div className={styles.page}>
       <PageHeader
@@ -181,11 +207,13 @@ export default function DashboardPage() {
           restClient={restClient}
           canWriteLibrary={canWriteLibrary}
           onJobsRefetch={refreshJobs}
+          focusedEntityId={focusEntityId ?? undefined}
         />
         <ManualSearchPanel
           data={libraryData}
           restClient={restClient}
           canWriteLibrary={canWriteLibrary}
+          focusedEntityId={focusEntityId ?? undefined}
         />
         <JobQueuePanel
           data={jobsData}

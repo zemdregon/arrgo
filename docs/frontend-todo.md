@@ -20,7 +20,7 @@
 ### Navigation & Layout
 - [x] Create persistent shell with navigation, environment context switcher, and worker status indicator.
 - [x] Implement responsive grid/layout rules for widescreen dashboards and compact tablet views.
-- [ ] Add global search and quick action palette for navigating entities and triggering automation workflows.
+- [x] Add global search and quick action palette for navigating entities and triggering automation workflows.
 
 ### Library & Automation Views
 - [ ] Library overview with filterable status cards (pending imports, quality upgrades, failures).

@@ -6,6 +6,7 @@ import { WorkerStatusIndicator } from "../../components/workers/WorkerStatusIndi
 import { ThemeToggle } from "../../components/theme/ThemeToggle";
 import { ApiKeySelector } from "../../components/auth/ApiKeySelector";
 import { AuthGuard } from "../../components/auth/AuthGuard";
+import { CommandPalette } from "../../components/navigation/CommandPalette";
 import styles from "./layout.module.css";
 
 const NAVIGATION_ITEMS = [
@@ -38,6 +39,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <span className={styles.product}>dashboard</span>
           </div>
           <div className={styles.headerControls}>
+            <CommandPalette
+              className={styles.commandMenu}
+              navigationItems={NAVIGATION_ITEMS}
+            />
             <WorkerStatusIndicator />
             <ApiKeySelector className={styles.apiKeySelector} />
             <EnvironmentSwitcher />
