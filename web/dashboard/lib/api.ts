@@ -170,8 +170,12 @@ function normalizeTimestamp(value?: string): string | undefined {
   return trimmed;
 }
 
-async function requestJSON<T>(path: string, init: RequestInit): Promise<T> {
-  const url = `${getBaseUrl()}${path}`;
+async function requestJSON<T>(
+  path: string,
+  init: RequestInit,
+  baseUrl?: string,
+): Promise<T> {
+  const url = `${baseUrl ?? getBaseUrl()}${path}`;
   const headers = new Headers(init.headers ?? {});
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
@@ -219,31 +223,36 @@ async function requestJSON<T>(path: string, init: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function fetchJSON<T>(path: string): Promise<T> {
-  return requestJSON<T>(path, { method: "GET" });
+async function fetchJSON<T>(path: string, baseUrl?: string): Promise<T> {
+  return requestJSON<T>(path, { method: "GET" }, baseUrl);
 }
 
-async function postJSON<T>(path: string, body: unknown): Promise<T> {
+async function postJSON<T>(
+  path: string,
+  body: unknown,
+  baseUrl?: string,
+): Promise<T> {
   const headers = new Headers({ "Content-Type": "application/json" });
   return requestJSON<T>(path, {
     method: "POST",
     headers,
     body: JSON.stringify(body ?? {}),
-  });
+  }, baseUrl);
 }
 
-async function putJSON<T>(path: string, body: unknown): Promise<T> {
+async function putJSON<T>(path: string, body: unknown, baseUrl?: string): Promise<T> {
   const headers = new Headers({ "Content-Type": "application/json" });
   return requestJSON<T>(path, {
     method: "PUT",
     headers,
     body: JSON.stringify(body ?? {}),
-  });
+  }, baseUrl);
 }
 
-export async function fetchEntities(): Promise<LibraryEntity[]> {
+export async function fetchEntities(baseUrl?: string): Promise<LibraryEntity[]> {
   const payload = await fetchJSON<{ entities: RawEntity[] }>(
     "/api/v1/library/entities",
+    baseUrl,
   );
   return payload.entities.map((entity) => ({
     id: entity.ID,
@@ -253,8 +262,8 @@ export async function fetchEntities(): Promise<LibraryEntity[]> {
   }));
 }
 
-export async function fetchJobs(): Promise<JobSummary[]> {
-  const payload = await fetchJSON<{ jobs: RawJob[] }>("/api/v1/jobs");
+export async function fetchJobs(baseUrl?: string): Promise<JobSummary[]> {
+  const payload = await fetchJSON<{ jobs: RawJob[] }>("/api/v1/jobs", baseUrl);
   return payload.jobs.map((job) => ({
     id: job.ID,
     jobType: job.JobType,
@@ -269,8 +278,11 @@ export async function fetchJobs(): Promise<JobSummary[]> {
   }));
 }
 
-export async function fetchWorkers(): Promise<WorkerSummary[]> {
-  const payload = await fetchJSON<{ workers: RawWorker[] }>("/api/v1/workers");
+export async function fetchWorkers(baseUrl?: string): Promise<WorkerSummary[]> {
+  const payload = await fetchJSON<{ workers: RawWorker[] }>(
+    "/api/v1/workers",
+    baseUrl,
+  );
   return payload.workers.map((worker) => ({
     id: worker.id,
     pool: worker.pool,
@@ -284,7 +296,10 @@ export async function fetchWorkers(): Promise<WorkerSummary[]> {
   }));
 }
 
-export async function triggerJob(input: TriggerJobInput): Promise<JobSummary> {
+export async function triggerJob(
+  input: TriggerJobInput,
+  baseUrl?: string,
+): Promise<JobSummary> {
   const payload: Record<string, string> = {
     job_type: input.jobType,
     target_id: input.targetID,
@@ -298,7 +313,11 @@ export async function triggerJob(input: TriggerJobInput): Promise<JobSummary> {
     payload.idempotency_key = idempotencyKey;
   }
 
-  const response = await postJSON<{ job: RawJob }>("/api/v1/jobs", payload);
+  const response = await postJSON<{ job: RawJob }>(
+    "/api/v1/jobs",
+    payload,
+    baseUrl,
+  );
   const job = response.job;
   return {
     id: job.ID,
@@ -314,9 +333,12 @@ export async function triggerJob(input: TriggerJobInput): Promise<JobSummary> {
   };
 }
 
-export async function fetchWorkerPools(): Promise<WorkerPoolConfig[]> {
+export async function fetchWorkerPools(
+  baseUrl?: string,
+): Promise<WorkerPoolConfig[]> {
   const payload = await fetchJSON<{ pools: RawWorkerPool[] }>(
     "/api/v1/worker-pools",
+    baseUrl,
   );
   return payload.pools.map((pool) => ({
     pool: pool.pool,
@@ -332,6 +354,7 @@ export async function fetchWorkerPools(): Promise<WorkerPoolConfig[]> {
 export async function updateWorkerPool(
   pool: string,
   input: UpdateWorkerPoolInput,
+  baseUrl?: string,
 ): Promise<WorkerPoolConfig> {
   const body: Record<string, unknown> = {};
   if (input.description !== undefined) {
@@ -356,6 +379,7 @@ export async function updateWorkerPool(
   const response = await putJSON<{ pool: RawWorkerPool }>(
     `/api/v1/worker-pools/${encodeURIComponent(pool)}`,
     body,
+    baseUrl,
   );
   const cfg = response.pool;
   return {
@@ -406,9 +430,11 @@ function normalizeManualSearchResult(
 
 export async function fetchManualSearch(
   entityID: string,
+  baseUrl?: string,
 ): Promise<ManualSearchResult | null> {
   const payload = await fetchJSON<{ search: RawManualSearchResult | null }>(
     `/api/v1/indexer/search?entity_id=${encodeURIComponent(entityID)}`,
+    baseUrl,
   );
   return payload.search ? normalizeManualSearchResult(payload.search) : null;
 }
@@ -416,10 +442,12 @@ export async function fetchManualSearch(
 export async function runManualSearch(
   entityID: string,
   query: string,
+  baseUrl?: string,
 ): Promise<ManualSearchResult> {
   const response = await postJSON<{ search: RawManualSearchResult }>(
     "/api/v1/indexer/search",
     { entity_id: entityID, query },
+    baseUrl,
   );
   return normalizeManualSearchResult(response.search);
 }
@@ -427,10 +455,12 @@ export async function runManualSearch(
 export async function grabManualRelease(
   entityID: string,
   releaseID: string,
+  baseUrl?: string,
 ): Promise<ManualSearchRelease> {
   const response = await postJSON<{ release: RawManualSearchRelease }>(
     "/api/v1/indexer/releases/grab",
     { entity_id: entityID, release_id: releaseID },
+    baseUrl,
   );
   return normalizeManualSearchRelease(response.release);
 }

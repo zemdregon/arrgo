@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { DataPanel } from "../../components/DataPanel";
 import { StatusPill } from "../../components/StatusPill";
 import { PageHeader } from "../../components/layout/PageHeader";
+import { useEnvironment } from "../../components/environment/EnvironmentContext";
 import { useApiData } from "../../hooks/useApiData";
 import {
   fetchEntities,
@@ -295,10 +296,21 @@ function formatRelativeTime(value?: string): string {
 }
 
 export default function DashboardPage() {
-  const library = useApiData(fetchEntities);
-  const jobs = useApiData(fetchJobs);
-  const workers = useApiData(fetchWorkers);
-  const pools = useApiData(fetchWorkerPools);
+  const { current } = useEnvironment();
+  const apiBaseUrl = current.apiUrl;
+
+  const loadLibrary = useCallback(() => fetchEntities(apiBaseUrl), [apiBaseUrl]);
+  const loadJobs = useCallback(() => fetchJobs(apiBaseUrl), [apiBaseUrl]);
+  const loadWorkers = useCallback(() => fetchWorkers(apiBaseUrl), [apiBaseUrl]);
+  const loadPools = useCallback(
+    () => fetchWorkerPools(apiBaseUrl),
+    [apiBaseUrl],
+  );
+
+  const library = useApiData(loadLibrary, [apiBaseUrl]);
+  const jobs = useApiData(loadJobs, [apiBaseUrl]);
+  const workers = useApiData(loadWorkers, [apiBaseUrl]);
+  const pools = useApiData(loadPools, [apiBaseUrl]);
 
   const [libraryTypeFilter, setLibraryTypeFilter] = useState("all");
   const [jobStateFilter, setJobStateFilter] = useState("all");
@@ -450,7 +462,7 @@ export default function DashboardPage() {
     }
     setManualSearchLoading(true);
     setManualSearchError(null);
-    return fetchManualSearch(manualEntitySelection)
+    return fetchManualSearch(manualEntitySelection, apiBaseUrl)
       .then((result) => {
         setManualSearchResult(result);
       })
@@ -462,7 +474,7 @@ export default function DashboardPage() {
       .finally(() => {
         setManualSearchLoading(false);
       });
-  }, [manualEntitySelection]);
+  }, [apiBaseUrl, manualEntitySelection]);
 
   useEffect(() => {
     if (
@@ -711,12 +723,15 @@ export default function DashboardPage() {
     setJobSubmitting(true);
     setJobFeedback(null);
     try {
-      await triggerJob({
-        jobType: jobTypeValue,
-        targetID: jobTargetValue,
-        payloadURI: jobPayloadURI,
-        idempotencyKey: jobIdempotencyKey,
-      });
+      await triggerJob(
+        {
+          jobType: jobTypeValue,
+          targetID: jobTargetValue,
+          payloadURI: jobPayloadURI,
+          idempotencyKey: jobIdempotencyKey,
+        },
+        apiBaseUrl,
+      );
       setJobFeedback({
         kind: "success",
         message:
@@ -748,7 +763,11 @@ export default function DashboardPage() {
     setManualSearchLoading(true);
     setGrabInFlight(null);
     try {
-      const result = await runManualSearch(manualEntitySelection, manualQuery);
+      const result = await runManualSearch(
+        manualEntitySelection,
+        manualQuery,
+        apiBaseUrl,
+      );
       setManualSearchResult(result);
       const count = result.results.length;
       setManualSearchFeedback({
@@ -777,6 +796,7 @@ export default function DashboardPage() {
       const updated = await grabManualRelease(
         manualEntitySelection,
         release.id,
+        apiBaseUrl,
       );
       setManualSearchResult((current) => {
         if (!current) {
@@ -828,14 +848,18 @@ export default function DashboardPage() {
     setPoolSubmitting(true);
     setPoolFeedback(null);
     try {
-      await updateWorkerPool(poolSelection, {
-        description: poolForm.description,
-        stream: poolForm.stream,
-        consumerGroup: poolForm.consumerGroup,
-        heartbeatIntervalSeconds: heartbeatInterval,
-        staleAfterSeconds: staleAfter,
-        maxConcurrentJobs,
-      });
+      await updateWorkerPool(
+        poolSelection,
+        {
+          description: poolForm.description,
+          stream: poolForm.stream,
+          consumerGroup: poolForm.consumerGroup,
+          heartbeatIntervalSeconds: heartbeatInterval,
+          staleAfterSeconds: staleAfter,
+          maxConcurrentJobs,
+        },
+        apiBaseUrl,
+      );
       setPoolFeedback({
         kind: "success",
         message: "Updated " + poolSelection + " pool configuration.",
