@@ -185,8 +185,9 @@ func resetLibraryStateForBenchmark(tb testing.TB, svc *Service) {
 		}
 	}
 
-	svc.mu.Lock()
-	svc.jobs = svc.jobs[:0]
-	svc.jobIndex = make(map[string]int)
-	svc.mu.Unlock()
+	if repo, ok := svc.repository.(*InMemoryRepository); ok {
+		repo.mu.Lock()
+		repo.jobs = make(map[string]Job)
+		repo.mu.Unlock()
+	}
 }

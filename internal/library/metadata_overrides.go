@@ -73,20 +73,26 @@ func (s *Service) GetMetadataOverrides(ctx context.Context, entityID string) (ov
 		return
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if !s.entityExistsLocked(trimmedID) {
+	_, found, lookupErr := s.lookupEntity(ctx, trimmedID)
+	if lookupErr != nil {
+		err = lookupErr
+		return
+	}
+	if !found {
 		err = ErrUnknownEntity
 		return
 	}
 
-	existing, ok := s.metadataOverrides[trimmedID]
+	overrides, ok, repoErr := s.repository.GetMetadataOverrides(ctx, trimmedID)
+	if repoErr != nil {
+		err = fmt.Errorf("library: load metadata overrides: %w", repoErr)
+		return
+	}
 	if !ok {
 		return MetadataOverrides{}, false, nil
 	}
 
-	return cloneMetadataOverrides(existing), true, nil
+	return cloneMetadataOverrides(overrides), true, nil
 }
 
 // SetMetadataOverrides replaces the override configuration for an entity.
@@ -107,10 +113,12 @@ func (s *Service) SetMetadataOverrides(ctx context.Context, entityID string, pay
 		return MetadataOverrides{}, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.entityExistsLocked(trimmedID) {
+	exists, lookupErr := s.entityExists(ctx, trimmedID)
+	if lookupErr != nil {
+		err = lookupErr
+		return
+	}
+	if !exists {
 		err = ErrUnknownEntity
 		return
 	}
@@ -120,7 +128,6 @@ func (s *Service) SetMetadataOverrides(ctx context.Context, entityID string, pay
 		err = fmt.Errorf("library: persist metadata overrides: %w", repoErr)
 		return
 	}
-	s.metadataOverrides[trimmedID] = normalized
 
 	span.SetAttributes(
 		attribute.Int("library.metadata_override_episode_cutovers", len(normalized.EpisodeCutovers)),
@@ -150,10 +157,12 @@ func (s *Service) ClearMetadataOverrides(ctx context.Context, entityID string) (
 		return
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.entityExistsLocked(trimmedID) {
+	exists, lookupErr := s.entityExists(ctx, trimmedID)
+	if lookupErr != nil {
+		err = lookupErr
+		return
+	}
+	if !exists {
 		err = ErrUnknownEntity
 		return
 	}
@@ -163,7 +172,6 @@ func (s *Service) ClearMetadataOverrides(ctx context.Context, entityID string) (
 		return
 	}
 
-	delete(s.metadataOverrides, trimmedID)
 	span.SetAttributes(attribute.Bool("library.metadata_override_deleted", true))
 	s.logger.Info("library metadata overrides cleared", "entityID", trimmedID)
 	return nil
