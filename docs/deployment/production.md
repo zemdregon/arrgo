@@ -7,9 +7,9 @@ using the new Helm chart and Terraform module introduced in this repository.
 
 Production deployments rely on the following building blocks:
 
-- **arrgo Helm chart** – Deploys the control-plane (`master`) and worker pods,
-  configures Kubernetes services/ingress, and wires connection details via
-  secrets.
+- **arrgo Helm chart** – Deploys the control-plane (`master`), worker pods, and
+  dashboard UI, configures Kubernetes services/ingress, and wires connection
+  details via secrets.
 - **Terraform module** – Automates Helm installation, namespace creation, and
   secret management.
 - **Managed data services** – PostgreSQL, Redis, and OpenSearch instances
@@ -62,6 +62,10 @@ these keys:
 - `ARRGO_OPENSEARCH_URL`
 - `ARRGO_MASTER_URL`
 - `ARRGO_LOG_LEVEL`
+
+The `ARRGO_MASTER_URL` value is also injected into the dashboard pods so
+browser-based API requests resolve to the externally reachable master endpoint
+(for example the master ingress host).
 
 ## Additional Considerations
 

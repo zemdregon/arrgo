@@ -1,0 +1,21 @@
+{{- if .Values.web.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "arrgo.web.fullname" . }}
+  labels:
+    {{- include "arrgo.web.labels" . | nindent 4 }}
+  {{- with .Values.web.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.web.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.web.service.port }}
+      protocol: TCP
+      targetPort: http
+  selector:
+    {{- include "arrgo.web.selectorLabels" . | nindent 4 }}
+{{- end }}

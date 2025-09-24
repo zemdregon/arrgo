@@ -142,3 +142,17 @@ app.kubernetes.io/component: worker
 {{ include "arrgo.selectorLabels" . }}
 app.kubernetes.io/component: worker
 {{- end -}}
+
+{{- define "arrgo.web.fullname" -}}
+{{ printf "%s-web" (include "arrgo.fullname" .) }}
+{{- end -}}
+
+{{- define "arrgo.web.labels" -}}
+{{ include "arrgo.labels" . }}
+app.kubernetes.io/component: web
+{{- end -}}
+
+{{- define "arrgo.web.selectorLabels" -}}
+{{ include "arrgo.selectorLabels" . }}
+app.kubernetes.io/component: web
+{{- end -}}

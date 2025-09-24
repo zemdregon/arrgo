@@ -1,10 +1,10 @@
 # arrgo Helm Chart
 
-This chart deploys the arrgo control plane (`master`) and scalable worker pool on
-a Kubernetes cluster. It is designed to plug into production-grade backing
-services such as managed PostgreSQL, Redis, and OpenSearch deployments while
-providing sane defaults for security contexts, autoscaling, and observability
-integration.
+This chart deploys the arrgo control plane (`master`), scalable worker pool, and
+the Next.js-powered dashboard on a Kubernetes cluster. It is designed to plug
+into production-grade backing services such as managed PostgreSQL, Redis, and
+OpenSearch deployments while providing sane defaults for security contexts,
+autoscaling, and observability integration.
 
 ## Prerequisites
 
@@ -45,6 +45,10 @@ secret creation and point the chart at an existing secret.
 | `master.ingress.enabled` | Create an Ingress resource for the master API. | `false` |
 | `worker.replicaCount` | Baseline worker replica count when autoscaling is disabled. | `3` |
 | `worker.autoscaling.enabled` | Enable HorizontalPodAutoscaler for workers. | `true` |
+| `web.enabled` | Deploy the dashboard UI alongside the API components. | `true` |
+| `web.image.repository` | Dashboard container image repository. | `ghcr.io/example-org/arrgo-dashboard` |
+| `web.service.type` | Kubernetes service type for the dashboard. | `ClusterIP` |
+| `web.ingress.enabled` | Create an Ingress resource for the dashboard UI. | `false` |
 
 Refer to [`values.yaml`](./values.yaml) for the complete set of tunable options.
 
@@ -53,7 +57,8 @@ Refer to [`values.yaml`](./values.yaml) for the complete set of tunable options.
 For production environments it is recommended to provision the connection secret
 independently and set `config.createSecret=false` alongside
 `config.existingSecret=<secret-name>`. The secret must define the following
-keys:
+keys. `ARRGO_MASTER_URL` is also consumed by the dashboard pods so browser
+requests can reach the REST API endpoint exposed by the master service:
 
 - `ARRGO_LOG_LEVEL`
 - `ARRGO_DATABASE_URL`

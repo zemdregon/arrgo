@@ -31,7 +31,10 @@ From the `deploy/compose` directory:
 docker compose up --build
 ```
 
-The command provisions PostgreSQL, Redis, OpenSearch, and arrgo master/worker containers with sensible defaults. To simulate a larger cluster, scale workers:
+The command provisions PostgreSQL, Redis, OpenSearch, the arrgo master/worker
+containers, and the dashboard UI with sensible defaults. Access the UI at
+<http://localhost:3000> once the containers are running. To simulate a larger
+cluster, scale workers:
 
 ```bash
 docker compose up --build --scale arrgo-worker=3

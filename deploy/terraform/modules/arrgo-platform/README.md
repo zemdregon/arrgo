@@ -2,7 +2,8 @@
 
 This module installs the arrgo Helm chart and, optionally, creates the target
 Kubernetes namespace. It is intended to be composed with infrastructure modules
-that provision managed PostgreSQL, Redis, and OpenSearch services.
+that provision managed PostgreSQL, Redis, and OpenSearch services while also
+rolling out the dashboard UI alongside the master and worker workloads.
 
 ## Usage
 
@@ -26,6 +27,15 @@ module "arrgo" {
       logLevel      = var.log_level
     }
     master = {
+      service = {
+        type = "LoadBalancer"
+      }
+    }
+    web = {
+      image = {
+        repository = "ghcr.io/example-org/arrgo-dashboard"
+        tag        = "v0.1.0"
+      }
       service = {
         type = "LoadBalancer"
       }

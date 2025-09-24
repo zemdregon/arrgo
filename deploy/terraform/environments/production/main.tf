@@ -13,6 +13,16 @@ locals {
         type = var.master_service_type
       }
     }
+    web = {
+      enabled = true
+      image = {
+        repository = var.web_image_repository
+        tag        = var.web_image_tag
+      }
+      service = {
+        type = var.web_service_type
+      }
+    }
     worker = {
       autoscaling = {
         enabled                             = true

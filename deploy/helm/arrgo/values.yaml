@@ -110,3 +110,39 @@ worker:
     targetCPUUtilizationPercentage: 75
     targetMemoryUtilizationPercentage: null
 
+web:
+  enabled: true
+  image:
+    repository: ghcr.io/example-org/arrgo-dashboard
+    tag: main
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 3000
+    annotations: {}
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: dashboard.arrgo.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podAnnotations: {}
+  podLabels: {}
+  extraEnv: []
+  extraEnvFrom: []
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+        - ALL
+

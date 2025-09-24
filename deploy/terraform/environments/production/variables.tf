@@ -54,6 +54,24 @@ variable "image_tag" {
   default     = "main"
 }
 
+variable "web_image_repository" {
+  description = "Container image repository for the dashboard UI."
+  type        = string
+  default     = "ghcr.io/example-org/arrgo-dashboard"
+}
+
+variable "web_image_tag" {
+  description = "Container image tag for the dashboard UI."
+  type        = string
+  default     = "main"
+}
+
+variable "web_service_type" {
+  description = "Service type for the dashboard Kubernetes Service."
+  type        = string
+  default     = "ClusterIP"
+}
+
 variable "master_service_type" {
   description = "Service type for the arrgo master Kubernetes Service."
   type        = string

@@ -101,6 +101,22 @@ services:
     networks:
       - arrgo
 
+  arrgo-webui:
+    build:
+      context: ../../web/dashboard
+      dockerfile: Dockerfile
+    image: ${ARRGO_WEB_IMAGE:-arrgo-web:dev}
+    restart: unless-stopped
+    depends_on:
+      arrgo-master:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_ARRGO_API_URL: ${ARRGO_WEB_API_URL:-http://localhost:8080}
+    ports:
+      - "3000:3000"
+    networks:
+      - arrgo
+
 volumes:
   postgres-data:
   redis-data:

@@ -4,8 +4,12 @@
   echo "Master endpoint: http://${SERVICE_IP}:{{ .Values.master.service.port }}"
   {{- else if contains "ClusterIP" .Values.master.service.type }}
   echo "Master endpoint is available inside the cluster at http://{{ include "arrgo.master.serviceName" . }}:{{ .Values.master.service.port }}"
-  {{- else }}
+ {{- else }}
   kubectl get svc --namespace {{ .Release.Namespace }} {{ include "arrgo.master.serviceName" . }}
   {{- end }}
 2. Workers automatically discover the master URL from the generated secret. Update
    `values.yaml` when deploying to external clusters or managed services.
+3. {{- if and .Values.web.enabled (contains "LoadBalancer" .Values.web.service.type) }}The dashboard is exposed via load balancer service
+   at `http://<external-ip>:{{ .Values.web.service.port }}`.{{- else if and .Values.web.enabled (contains "ClusterIP" .Values.web.service.type) }}The dashboard service
+   is reachable inside the cluster at `http://{{ include "arrgo.web.fullname" . }}:{{ .Values.web.service.port }}`.{{- else if .Values.web.enabled }}Inspect the
+   dashboard service to determine connection details: `kubectl get svc --namespace {{ .Release.Namespace }} {{ include "arrgo.web.fullname" . }}`.{{- else }}The dashboard deployment is disabled by configuration.{{- end }}

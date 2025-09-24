@@ -88,6 +88,8 @@ Local infrastructure is defined under [`deploy/compose`](deploy/compose) to make
 1. Change into the compose directory: `cd deploy/compose`.
 2. Copy `.env.example` to `.env` if you want to override the default credentials or container image tag.
 3. Build and start the stack: `docker compose up --build`.
+   The dashboard will be available at <http://localhost:3000> and proxies API
+   requests to the master container listening on port 8080.
 4. (Optional) Scale workers to simulate a larger cluster: `docker compose up --build --scale arrgo-worker=3`.
 
 The stack provisions PostgreSQL, Redis, OpenSearch, a master container, and at least one worker on an isolated bridge network. Persistent data is stored in named volumes so that containers can be restarted without losing state. The arrgo containers currently run placeholder commands until the application binaries are available.
