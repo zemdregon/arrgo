@@ -97,6 +97,8 @@ The following documents provide deep dives into the subsystems listed above:
   rules and audit trails.
 - [`docs/dashboard-operations.md`](docs/dashboard-operations.md) — dashboard
   UX, manual overrides, and job drill-downs.
+- [`docs/frontend-todo.md`](docs/frontend-todo.md) — work breakdown for the
+  Next.js dashboard implementation.
 - [`docs/worker-coordination.md`](docs/worker-coordination.md) — worker
   registration, heartbeat enforcement, and pool configuration.
 - [`docs/media-replication.md`](docs/media-replication.md) — multi-region
@@ -166,10 +168,15 @@ Focus: harden integrations, automation, and security for shared environments.
 - Policy-driven automation (quality upgrades, retention, manual overrides).
 - Search abstraction via optional OpenSearch/Elasticsearch, including
   dashboard facets.
+- Unified book and audiobook workflows delivering feature parity with a
+  Readarr-class experience, from metadata ingestion to release monitoring and
+  library synchronization.
 - Multi-tenant RBAC with labeled API keys, audit trails, and single sign-on
   integrations.
 - Expanded dashboard capabilities: queue analytics, manual search overrides,
   worker pool editing.
+- Request management portal replacing Overseerr with quota controls, approval
+  workflows, and automation hand-offs into the scheduling engine.
 - SDKs and contract tests for download clients and list ingestion modules.
 
 ### General Availability — Scale, Reliability, Extensibility
