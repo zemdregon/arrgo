@@ -3,6 +3,30 @@
 ## Scope
 These instructions apply to the entire repository. Follow them for all code, configuration, documentation, and asset updates.
 
+## Repository Directory Guide
+The following table highlights the most relevant directories and reference files so new contributors can quickly locate the assets they need.
+
+| Path | Purpose |
+| --- | --- |
+| `README.md` | High-level project overview, roadmap, and contributor expectations. |
+| `api/proto` | Source-of-truth protobuf definitions for the public gRPC/REST APIs. |
+| `deploy/compose` | Docker Compose stack for local development and integration testing. |
+| `deploy/helm/arrgo` | Kubernetes Helm charts for production-grade deployments. |
+| `deploy/terraform` | Terraform modules that provision the infrastructure backing arrgo clusters. |
+| `docs/` | Comprehensive design, ADR, and operations documentation—start with `docs/project-status.md` for current milestones. |
+| `internal/api` | gRPC/REST server implementations and transport adapters. |
+| `internal/auth` | Authentication, RBAC policy enforcement, and API key management logic. |
+| `internal/integrations` | External service connectors (indexers, download clients, list providers). |
+| `internal/library` | Core library domain services: catalog state, scheduling, and job orchestration. |
+| `internal/metadata` | Metadata ingestion pipelines with caching, rate limiting, and provider backoffs. |
+| `internal/observability` | Shared logging, metrics, and tracing helpers. |
+| `internal/replication` | Media replication workflows, storage policies, and transfer orchestration. |
+| `internal/worker` | Worker registration, heartbeat coordination, and queue consumers. |
+| `sdk/downloadclient` | Go SDK for building download client plugins, plus contract tests. |
+| `sdk/listingester` | SDK for external list ingestion modules (e.g., Trakt, IMDb, Last.fm). |
+| `web/dashboard` | Next.js dashboard application for cluster visibility and manual job controls. |
+| `.github/workflows` | CI pipelines for linting, testing, and container publication. |
+
 ## Development Workflow
 - Target Go 1.22+ for all backend services.
 - Format Go sources with `gofmt` (or `go fmt ./...`) before committing.
