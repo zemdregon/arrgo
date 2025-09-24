@@ -10,6 +10,7 @@ import styles from "./layout.module.css";
 
 const NAVIGATION_ITEMS = [
   { href: "/", label: "Overview" },
+  { href: "/queue", label: "Queue analytics" },
   { href: "/library", label: "Library", disabled: true },
   { href: "/requests", label: "Requests", disabled: true },
   { href: "/workers", label: "Workers", disabled: true },
