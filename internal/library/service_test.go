@@ -420,3 +420,141 @@ func TestAckJobPublishesAuditEventForImports(t *testing.T) {
 		t.Fatalf("expected completion timestamp %v, got %v", now, event.CompletedAt)
 	}
 }
+
+func TestMetadataOverridesLifecycle(t *testing.T) {
+	airDate := time.Date(2024, 9, 5, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2024, 9, 6, 8, 30, 0, 0, time.UTC)
+	svc, err := NewService(Config{
+		Entities: []Entity{{ID: "series-1", EntityType: "series"}},
+		Clock:    stubClock{now: now},
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	input := MetadataOverrides{
+		EpisodeCutovers: []EpisodeCutoverOverride{
+			{EpisodeID: "ep-premiere", SeasonNumber: 2, EpisodeNumber: 1, AbsoluteNumber: 26, Title: "Premiere"},
+			{EpisodeID: "ep-special", SeasonNumber: 0, EpisodeNumber: 1, Title: "Special", AirDate: &airDate},
+		},
+		AlbumEditions: []AlbumEditionOverride{
+			{EditionID: "deluxe", Name: "Deluxe", Notes: "Bonus tracks"},
+			{EditionID: "anniversary", Name: "Anniversary", IsDefault: true},
+		},
+		TrackNumberOverrides: []TrackNumberOverride{
+			{TrackID: "track-b", DiscNumber: 2, TrackNumber: 2, TotalTracks: 12},
+			{TrackID: "track-a", DiscNumber: 2, TrackNumber: 1, TotalTracks: 12, Notes: "Opener"},
+		},
+	}
+
+	stored, err := svc.SetMetadataOverrides(context.Background(), "series-1", input)
+	if err != nil {
+		t.Fatalf("SetMetadataOverrides returned error: %v", err)
+	}
+	if !stored.UpdatedAt.Equal(now) {
+		t.Fatalf("expected UpdatedAt to use clock, got %v", stored.UpdatedAt)
+	}
+	if len(stored.EpisodeCutovers) != 2 || stored.EpisodeCutovers[0].EpisodeID != "ep-special" {
+		t.Fatalf("expected episode cutovers to be sorted, got %+v", stored.EpisodeCutovers)
+	}
+	if len(stored.TrackNumberOverrides) != 2 || stored.TrackNumberOverrides[0].TrackID != "track-a" {
+		t.Fatalf("expected track overrides sorted, got %+v", stored.TrackNumberOverrides)
+	}
+
+	retrieved, found, err := svc.GetMetadataOverrides(context.Background(), "series-1")
+	if err != nil {
+		t.Fatalf("GetMetadataOverrides returned error: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected overrides to be present")
+	}
+	if retrieved.EpisodeCutovers[0].Title != "Special" {
+		t.Fatalf("expected retrieved cutover title to match input")
+	}
+	if retrieved.AlbumEditions[0].EditionID != "anniversary" {
+		t.Fatalf("expected album editions to be sorted, got %+v", retrieved.AlbumEditions)
+	}
+
+	retrieved.EpisodeCutovers[0].Title = "Changed"
+	again, ok, err := svc.GetMetadataOverrides(context.Background(), "series-1")
+	if err != nil {
+		t.Fatalf("GetMetadataOverrides second call error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected overrides to remain present")
+	}
+	if again.EpisodeCutovers[0].Title != "Special" {
+		t.Fatalf("expected stored overrides to remain immutable, got %s", again.EpisodeCutovers[0].Title)
+	}
+
+	if err := svc.ClearMetadataOverrides(context.Background(), "series-1"); err != nil {
+		t.Fatalf("ClearMetadataOverrides returned error: %v", err)
+	}
+
+	cleared, ok, err := svc.GetMetadataOverrides(context.Background(), "series-1")
+	if err != nil {
+		t.Fatalf("GetMetadataOverrides after clear error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected overrides to be cleared, got %+v", cleared)
+	}
+}
+
+func TestSetMetadataOverridesValidates(t *testing.T) {
+	svc, err := NewService(Config{Entities: []Entity{{ID: "series-1", EntityType: "series"}}})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	cases := []struct {
+		name     string
+		entityID string
+		payload  MetadataOverrides
+		wantErr  error
+	}{
+		{
+			name:    "empty entity",
+			payload: MetadataOverrides{},
+			wantErr: ErrMetadataOverrideEntityRequired,
+		},
+		{
+			name:     "unknown entity",
+			entityID: "missing",
+			payload:  MetadataOverrides{},
+			wantErr:  ErrUnknownEntity,
+		},
+		{
+			name:     "missing episode id",
+			entityID: "series-1",
+			payload:  MetadataOverrides{EpisodeCutovers: []EpisodeCutoverOverride{{}}},
+			wantErr:  ErrMetadataOverrideInvalidEpisode,
+		},
+		{
+			name:     "missing edition id",
+			entityID: "series-1",
+			payload:  MetadataOverrides{AlbumEditions: []AlbumEditionOverride{{Name: "Deluxe"}}},
+			wantErr:  ErrMetadataOverrideInvalidEdition,
+		},
+		{
+			name:     "missing track id",
+			entityID: "series-1",
+			payload:  MetadataOverrides{TrackNumberOverrides: []TrackNumberOverride{{TrackNumber: 1}}},
+			wantErr:  ErrMetadataOverrideInvalidTrack,
+		},
+		{
+			name:     "invalid track number",
+			entityID: "series-1",
+			payload:  MetadataOverrides{TrackNumberOverrides: []TrackNumberOverride{{TrackID: "track-1", TrackNumber: 0}}},
+			wantErr:  ErrMetadataOverrideInvalidTrackNum,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := svc.SetMetadataOverrides(context.Background(), tc.entityID, tc.payload)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}

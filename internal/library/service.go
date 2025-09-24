@@ -119,19 +119,20 @@ type IDGenerator func() string
 
 // Config drives Service construction.
 type Config struct {
-        Entities       []Entity
-        Jobs           []Job
-        Clock          Clock
-        IDGenerator    IDGenerator
-        RedisClient    *redis.Client
-        StreamName     string
-        ConsumerGroup  string
-        Logger         *slog.Logger
-        IdempotencyTTL time.Duration
-        AuditSink      AuditSink
-        Tracer         trace.Tracer
-        RenameTemplates RenameTemplates
-        LibraryFiles    map[string][]LibraryFile
+	Entities          []Entity
+	Jobs              []Job
+	Clock             Clock
+	IDGenerator       IDGenerator
+	RedisClient       *redis.Client
+	StreamName        string
+	ConsumerGroup     string
+	Logger            *slog.Logger
+	IdempotencyTTL    time.Duration
+	AuditSink         AuditSink
+	Tracer            trace.Tracer
+	RenameTemplates   RenameTemplates
+	LibraryFiles      map[string][]LibraryFile
+	MetadataOverrides map[string]MetadataOverrides
 }
 
 // Errors returned by the Service APIs.
@@ -149,24 +150,25 @@ var (
 
 // Service exposes read/write helpers that back both REST and gRPC front-ends.
 type Service struct {
-        mu             sync.RWMutex
-        entities       []Entity
-        entitiesByID   map[string]Entity
-        jobs           []Job
-        jobIndex       map[string]int
-        clock          Clock
-        idGen          IDGenerator
-        queue          *OrchestrationQueue
-        logger         *slog.Logger
-        auditSink      AuditSink
-        tracer         trace.Tracer
-        manualSearches map[string]ManualSearchResult
-        manualReleases map[string]ManualSearchRelease
-        renameTemplates RenameTemplates
-        renameHistory   map[string][]RenameJobRecord
-        renameState     map[string]map[string]renameState
-        libraryFiles    map[string][]LibraryFile
-        libraryFileIdx  map[string]map[string]int
+	mu                sync.RWMutex
+	entities          []Entity
+	entitiesByID      map[string]Entity
+	jobs              []Job
+	jobIndex          map[string]int
+	clock             Clock
+	idGen             IDGenerator
+	queue             *OrchestrationQueue
+	logger            *slog.Logger
+	auditSink         AuditSink
+	tracer            trace.Tracer
+	manualSearches    map[string]ManualSearchResult
+	manualReleases    map[string]ManualSearchRelease
+	renameTemplates   RenameTemplates
+	renameHistory     map[string][]RenameJobRecord
+	renameState       map[string]map[string]renameState
+	libraryFiles      map[string][]LibraryFile
+	libraryFileIdx    map[string]map[string]int
+	metadataOverrides map[string]MetadataOverrides
 }
 
 // NewService constructs a library orchestration service with optional seed data.
@@ -204,30 +206,34 @@ func NewService(cfg Config) (*Service, error) {
 		svc.tracer = otel.Tracer("github.com/arrgo/arrgo/internal/library")
 	}
 
-        svc.manualSearches = make(map[string]ManualSearchResult)
-        svc.manualReleases = make(map[string]ManualSearchRelease)
-        svc.renameTemplates = cfg.RenameTemplates.WithDefaults()
-        if err := svc.renameTemplates.Validate(); err != nil {
-                return nil, err
-        }
-        svc.renameHistory = make(map[string][]RenameJobRecord)
-        svc.renameState = make(map[string]map[string]renameState)
-        svc.libraryFiles = make(map[string][]LibraryFile)
-        svc.libraryFileIdx = make(map[string]map[string]int)
-        for entityID, files := range cfg.LibraryFiles {
-                copies := make([]LibraryFile, len(files))
-                copy(copies, files)
-                svc.libraryFiles[entityID] = copies
-                idx := make(map[string]int, len(copies))
-                for i := range copies {
-                        idx[copies[i].ID] = i
-                }
-                svc.libraryFileIdx[entityID] = idx
-        }
+	svc.manualSearches = make(map[string]ManualSearchResult)
+	svc.manualReleases = make(map[string]ManualSearchRelease)
+	svc.renameTemplates = cfg.RenameTemplates.WithDefaults()
+	if err := svc.renameTemplates.Validate(); err != nil {
+		return nil, err
+	}
+	svc.renameHistory = make(map[string][]RenameJobRecord)
+	svc.renameState = make(map[string]map[string]renameState)
+	svc.libraryFiles = make(map[string][]LibraryFile)
+	svc.libraryFileIdx = make(map[string]map[string]int)
+	svc.metadataOverrides = make(map[string]MetadataOverrides)
+	for entityID, files := range cfg.LibraryFiles {
+		copies := make([]LibraryFile, len(files))
+		copy(copies, files)
+		svc.libraryFiles[entityID] = copies
+		idx := make(map[string]int, len(copies))
+		for i := range copies {
+			idx[copies[i].ID] = i
+		}
+		svc.libraryFileIdx[entityID] = idx
+	}
+	for entityID, overrides := range cfg.MetadataOverrides {
+		svc.metadataOverrides[entityID] = cloneMetadataOverrides(overrides)
+	}
 
-        if len(svc.entities) == 0 {
-                svc.entities = append(svc.entities, defaultEntities()...)
-        }
+	if len(svc.entities) == 0 {
+		svc.entities = append(svc.entities, defaultEntities()...)
+	}
 
 	sort.Slice(svc.entities, func(i, j int) bool {
 		return svc.entities[i].Title < svc.entities[j].Title
