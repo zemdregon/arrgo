@@ -151,6 +151,18 @@ The following documents provide deep dives into the subsystems listed above:
   branch push and release tag. See `.github/workflows` for workflows and reuse
   them in downstream automation.
 
+### Container Image Layout
+- The root [`Dockerfile`](Dockerfile) builds both the `arrgo-master` and
+  `arrgo-worker` binaries in a single multi-stage pipeline and injects build
+  metadata (version, commit, and build timestamp) via `-ldflags`. The resulting
+  Alpine-based image uses `deploy/docker/entrypoint.sh` to select the service
+  role at runtime via the `ARRGO_ROLE` environment variable (default `master`).
+- Build arguments `VERSION`, `COMMIT`, and `BUILD_DATE` may be supplied when
+  constructing the image so downstream registries and deployment tooling can
+  surface provenance without additional metadata plumbing.
+- Compose, Helm, and Terraform assets all target this image, ensuring local
+  development stacks and production rollouts execute the same binaries.
+
 ## Roadmap
 The roadmap is maintained collaboratively between the README, the dedicated
 [`docs/project-status.md`](docs/project-status.md) report, and issue trackers.

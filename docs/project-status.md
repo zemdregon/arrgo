@@ -13,6 +13,9 @@ referenced before planning new workstreams.
 - Redis Streams powers the orchestration queue, worker registration, and
   heartbeat management. CI covers service-level unit tests for queue semantics
   and worker lifecycle flows.
+- Multi-stage Docker image packages the production binaries with embedded build
+  metadata so Compose, Helm, and Terraform deployments all execute the same
+  signed artifacts.
 - Metadata ingestion, release profile scoring, download client failover, and
   list ingestion are implemented with accompanying SDKs and documentation.
 - The Next.js dashboard exposes cluster telemetry, job analytics, worker pool

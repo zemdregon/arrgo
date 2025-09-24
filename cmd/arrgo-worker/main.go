@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/arrgo/arrgo/internal/api/workerpb"
+	"github.com/arrgo/arrgo/internal/buildinfo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -43,6 +44,14 @@ func main() {
 }
 
 func runWorker(ctx context.Context, cfg workerConfig, logger *slog.Logger) error {
+	logger.Info("starting arrgo worker",
+		append([]any{
+			"master_addr", cfg.MasterAddr,
+			"pool", cfg.Pool,
+			"endpoint", cfg.Endpoint,
+		}, buildinfo.Fields()...)...,
+	)
+
 	logger.Info("connecting to master", "addr", cfg.MasterAddr)
 	conn, err := dialMaster(ctx, cfg.MasterAddr, cfg.DialTimeout)
 	if err != nil {
