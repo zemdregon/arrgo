@@ -28,6 +28,9 @@ export interface LibraryEntity {
   entityType: string;
   title: string;
   synopsis: string;
+  pendingImports: number;
+  qualityUpgrades: number;
+  failures: number;
 }
 
 export interface JobSummary {
@@ -135,6 +138,9 @@ interface RawEntity {
   EntityType: string;
   Title: string;
   Synopsis: string;
+  PendingImports?: number;
+  QualityUpgrades?: number;
+  Failures?: number;
 }
 
 interface RawJob {
@@ -236,6 +242,9 @@ function mapLibraryEntity(entity: RawEntity): LibraryEntity {
     entityType: entity.EntityType,
     title: entity.Title,
     synopsis: entity.Synopsis,
+    pendingImports: entity.PendingImports ?? 0,
+    qualityUpgrades: entity.QualityUpgrades ?? 0,
+    failures: entity.Failures ?? 0,
   };
 }
 

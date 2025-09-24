@@ -101,6 +101,11 @@ type BreakdownEntry = [string, number];
 type LibraryStats = {
   total: number;
   breakdown: BreakdownEntry[];
+  statusTotals: {
+    pendingImports: number;
+    qualityUpgrades: number;
+    failures: number;
+  };
 };
 
 type JobStats = {
@@ -137,6 +142,15 @@ type EntityOption = {
 const JOB_TYPE_OPTIONS: SelectOption[] = [
   { value: "scan", label: "Scan" },
   { value: "import", label: "Import" },
+];
+
+type LibraryStatus = "pending" | "quality" | "failures";
+type LibraryStatusFilter = LibraryStatus | "all";
+
+const LIBRARY_STATUS_OPTIONS: SelectOption[] = [
+  { value: "pending", label: "Pending imports" },
+  { value: "quality", label: "Quality upgrades" },
+  { value: "failures", label: "Failures" },
 ];
 
 function normalize(value?: string, fallback = "unknown"): string {
@@ -183,15 +197,26 @@ function optionLabel(
 function buildLibraryStats(data?: LibraryEntity[]): LibraryStats {
   const entities = data ?? [];
   const counts = new Map<string, number>();
+  let pendingImports = 0;
+  let qualityUpgrades = 0;
+  let failures = 0;
   for (const entity of entities) {
     const key = entity.entityType || "unknown";
     counts.set(key, (counts.get(key) ?? 0) + 1);
+    pendingImports += entity.pendingImports ?? 0;
+    qualityUpgrades += entity.qualityUpgrades ?? 0;
+    failures += entity.failures ?? 0;
   }
   return {
     total: entities.length,
     breakdown: Array.from(counts.entries()).sort((a, b) =>
       a[0].localeCompare(b[0]),
     ),
+    statusTotals: {
+      pendingImports,
+      qualityUpgrades,
+      failures,
+    },
   };
 }
 
@@ -415,6 +440,8 @@ export default function DashboardPage() {
   }, [refetchPools]);
 
   const [libraryTypeFilter, setLibraryTypeFilter] = useState("all");
+  const [libraryStatusFilter, setLibraryStatusFilter] =
+    useState<LibraryStatusFilter>("all");
   const [jobStateFilter, setJobStateFilter] = useState("all");
   const [workerPoolFilter, setWorkerPoolFilter] = useState("all");
   const [workerStatusFilter, setWorkerStatusFilter] = useState("all");
@@ -462,6 +489,33 @@ export default function DashboardPage() {
     () => buildLibraryStats(libraryData),
     [libraryData],
   );
+  const libraryStatusCards = useMemo(
+    () => [
+      {
+        key: "pending" as const,
+        label: "Pending imports",
+        description: "Queued automation waiting to import media.",
+        count: libraryStats.statusTotals.pendingImports,
+      },
+      {
+        key: "quality" as const,
+        label: "Quality upgrades",
+        description: "Upgrade and refresh jobs that still need attention.",
+        count: libraryStats.statusTotals.qualityUpgrades,
+      },
+      {
+        key: "failures" as const,
+        label: "Failures",
+        description: "Jobs that require operator intervention.",
+        count: libraryStats.statusTotals.failures,
+      },
+    ],
+    [
+      libraryStats.statusTotals.failures,
+      libraryStats.statusTotals.pendingImports,
+      libraryStats.statusTotals.qualityUpgrades,
+    ],
+  );
   const jobStats = useMemo(() => buildJobStats(jobsData), [jobsData]);
   const workerStats = useMemo(
     () => buildWorkerStats(workersData),
@@ -480,6 +534,11 @@ export default function DashboardPage() {
     refreshWorkers();
     refreshPools();
   }, [refreshJobs, refreshLibrary, refreshPools, refreshWorkers]);
+  const handleStatusCardClick = useCallback((status: LibraryStatus) => {
+    setLibraryStatusFilter((current) =>
+      current === status ? "all" : status,
+    );
+  }, []);
   const libraryEntityOptions = useMemo(
     () =>
       (libraryData ?? [])
@@ -695,13 +754,25 @@ export default function DashboardPage() {
 
   const visibleLibrary = useMemo(() => {
     const entities = libraryData ?? [];
-    if (libraryTypeFilter === "all") {
-      return entities;
-    }
-    return entities.filter(
-      (entity) => normalize(entity.entityType) === libraryTypeFilter,
-    );
-  }, [libraryData, libraryTypeFilter]);
+    return entities.filter((entity) => {
+      if (
+        libraryTypeFilter !== "all" &&
+        normalize(entity.entityType) !== libraryTypeFilter
+      ) {
+        return false;
+      }
+      switch (libraryStatusFilter) {
+        case "pending":
+          return (entity.pendingImports ?? 0) > 0;
+        case "quality":
+          return (entity.qualityUpgrades ?? 0) > 0;
+        case "failures":
+          return (entity.failures ?? 0) > 0;
+        default:
+          return true;
+      }
+    });
+  }, [libraryData, libraryStatusFilter, libraryTypeFilter]);
 
   const visibleJobs = useMemo(() => {
     const items = jobsData ?? [];
@@ -762,11 +833,25 @@ export default function DashboardPage() {
       " total)"
     );
   };
+  const libraryFilterTags = [
+    libraryTypeFilter !== "all" ? selectedLibraryLabel : null,
+    libraryStatusFilter !== "all" ? selectedLibraryStatusLabel : null,
+  ].filter(Boolean);
+  const libraryBaseNoun =
+    libraryTypeFilter === "all" && libraryStatusFilter === "all"
+      ? "entities"
+      : "matches";
+  const libraryNoun = libraryFilterTags.length
+    ? `${libraryBaseNoun} · ${libraryFilterTags.join(" · ")}`
+    : libraryBaseNoun;
+  const librarySummaryLabel = libraryFilterTags.length
+    ? `Filtered · ${libraryFilterTags.join(" · ")}`
+    : "Total entities";
   const libraryFooter = libraryStats.total
     ? formatShowingSummary(
         visibleLibrary.length,
         5,
-        libraryTypeFilter === "all" ? "entities" : "matches",
+        libraryNoun,
         libraryStats.total,
       )
     : undefined;
@@ -1002,6 +1087,14 @@ export default function DashboardPage() {
     libraryTypeFilter === "all"
       ? "All types"
       : optionLabel(libraryTypeOptions, libraryTypeFilter, "Selected type");
+  const selectedLibraryStatusLabel =
+    libraryStatusFilter === "all"
+      ? "All statuses"
+      : optionLabel(
+          LIBRARY_STATUS_OPTIONS,
+          libraryStatusFilter,
+          "Selected status",
+        );
   const selectedJobLabel =
     jobStateFilter === "all"
       ? "All states"
@@ -1189,98 +1282,160 @@ export default function DashboardPage() {
           footer={libraryFooter}
         >
           {libraryStats.total ? (
-            visibleLibrary.length ? (
-              <>
-                {jobFeedback ? (
-                  <div
-                    className={[
-                      styles.formMessage,
-                      jobFeedback.kind === "success"
-                        ? styles.formMessageSuccess
-                        : styles.formMessageError,
-                    ].join(" ")}
-                    role={jobFeedback.kind === "error" ? "alert" : "status"}
-                    aria-live={
-                      jobFeedback.kind === "error" ? "assertive" : "polite"
-                    }
+            <>
+              {jobFeedback ? (
+                <div
+                  className={[
+                    styles.formMessage,
+                    jobFeedback.kind === "success"
+                      ? styles.formMessageSuccess
+                      : styles.formMessageError,
+                  ].join(" ")}
+                  role={jobFeedback.kind === "error" ? "alert" : "status"}
+                  aria-live={
+                    jobFeedback.kind === "error" ? "assertive" : "polite"
+                  }
+                >
+                  <span>{jobFeedback.message}</span>
+                  <button
+                    type="button"
+                    className={styles.messageDismiss}
+                    onClick={() => setJobFeedback(null)}
                   >
-                    <span>{jobFeedback.message}</span>
-                    <button
-                      type="button"
-                      className={styles.messageDismiss}
-                      onClick={() => setJobFeedback(null)}
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                ) : null}
-                <div className={styles.metricsRow}>
-                  <div
-                    className={[
-                      styles.metricCard,
-                      libraryTypeFilter !== "all"
-                        ? styles.metricCardEmphasis
-                        : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                  >
-                    <span className={styles.metricValue}>
-                      {visibleLibrary.length}
-                    </span>
-                    <span className={styles.metricLabel}>
-                      {libraryTypeFilter === "all"
-                        ? "Total entities"
-                        : "Filtered · " + selectedLibraryLabel}
-                    </span>
-                  </div>
-                  {libraryTypeFilter !== "all" ? (
-                    <div className={styles.metricCard}>
-                      <span className={styles.metricValue}>
-                        {libraryStats.total}
-                      </span>
-                      <span className={styles.metricLabel}>Cluster total</span>
-                    </div>
-                  ) : null}
-                  {libraryStats.breakdown.map(([type, count]) => {
-                    const isActive =
-                      libraryTypeFilter !== "all" &&
-                      normalize(type) === libraryTypeFilter;
-                    return (
-                      <div
-                        key={type}
-                        className={[
-                          styles.metricCard,
-                          isActive ? styles.metricCardActive : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                      >
-                        <span className={styles.metricValue}>{count}</span>
-                        <span className={styles.metricLabel}>{type}</span>
-                      </div>
-                    );
-                  })}
+                    Dismiss
+                  </button>
                 </div>
-                <ul className={styles.entityList}>
-                  {visibleLibrary.slice(0, 5).map((entity) => (
-                    <li key={entity.id} className={styles.entityItem}>
-                      <span className={styles.entityTitle}>
-                        {entity.title || entity.id}
+              ) : null}
+              <div
+                className={styles.statusCards}
+                role="group"
+                aria-label="Library status filters"
+              >
+                {libraryStatusCards.map((card) => {
+                  const isActive = libraryStatusFilter === card.key;
+                  const isEmpty = card.count === 0;
+                  const title = isActive
+                    ? "Showing " + card.label.toLowerCase() + ". Click to clear."
+                    : isEmpty
+                      ? "No items currently tracked in this state."
+                      : "Filter to " + card.label.toLowerCase();
+                  return (
+                    <button
+                      key={card.key}
+                      type="button"
+                      className={styles.statusCard}
+                      data-status={card.key}
+                      data-active={isActive ? "true" : "false"}
+                      data-empty={isEmpty ? "true" : "false"}
+                      onClick={() => handleStatusCardClick(card.key)}
+                      aria-pressed={isActive}
+                      title={title}
+                    >
+                      <span className={styles.statusCardLabel}>{card.label}</span>
+                      <span className={styles.statusCardCount}>{card.count}</span>
+                      <span className={styles.statusCardDescription}>
+                        {card.description}
                       </span>
-                      <span className={styles.entityType}>
-                        {entity.entityType}
+                    </button>
+                  );
+                })}
+              </div>
+              {visibleLibrary.length ? (
+                <>
+                  <div className={styles.metricsRow}>
+                    <div
+                      className={[
+                        styles.metricCard,
+                        libraryFilterTags.length
+                          ? styles.metricCardEmphasis
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      <span className={styles.metricValue}>
+                        {visibleLibrary.length}
                       </span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <p className={styles.emptyState}>
-                No entities match the selected filter yet. Adjust the filters to
-                explore other media types.
-              </p>
-            )
+                      <span className={styles.metricLabel}>
+                        {librarySummaryLabel}
+                      </span>
+                    </div>
+                    {libraryFilterTags.length ? (
+                      <div className={styles.metricCard}>
+                        <span className={styles.metricValue}>
+                          {libraryStats.total}
+                        </span>
+                        <span className={styles.metricLabel}>Cluster total</span>
+                      </div>
+                    ) : null}
+                    {libraryStats.breakdown.map(([type, count]) => {
+                      const isActive =
+                        libraryTypeFilter !== "all" &&
+                        normalize(type) === libraryTypeFilter;
+                      return (
+                        <div
+                          key={type}
+                          className={[
+                            styles.metricCard,
+                            isActive ? styles.metricCardActive : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
+                          <span className={styles.metricValue}>{count}</span>
+                          <span className={styles.metricLabel}>{type}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <ul className={styles.entityList}>
+                    {visibleLibrary.slice(0, 5).map((entity) => (
+                      <li key={entity.id} className={styles.entityItem}>
+                        <div className={styles.entityInfo}>
+                          <span className={styles.entityTitle}>
+                            {entity.title || entity.id}
+                          </span>
+                          <span className={styles.entityType}>
+                            {entity.entityType}
+                          </span>
+                        </div>
+                        <div className={styles.entityStatusBadges}>
+                          {entity.pendingImports ? (
+                            <span
+                              className={styles.entityStatusBadge}
+                              data-status="pending"
+                            >
+                              Pending {entity.pendingImports}
+                            </span>
+                          ) : null}
+                          {entity.qualityUpgrades ? (
+                            <span
+                              className={styles.entityStatusBadge}
+                              data-status="quality"
+                            >
+                              Upgrades {entity.qualityUpgrades}
+                            </span>
+                          ) : null}
+                          {entity.failures ? (
+                            <span
+                              className={styles.entityStatusBadge}
+                              data-status="failures"
+                            >
+                              Failures {entity.failures}
+                            </span>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className={styles.emptyState}>
+                  No entities match the selected filter yet. Adjust the filters to
+                  explore other media types.
+                </p>
+              )}
+            </>
           ) : (
             <p className={styles.emptyState}>
               No entities have been indexed yet. Once ingestion runs you&apos;ll

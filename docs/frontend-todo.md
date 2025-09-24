@@ -23,7 +23,7 @@
 - [ ] Add global search and quick action palette for navigating entities and triggering automation workflows.
 
 ### Library & Automation Views
-- [ ] Library overview with filterable status cards (pending imports, quality upgrades, failures).
+- [x] Library overview with filterable status cards (pending imports, quality upgrades, failures).
 - [ ] Detail pages for shows, movies, albums, and books that expose metadata, history, and manual job triggers.
 - [ ] Queue analytics dashboard with stream lag, retry counts, and SLA indicators.
 - [ ] Policy management editor for release profiles, retention rules, and media-specific overrides.

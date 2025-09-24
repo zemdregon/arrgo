@@ -21,10 +21,13 @@ import (
 
 // Entity represents a top-level media record available to the automation stack.
 type Entity struct {
-	ID         string
-	EntityType string
-	Title      string
-	Synopsis   string
+	ID              string
+	EntityType      string
+	Title           string
+	Synopsis        string
+	PendingImports  int
+	QualityUpgrades int
+	Failures        int
 }
 
 // Job models an orchestration action scheduled against the library.
@@ -283,11 +286,6 @@ func (s *Service) reloadRepositoryState(ctx context.Context) error {
 	sort.Slice(sorted, func(i, j int) bool {
 		return strings.ToLower(sorted[i].Title) < strings.ToLower(sorted[j].Title)
 	})
-	s.entities = sorted
-	s.entitiesByID = make(map[string]Entity, len(sorted))
-	for _, entity := range sorted {
-		s.entitiesByID[entity.ID] = entity
-	}
 
 	jobs, err := s.repository.ListJobs(ctx)
 	if err != nil {
@@ -297,6 +295,14 @@ func (s *Service) reloadRepositoryState(ctx context.Context) error {
 	s.jobIndex = make(map[string]int, len(s.jobs))
 	for idx := range s.jobs {
 		s.jobIndex[s.jobs[idx].ID] = idx
+	}
+
+	statusByEntity := summarizeEntityStatuses(s.jobs)
+	enriched := applyEntityStatuses(sorted, statusByEntity)
+	s.entities = enriched
+	s.entitiesByID = make(map[string]Entity, len(enriched))
+	for _, entity := range enriched {
+		s.entitiesByID[entity.ID] = entity
 	}
 
 	overrides, err := s.repository.ListMetadataOverrides(ctx)
@@ -346,22 +352,107 @@ func (s *Service) ListEntities(ctx context.Context, filter ListEntitiesFilter) (
 	})
 
 	s.mu.Lock()
-	s.entities = append([]Entity(nil), sorted...)
-	s.entitiesByID = make(map[string]Entity, len(sorted))
-	for _, entity := range sorted {
+	statusByEntity := summarizeEntityStatuses(s.jobs)
+	enriched := applyEntityStatuses(sorted, statusByEntity)
+	s.entities = append([]Entity(nil), enriched...)
+	s.entitiesByID = make(map[string]Entity, len(enriched))
+	for _, entity := range s.entities {
 		s.entitiesByID[entity.ID] = entity
 	}
 	s.mu.Unlock()
 
 	wantsType := strings.TrimSpace(strings.ToLower(filter.EntityType))
 	results := make([]Entity, 0, len(sorted))
-	for _, entity := range sorted {
+	for _, entity := range enriched {
 		if wantsType != "" && strings.ToLower(entity.EntityType) != wantsType {
 			continue
 		}
 		results = append(results, entity)
 	}
 	return append([]Entity(nil), results...), nil
+}
+
+type entityStatusTotals struct {
+	PendingImports  int
+	QualityUpgrades int
+	Failures        int
+}
+
+var canonicalCompletedState = strings.ToLower(JobStateDone)
+
+func summarizeEntityStatuses(jobs []Job) map[string]entityStatusTotals {
+	summary := make(map[string]entityStatusTotals)
+	for _, job := range jobs {
+		entityID := strings.TrimSpace(job.TargetID)
+		if entityID == "" {
+			continue
+		}
+
+		totals := summary[entityID]
+		state := normalizeJobState(job.State)
+		if isFailureState(state) {
+			totals.Failures++
+			summary[entityID] = totals
+			continue
+		}
+
+		if state == canonicalCompletedState {
+			summary[entityID] = totals
+			continue
+		}
+
+		jobType := normalizeJobType(job.JobType)
+		switch {
+		case jobType == "import":
+			totals.PendingImports++
+		case jobType == "refresh", jobType == "scan", strings.Contains(jobType, "upgrade"), strings.Contains(jobType, "quality"):
+			totals.QualityUpgrades++
+		}
+		summary[entityID] = totals
+	}
+	return summary
+}
+
+func applyEntityStatuses(entities []Entity, status map[string]entityStatusTotals) []Entity {
+	enriched := make([]Entity, len(entities))
+	for i, entity := range entities {
+		totals := status[strings.TrimSpace(entity.ID)]
+		entity.PendingImports = totals.PendingImports
+		entity.QualityUpgrades = totals.QualityUpgrades
+		entity.Failures = totals.Failures
+		enriched[i] = entity
+	}
+	return enriched
+}
+
+func normalizeJobType(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	return strings.ToLower(trimmed)
+}
+
+func normalizeJobState(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	return strings.ToLower(trimmed)
+}
+
+func isFailureState(state string) bool {
+	if state == "" {
+		return false
+	}
+	switch state {
+	case "failed", "failure", "errored", "error", "cancelled", "canceled", "aborted", "deadlettered", "timeout", "timed_out", "timed-out":
+		return true
+	}
+	if strings.Contains(state, "fail") || strings.Contains(state, "error") || strings.Contains(state, "cancel") {
+		return true
+	}
+	return false
 }
 
 // ListJobs returns job summaries ordered by submission time (newest first).
