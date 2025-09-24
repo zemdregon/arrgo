@@ -1,6 +1,7 @@
 import type {
   JobSummary,
   LibraryEntity,
+  WorkerPoolConfig,
   WorkerSummary,
 } from "../../lib/api";
 
@@ -37,6 +38,26 @@ export type WorkerStats = {
   healthy: number;
   stale: number;
   pools: BreakdownEntry[];
+};
+
+export type WorkerHeartbeatEvent = {
+  workerId: string;
+  status: string;
+  version?: string;
+  lastHeartbeatAt?: string;
+};
+
+export type WorkerPoolInsight = {
+  pool: string;
+  description?: string;
+  workerCount: number;
+  healthyCount: number;
+  staleCount: number;
+  unknownCount: number;
+  status: "healthy" | "warning" | "critical";
+  capabilities: string[];
+  lastHeartbeatAt?: string;
+  heartbeatHistory: WorkerHeartbeatEvent[];
 };
 
 export type QueueAnalytics = {
@@ -160,6 +181,128 @@ export function buildWorkerStats(data?: WorkerSummary[]): WorkerStats {
       a[0].localeCompare(b[0]),
     ),
   };
+}
+
+function derivePoolStatus(
+  workerCount: number,
+  healthyCount: number,
+  staleCount: number,
+  unknownCount: number,
+): "healthy" | "warning" | "critical" {
+  if (workerCount === 0) {
+    return "critical";
+  }
+  if (healthyCount === 0) {
+    return "critical";
+  }
+  const staleRatio = workerCount ? staleCount / workerCount : 0;
+  if (staleRatio >= 0.5) {
+    return "critical";
+  }
+  if (staleCount > 0 || unknownCount > 0) {
+    return "warning";
+  }
+  return "healthy";
+}
+
+export function buildWorkerPoolInsights(
+  pools?: WorkerPoolConfig[],
+  workers?: WorkerSummary[],
+): WorkerPoolInsight[] {
+  const poolConfigs = new Map<string, WorkerPoolConfig>();
+  for (const pool of pools ?? []) {
+    poolConfigs.set(pool.pool, pool);
+  }
+
+  const workersByPool = new Map<string, WorkerSummary[]>();
+  for (const worker of workers ?? []) {
+    const poolName = worker.pool || "unassigned";
+    const list = workersByPool.get(poolName) ?? [];
+    list.push(worker);
+    workersByPool.set(poolName, list);
+  }
+
+  const poolNames = new Set<string>();
+  for (const pool of poolConfigs.keys()) {
+    poolNames.add(pool);
+  }
+  for (const pool of workersByPool.keys()) {
+    poolNames.add(pool);
+  }
+
+  return Array.from(poolNames)
+    .sort((a, b) => a.localeCompare(b))
+    .map<WorkerPoolInsight>((poolName) => {
+      const config = poolConfigs.get(poolName);
+      const poolWorkers = workersByPool.get(poolName) ?? [];
+      let healthyCount = 0;
+      let staleCount = 0;
+      let unknownCount = 0;
+      const capabilitySet = new Set<string>();
+      let latestHeartbeat: string | undefined;
+
+      for (const worker of poolWorkers) {
+        const normalizedStatus = worker.status?.toLowerCase() || "unknown";
+        if (normalizedStatus === "healthy") {
+          healthyCount += 1;
+        } else if (normalizedStatus === "stale") {
+          staleCount += 1;
+        } else {
+          unknownCount += 1;
+        }
+        for (const capability of worker.capabilities ?? []) {
+          const trimmed = capability.trim();
+          if (trimmed) {
+            capabilitySet.add(trimmed);
+          }
+        }
+        if (
+          worker.lastHeartbeatAt &&
+          (!latestHeartbeat || worker.lastHeartbeatAt > latestHeartbeat)
+        ) {
+          latestHeartbeat = worker.lastHeartbeatAt;
+        }
+      }
+
+      const heartbeatHistory = poolWorkers
+        .map<WorkerHeartbeatEvent>((worker) => ({
+          workerId: worker.id,
+          status: worker.status,
+          version: worker.version,
+          lastHeartbeatAt: worker.lastHeartbeatAt,
+        }))
+        .sort((a, b) => {
+          const left = a.lastHeartbeatAt ?? "";
+          const right = b.lastHeartbeatAt ?? "";
+          if (left === right) {
+            return a.workerId.localeCompare(b.workerId);
+          }
+          return right.localeCompare(left);
+        });
+
+      const workerCount = poolWorkers.length;
+      const status = derivePoolStatus(
+        workerCount,
+        healthyCount,
+        staleCount,
+        unknownCount,
+      );
+
+      return {
+        pool: poolName,
+        description: config?.description,
+        workerCount,
+        healthyCount,
+        staleCount,
+        unknownCount,
+        status,
+        capabilities: Array.from(capabilitySet).sort((a, b) =>
+          a.localeCompare(b),
+        ),
+        lastHeartbeatAt: latestHeartbeat,
+        heartbeatHistory,
+      };
+    });
 }
 
 export function buildQueueAnalytics(data?: JobSummary[]): QueueAnalytics {

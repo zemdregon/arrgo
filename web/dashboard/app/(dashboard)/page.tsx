@@ -17,6 +17,8 @@ import type {
   ReadingList,
   WorkerPoolConfig,
   WorkerSummary,
+  ObservabilitySnapshot,
+  ConfigurationSummary,
 } from "../../lib/api";
 import { LibraryHealthPanel } from "./components/LibraryHealthPanel";
 import { ManualSearchPanel } from "./components/ManualSearchPanel";
@@ -24,6 +26,8 @@ import { JobQueuePanel } from "./components/JobQueuePanel";
 import { WorkersPanel } from "./components/WorkersPanel";
 import { WorkerPoolPanel } from "./components/WorkerPoolPanel";
 import { ReadarrExperiencePanel } from "./components/ReadarrExperiencePanel";
+import { ObservabilityPanel } from "./components/ObservabilityPanel";
+import { ConfigurationPanel } from "./components/ConfigurationPanel";
 import styles from "./page.module.css";
 
 export default function DashboardPage() {
@@ -38,6 +42,14 @@ export default function DashboardPage() {
   const canReadWorkers = isAuthenticated && hasPermission("worker:read");
   const canWriteLibrary = isAuthenticated && hasPermission("library:write");
   const canManageWorkers = isAuthenticated && hasPermission("worker:manage");
+  const canViewObservability =
+    isAuthenticated &&
+    (hasPermission("observability:read") ||
+      hasPermission("worker:read") ||
+      hasPermission("library:read"));
+  const canViewConfiguration =
+    isAuthenticated &&
+    (hasPermission("config:read") || hasPermission("worker:manage"));
 
   const queryClient = useQueryClient();
   const restClient = useRestClient();
@@ -56,6 +68,14 @@ export default function DashboardPage() {
   );
   const poolsQueryKey = useMemo(
     () => ["workers", "pools", apiBaseUrl] as const,
+    [apiBaseUrl],
+  );
+  const observabilityQueryKey = useMemo(
+    () => ["observability", "snapshot", apiBaseUrl] as const,
+    [apiBaseUrl],
+  );
+  const configurationQueryKey = useMemo(
+    () => ["configuration", "summary", apiBaseUrl] as const,
     [apiBaseUrl],
   );
   const readingListsQueryKey = useMemo(
@@ -119,6 +139,24 @@ export default function DashboardPage() {
     (client) => client.fetchDownloadHistory(),
     {
       enabled: canReadLibrary,
+    },
+  );
+
+  const observabilityQuery = useRestQuery<ObservabilitySnapshot>(
+    observabilityQueryKey,
+    (client) => client.fetchObservabilitySnapshot(),
+    {
+      enabled: canViewObservability,
+      refetchInterval: 30000,
+    },
+  );
+
+  const configurationQuery = useRestQuery<ConfigurationSummary>(
+    configurationQueryKey,
+    (client) => client.fetchConfigurationSummary(),
+    {
+      enabled: canViewConfiguration,
+      refetchInterval: 60000,
     },
   );
 
@@ -222,6 +260,30 @@ export default function DashboardPage() {
     void refetchDownloadHistory();
   }, [refetchDownloadHistory]);
 
+  const {
+    data: observabilityData,
+    isPending: observabilityPending,
+    error: observabilityErrorObj,
+    refetch: refetchObservability,
+  } = observabilityQuery;
+  const observabilityError = observabilityErrorObj?.message;
+  const observabilityLoading = observabilityPending && !observabilityData;
+  const refreshObservability = useCallback(() => {
+    void refetchObservability();
+  }, [refetchObservability]);
+
+  const {
+    data: configurationData,
+    isPending: configurationPending,
+    error: configurationErrorObj,
+    refetch: refetchConfiguration,
+  } = configurationQuery;
+  const configurationError = configurationErrorObj?.message;
+  const configurationLoading = configurationPending && !configurationData;
+  const refreshConfiguration = useCallback(() => {
+    void refetchConfiguration();
+  }, [refetchConfiguration]);
+
   const readarrLoading =
     readingListsLoading ||
     metadataComparisonsLoading ||
@@ -243,7 +305,9 @@ export default function DashboardPage() {
     jobsLoading ||
     workersLoading ||
     poolsLoading ||
-    readarrLoading;
+    readarrLoading ||
+    (canViewObservability && observabilityLoading) ||
+    (canViewConfiguration && configurationLoading);
 
   const handleRefreshAll = useCallback(() => {
     refreshLibrary();
@@ -251,12 +315,22 @@ export default function DashboardPage() {
     refreshWorkers();
     refreshPools();
     refreshReadarr();
+    if (canViewObservability) {
+      refreshObservability();
+    }
+    if (canViewConfiguration) {
+      refreshConfiguration();
+    }
   }, [
     refreshJobs,
     refreshLibrary,
     refreshPools,
     refreshReadarr,
     refreshWorkers,
+    refreshObservability,
+    refreshConfiguration,
+    canViewObservability,
+    canViewConfiguration,
   ]);
 
   useEffect(() => {
@@ -329,6 +403,8 @@ export default function DashboardPage() {
           loading={jobsLoading}
           error={jobsError}
           onRetry={refreshJobs}
+          restClient={restClient}
+          libraryEntities={libraryData}
         />
         <WorkersPanel
           data={workersData}
@@ -346,6 +422,22 @@ export default function DashboardPage() {
           canManageWorkers={canManageWorkers}
           onPoolsRefetch={refreshPools}
         />
+        {canViewObservability ? (
+          <ObservabilityPanel
+            snapshot={observabilityData}
+            loading={observabilityLoading}
+            error={observabilityError}
+            onRetry={refreshObservability}
+          />
+        ) : null}
+        {canViewConfiguration ? (
+          <ConfigurationPanel
+            summary={configurationData}
+            loading={configurationLoading}
+            error={configurationError}
+            onRetry={refreshConfiguration}
+          />
+        ) : null}
       </div>
     </div>
   );

@@ -91,6 +91,17 @@ export function workerTone(status: string): Tone {
   }
 }
 
+export function poolTone(status: string): Tone {
+  switch (status?.toLowerCase()) {
+    case "healthy":
+      return "success";
+    case "warning":
+      return "warning";
+    default:
+      return "danger";
+  }
+}
+
 export function releaseTone(status: string): Tone {
   switch (status?.toLowerCase()) {
     case "grabbed":
@@ -116,4 +127,46 @@ export function downloadTone(status: string): Tone {
     default:
       return "neutral";
   }
+}
+
+export function logTone(level: string): Tone {
+  switch (level?.toLowerCase()) {
+    case "error":
+    case "fatal":
+    case "panic":
+      return "danger";
+    case "warn":
+    case "warning":
+      return "warning";
+    case "debug":
+    case "trace":
+      return "neutral";
+    case "info":
+    default:
+      return "success";
+  }
+}
+
+export function formatDurationMs(value?: number): string {
+  if (!value || value <= 0) {
+    return "0 ms";
+  }
+  if (value < 1000) {
+    return `${Math.round(value)} ms`;
+  }
+  const seconds = value / 1000;
+  if (seconds < 60) {
+    return `${seconds.toFixed(seconds >= 10 ? 1 : 2)} s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds - minutes * 60;
+  if (minutes < 60) {
+    const secondsPart = remainingSeconds >= 10
+      ? remainingSeconds.toFixed(0)
+      : remainingSeconds.toFixed(1);
+    return `${minutes}m ${secondsPart}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes - hours * 60;
+  return `${hours}h ${remainingMinutes}m`;
 }

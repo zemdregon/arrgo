@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { DataPanel } from "../../../components/DataPanel";
 import { StatusPill } from "../../../components/StatusPill";
-import type { JobSummary } from "../../../lib/api";
+import type {
+  JobDetail,
+  JobSummary,
+  LibraryEntity,
+  RestApiClient,
+} from "../../../lib/api";
 import {
   buildJobStats,
   buildOptions,
@@ -16,6 +21,9 @@ import {
   formatRelativeTime,
   formatTimestamp,
   jobTone,
+  logTone,
+  formatDurationMs,
+  shortenIdentifier,
 } from "../utils/dashboardFormatting";
 import styles from "../page.module.css";
 
@@ -24,11 +32,23 @@ interface JobQueuePanelProps {
   loading: boolean;
   error?: string;
   onRetry: () => void;
+  restClient: RestApiClient;
+  libraryEntities?: LibraryEntity[];
 }
 
-export function JobQueuePanel({ data, loading, error, onRetry }: JobQueuePanelProps) {
+export function JobQueuePanel({
+  data,
+  loading,
+  error,
+  onRetry,
+  restClient,
+  libraryEntities,
+}: JobQueuePanelProps) {
   const [jobStateFilter, setJobStateFilter] = useState("all");
   const [selectedJob, setSelectedJob] = useState<JobSummary | null>(null);
+  const [jobDetailsCache, setJobDetailsCache] = useState<Record<string, JobDetail>>({});
+  const [jobDetailsLoading, setJobDetailsLoading] = useState(false);
+  const [jobDetailsError, setJobDetailsError] = useState<string | null>(null);
 
   const jobStats = useMemo(() => buildJobStats(data), [data]);
   const queueAnalytics = useMemo(() => buildQueueAnalytics(data), [data]);
@@ -57,6 +77,48 @@ export function JobQueuePanel({ data, loading, error, onRetry }: JobQueuePanelPr
     }
   }, [data, selectedJob]);
 
+  useEffect(() => {
+    if (!selectedJob) {
+      setJobDetailsError(null);
+      setJobDetailsLoading(false);
+      return;
+    }
+    if (jobDetailsCache[selectedJob.id]) {
+      setJobDetailsError(null);
+      setJobDetailsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setJobDetailsLoading(true);
+    setJobDetailsError(null);
+    restClient
+      .fetchJobDetail(selectedJob.id)
+      .then((detail) => {
+        if (cancelled) {
+          return;
+        }
+        setJobDetailsCache((previous) => ({
+          ...previous,
+          [selectedJob.id]: detail,
+        }));
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        setJobDetailsError(message);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setJobDetailsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobDetailsCache, restClient, selectedJob]);
+
   const visibleJobs = useMemo(() => {
     const items = data ?? [];
     if (jobStateFilter === "all") {
@@ -78,6 +140,32 @@ export function JobQueuePanel({ data, loading, error, onRetry }: JobQueuePanelPr
     jobStateFilter === "all"
       ? "All states"
       : optionLabel(jobStateOptions, jobStateFilter, "Selected state");
+
+  const selectedJobDetail = selectedJob
+    ? jobDetailsCache[selectedJob.id]
+    : undefined;
+
+  const relatedEntities = useMemo(() => {
+    const detailEntities = selectedJobDetail?.relatedEntities ?? [];
+    const fallbackEntities =
+      selectedJob && libraryEntities
+        ? libraryEntities.filter(
+            (entity) => entity.id === selectedJob.targetID,
+          )
+        : [];
+    const unique = new Map<string, LibraryEntity>();
+    for (const entity of [...detailEntities, ...fallbackEntities]) {
+      if (!unique.has(entity.id)) {
+        unique.set(entity.id, entity);
+      }
+    }
+    return Array.from(unique.values());
+  }, [libraryEntities, selectedJob, selectedJobDetail]);
+
+  const jobLogs = selectedJobDetail?.logs ?? [];
+  const jobAttempts = selectedJobDetail?.attempts ?? [];
+  const hasDiagnostics =
+    jobLogs.length > 0 || jobAttempts.length > 0 || relatedEntities.length > 0;
 
   return (
     <>
@@ -356,6 +444,148 @@ export function JobQueuePanel({ data, loading, error, onRetry }: JobQueuePanelPr
                 </dd>
               </div>
             </dl>
+            {jobDetailsLoading ? (
+              <p className={styles.drawerStatus}>Loading job diagnostics…</p>
+            ) : jobDetailsError ? (
+              <p className={styles.drawerError}>{jobDetailsError}</p>
+            ) : hasDiagnostics ? (
+              <>
+                <section className={styles.drawerSection}>
+                  <h3 className={styles.drawerSectionTitle}>Execution attempts</h3>
+                  {jobAttempts.length ? (
+                    <ol className={styles.attemptList}>
+                      {jobAttempts.map((attempt) => {
+                        const durationMs =
+                          attempt.startedAt && attempt.completedAt
+                            ? Math.max(
+                                0,
+                                new Date(attempt.completedAt).getTime() -
+                                  new Date(attempt.startedAt).getTime(),
+                              )
+                            : undefined;
+                        return (
+                          <li key={attempt.attempt} className={styles.attemptItem}>
+                            <div className={styles.attemptHeader}>
+                              <span className={styles.monospace}>
+                                Attempt {attempt.attempt}
+                              </span>
+                              <StatusPill
+                                label={attempt.status || "unknown"}
+                                tone={jobTone(attempt.status)}
+                              />
+                            </div>
+                            <div className={styles.timelineMeta}>
+                              <span>
+                                {attempt.workerId
+                                  ? `Worker ${shortenIdentifier(attempt.workerId, 8)}`
+                                  : "Worker unknown"}
+                              </span>
+                              {attempt.startedAt ? (
+                                <span>
+                                  Started {formatTimestamp(attempt.startedAt)}
+                                </span>
+                              ) : null}
+                              {attempt.completedAt ? (
+                                <span>
+                                  Completed {formatTimestamp(attempt.completedAt)}
+                                </span>
+                              ) : null}
+                              {durationMs ? (
+                                <span>{formatDurationMs(durationMs)}</span>
+                              ) : null}
+                            </div>
+                            {attempt.error ? (
+                              <p className={styles.drawerErrorMessage}>
+                                {attempt.error}
+                              </p>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  ) : (
+                    <p className={styles.emptyState}>
+                      No retry attempts recorded for this job.
+                    </p>
+                  )}
+                </section>
+                <section className={styles.drawerSection}>
+                  <h3 className={styles.drawerSectionTitle}>Logs</h3>
+                  {jobLogs.length ? (
+                    <ul className={styles.logStream}>
+                      {jobLogs.slice(0, 20).map((log, index) => {
+                        const timestampLabel = log.timestamp
+                          ? formatTimestamp(log.timestamp)
+                          : "—";
+                        const relativeLabel = log.timestamp
+                          ? formatRelativeTime(log.timestamp)
+                          : null;
+                        return (
+                          <li
+                            key={`${log.timestamp ?? "unknown"}-${index}`}
+                            className={styles.logEntry}
+                          >
+                            <div className={styles.logHeader}>
+                              <StatusPill
+                                label={log.level || "info"}
+                                tone={logTone(log.level)}
+                              />
+                              <span className={styles.smallText}>
+                                {timestampLabel}
+                                {relativeLabel ? ` · ${relativeLabel}` : ""}
+                              </span>
+                            </div>
+                            <p className={styles.logMessage}>{log.message}</p>
+                            {log.fields.length ? (
+                              <dl className={styles.logFields}>
+                                {log.fields.map((field) => (
+                                  <div
+                                    key={`${field.key}-${field.value}`}
+                                    className={styles.logFieldRow}
+                                  >
+                                    <dt>{field.key}</dt>
+                                    <dd>{field.value || "—"}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <p className={styles.emptyState}>
+                      No logs captured for this job yet.
+                    </p>
+                  )}
+                </section>
+                <section className={styles.drawerSection}>
+                  <h3 className={styles.drawerSectionTitle}>Related entities</h3>
+                  {relatedEntities.length ? (
+                    <ul className={styles.relatedEntityList}>
+                      {relatedEntities.map((entity) => (
+                        <li key={entity.id} className={styles.relatedEntityItem}>
+                          <div>
+                            <span className={styles.entityTitle}>{entity.title}</span>
+                            <span className={styles.entityType}>{entity.entityType}</span>
+                          </div>
+                          <span className={styles.monospace}>{entity.id}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className={styles.emptyState}>
+                      No linked library entities reported.
+                    </p>
+                  )}
+                </section>
+              </>
+            ) : (
+              <p className={styles.emptyState}>
+                No additional diagnostics available yet. Check back after the worker
+                reports.
+              </p>
+            )}
           </div>
         </div>
       ) : null}
