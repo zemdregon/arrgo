@@ -1,4 +1,4 @@
-FROM alpine:3.19
+FROM alpine:3.22
 LABEL org.opencontainers.image.title="arrgo" \
       org.opencontainers.image.description="Placeholder container image for the arrgo services."
 
