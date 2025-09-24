@@ -4,6 +4,7 @@
 - arrgo targets a unified master/worker architecture that replaces the Sonarr/Radarr/Lidarr stack with a Go-based service tier backed by PostgreSQL, Redis, and optional search infrastructure.【F:README.md†L3-L38】
 - The repository already documents and tracks a broad set of completed milestones (metadata pipeline hardening, orchestration queue, worker coordination, dashboard shell) with the next immediate UI goal called out separately.【F:README.md†L50-L69】
 - The README now outlines an extensibility roadmap spanning plugin categories (download clients, notifications, metadata, indexers, media servers, automation, storage, analysis, and authentication) plus labeled API key workflows.【F:README.md†L115-L154】
+- Automated indexer health scoring, discovery, and failover-threshold recommendations are now documented alongside the new monitoring package, reducing manual tuning for search integrations.【F:docs/indexer-health-scoring.md†L1-L73】【F:internal/integrations/indexer/monitor.go†L1-L358】
 
 ## What works today
 ### Library orchestration
