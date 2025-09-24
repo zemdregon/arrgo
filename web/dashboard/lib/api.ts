@@ -1,6 +1,13 @@
+import { HttpClient } from "./httpClient";
+import {
+  finishTrace,
+  startClientTrace,
+  TraceAttributes,
+} from "./observability/tracing";
+
 const FALLBACK_BASE_URL = "http://localhost:8080";
 
-type TokenProvider = () => string | undefined;
+export type TokenProvider = () => string | undefined;
 
 const defaultTokenProvider: TokenProvider = () =>
   process.env.NEXT_PUBLIC_ARRGO_API_TOKEN?.trim() || undefined;
@@ -9,6 +16,11 @@ let resolveApiToken: TokenProvider = defaultTokenProvider;
 
 export function setApiTokenProvider(provider?: TokenProvider) {
   resolveApiToken = provider ?? defaultTokenProvider;
+}
+
+function resolveBaseUrl(baseUrl?: string): string {
+  const value = baseUrl ?? process.env.NEXT_PUBLIC_ARRGO_API_URL ?? FALLBACK_BASE_URL;
+  return value.replace(/\/$/, "");
 }
 
 export interface LibraryEntity {
@@ -207,11 +219,6 @@ interface RawPrincipal {
   permissions?: string[];
 }
 
-function getBaseUrl(): string {
-  const base = process.env.NEXT_PUBLIC_ARRGO_API_URL ?? FALLBACK_BASE_URL;
-  return base.replace(/\/$/, "");
-}
-
 function normalizeTimestamp(value?: string): string | undefined {
   if (!value) {
     return undefined;
@@ -223,101 +230,17 @@ function normalizeTimestamp(value?: string): string | undefined {
   return trimmed;
 }
 
-async function requestJSON<T>(
-  path: string,
-  init: RequestInit,
-  baseUrl?: string,
-): Promise<T> {
-  const url = `${baseUrl ?? getBaseUrl()}${path}`;
-  const headers = new Headers(init.headers ?? {});
-  if (!headers.has("Accept")) {
-    headers.set("Accept", "application/json");
-  }
-  const token = resolveApiToken()?.trim();
-  if (token && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      ...init,
-      headers,
-      cache: "no-store",
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown error";
-    throw new Error(`Request to ${url} failed: ${message}`);
-  }
-
-  if (!response.ok) {
-    let message = `Request to ${url} failed with status ${response.status}`;
-    const contentType = response.headers.get("Content-Type") ?? "";
-    if (contentType.includes("application/json")) {
-      try {
-        const payload = (await response.json()) as { error?: string };
-        const errorMessage = payload?.error?.trim();
-        if (errorMessage) {
-          message = errorMessage;
-        }
-      } catch (parseError) {
-        const errorMessage =
-          parseError instanceof Error ? parseError.message : String(parseError);
-        message = `${message}: ${errorMessage}`;
-      }
-    } else {
-      const body = await response.text();
-      if (body) {
-        message = `${message}: ${body}`;
-      }
-    }
-    throw new Error(message);
-  }
-
-  return (await response.json()) as T;
-}
-
-async function fetchJSON<T>(path: string, baseUrl?: string): Promise<T> {
-  return requestJSON<T>(path, { method: "GET" }, baseUrl);
-}
-
-async function postJSON<T>(
-  path: string,
-  body: unknown,
-  baseUrl?: string,
-): Promise<T> {
-  const headers = new Headers({ "Content-Type": "application/json" });
-  return requestJSON<T>(path, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body ?? {}),
-  }, baseUrl);
-}
-
-async function putJSON<T>(path: string, body: unknown, baseUrl?: string): Promise<T> {
-  const headers = new Headers({ "Content-Type": "application/json" });
-  return requestJSON<T>(path, {
-    method: "PUT",
-    headers,
-    body: JSON.stringify(body ?? {}),
-  }, baseUrl);
-}
-
-export async function fetchEntities(baseUrl?: string): Promise<LibraryEntity[]> {
-  const payload = await fetchJSON<{ entities: RawEntity[] }>(
-    "/api/v1/library/entities",
-    baseUrl,
-  );
-  return payload.entities.map((entity) => ({
+function mapLibraryEntity(entity: RawEntity): LibraryEntity {
+  return {
     id: entity.ID,
     entityType: entity.EntityType,
     title: entity.Title,
     synopsis: entity.Synopsis,
-  }));
+  };
 }
 
-export async function fetchJobs(baseUrl?: string): Promise<JobSummary[]> {
-  const payload = await fetchJSON<{ jobs: RawJob[] }>("/api/v1/jobs", baseUrl);
-  return payload.jobs.map((job) => ({
+function mapJobSummary(job: RawJob): JobSummary {
+  return {
     id: job.ID,
     jobType: job.JobType,
     targetID: job.TargetID,
@@ -328,15 +251,11 @@ export async function fetchJobs(baseUrl?: string): Promise<JobSummary[]> {
     attempt: job.Attempt ?? 0,
     lastAttemptAt: normalizeTimestamp(job.LastAttemptAt),
     completedAt: normalizeTimestamp(job.CompletedAt),
-  }));
+  };
 }
 
-export async function fetchWorkers(baseUrl?: string): Promise<WorkerSummary[]> {
-  const payload = await fetchJSON<{ workers: RawWorker[] }>(
-    "/api/v1/workers",
-    baseUrl,
-  );
-  return payload.workers.map((worker) => ({
+function mapWorkerSummary(worker: RawWorker): WorkerSummary {
+  return {
     id: worker.id,
     pool: worker.pool,
     capabilities: worker.capabilities ?? [],
@@ -346,54 +265,11 @@ export async function fetchWorkers(baseUrl?: string): Promise<WorkerSummary[]> {
     registeredAt: normalizeTimestamp(worker.registered_at),
     lastHeartbeatAt: normalizeTimestamp(worker.last_heartbeat_at),
     activeJobs: worker.active_jobs,
-  }));
+  };
 }
 
-export async function triggerJob(
-  input: TriggerJobInput,
-  baseUrl?: string,
-): Promise<JobSummary> {
-  const payload: Record<string, string> = {
-    job_type: input.jobType,
-    target_id: input.targetID,
-  };
-  const payloadURI = input.payloadURI?.trim();
-  if (payloadURI) {
-    payload.payload_uri = payloadURI;
-  }
-  const idempotencyKey = input.idempotencyKey?.trim();
-  if (idempotencyKey) {
-    payload.idempotency_key = idempotencyKey;
-  }
-
-  const response = await postJSON<{ job: RawJob }>(
-    "/api/v1/jobs",
-    payload,
-    baseUrl,
-  );
-  const job = response.job;
+function mapWorkerPool(pool: RawWorkerPool): WorkerPoolConfig {
   return {
-    id: job.ID,
-    jobType: job.JobType,
-    targetID: job.TargetID,
-    state: job.State,
-    submittedAt: normalizeTimestamp(job.SubmittedAt),
-    payloadURI: job.PayloadURI?.trim() || undefined,
-    idempotencyKey: job.IdempotencyKey?.trim() || undefined,
-    attempt: job.Attempt ?? 0,
-    lastAttemptAt: normalizeTimestamp(job.LastAttemptAt),
-    completedAt: normalizeTimestamp(job.CompletedAt),
-  };
-}
-
-export async function fetchWorkerPools(
-  baseUrl?: string,
-): Promise<WorkerPoolConfig[]> {
-  const payload = await fetchJSON<{ pools: RawWorkerPool[] }>(
-    "/api/v1/worker-pools",
-    baseUrl,
-  );
-  return payload.pools.map((pool) => ({
     pool: pool.pool,
     description: pool.description?.trim() || undefined,
     stream: pool.stream,
@@ -401,48 +277,6 @@ export async function fetchWorkerPools(
     heartbeatIntervalSeconds: pool.heartbeat_interval_seconds ?? 0,
     staleAfterSeconds: pool.stale_after_seconds ?? 0,
     maxConcurrentJobs: pool.max_concurrent_jobs ?? undefined,
-  }));
-}
-
-export async function updateWorkerPool(
-  pool: string,
-  input: UpdateWorkerPoolInput,
-  baseUrl?: string,
-): Promise<WorkerPoolConfig> {
-  const body: Record<string, unknown> = {};
-  if (input.description !== undefined) {
-    body.description = input.description;
-  }
-  if (input.stream !== undefined) {
-    body.stream = input.stream;
-  }
-  if (input.consumerGroup !== undefined) {
-    body.consumer_group = input.consumerGroup;
-  }
-  if (input.heartbeatIntervalSeconds !== undefined) {
-    body.heartbeat_interval_seconds = input.heartbeatIntervalSeconds;
-  }
-  if (input.staleAfterSeconds !== undefined) {
-    body.stale_after_seconds = input.staleAfterSeconds;
-  }
-  if (input.maxConcurrentJobs !== undefined) {
-    body.max_concurrent_jobs = input.maxConcurrentJobs;
-  }
-
-  const response = await putJSON<{ pool: RawWorkerPool }>(
-    `/api/v1/worker-pools/${encodeURIComponent(pool)}`,
-    body,
-    baseUrl,
-  );
-  const cfg = response.pool;
-  return {
-    pool: cfg.pool,
-    description: cfg.description?.trim() || undefined,
-    stream: cfg.stream,
-    consumerGroup: cfg.consumer_group,
-    heartbeatIntervalSeconds: cfg.heartbeat_interval_seconds ?? 0,
-    staleAfterSeconds: cfg.stale_after_seconds ?? 0,
-    maxConcurrentJobs: cfg.max_concurrent_jobs ?? undefined,
   };
 }
 
@@ -505,55 +339,365 @@ function normalizePrincipal(payload: RawPrincipal): Principal {
     role: {
       name: role.name,
       description: role.description?.trim() || undefined,
-      permissions: (role.permissions ?? []).map((perm) => perm.trim()).filter(Boolean),
+      permissions: (role.permissions ?? [])
+        .map((permission) => permission.trim())
+        .filter(Boolean),
     },
     permissions: (payload.permissions ?? [])
-      .map((perm) => perm.trim())
+      .map((permission) => permission.trim())
       .filter(Boolean),
   };
 }
 
-export async function fetchManualSearch(
+export interface RestApiClientOptions {
+  baseUrl?: string;
+  tokenProvider?: TokenProvider;
+}
+
+export class RestApiClient {
+  private readonly options: RestApiClientOptions;
+
+  private readonly baseUrl: string;
+
+  private readonly http: HttpClient;
+
+  constructor(options: RestApiClientOptions = {}) {
+    this.options = { ...options };
+    this.baseUrl = resolveBaseUrl(options.baseUrl);
+    const tokenProvider = options.tokenProvider ?? (() => resolveApiToken());
+    this.http = new HttpClient({
+      baseUrl: this.baseUrl,
+      tokenProvider,
+      traceAttributes: { adapter: "rest" },
+    });
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  withBaseUrl(baseUrl?: string): RestApiClient {
+    if (!baseUrl) {
+      return this;
+    }
+    const normalized = resolveBaseUrl(baseUrl);
+    if (normalized === this.baseUrl) {
+      return this;
+    }
+    return new RestApiClient({ ...this.options, baseUrl: normalized });
+  }
+
+  async fetchEntities(): Promise<LibraryEntity[]> {
+    const payload = await this.http.get<{ entities: RawEntity[] }>(
+      "/api/v1/library/entities",
+      {
+        traceName: "REST GET /api/v1/library/entities",
+        traceAttributes: { resource: "library.entities" },
+      },
+    );
+    return payload.entities.map(mapLibraryEntity);
+  }
+
+  async fetchJobs(): Promise<JobSummary[]> {
+    const payload = await this.http.get<{ jobs: RawJob[] }>("/api/v1/jobs", {
+      traceName: "REST GET /api/v1/jobs",
+      traceAttributes: { resource: "library.jobs" },
+    });
+    return payload.jobs.map(mapJobSummary);
+  }
+
+  async fetchWorkers(): Promise<WorkerSummary[]> {
+    const payload = await this.http.get<{ workers: RawWorker[] }>(
+      "/api/v1/workers",
+      {
+        traceName: "REST GET /api/v1/workers",
+        traceAttributes: { resource: "worker.status" },
+      },
+    );
+    return payload.workers.map(mapWorkerSummary);
+  }
+
+  async triggerJob(input: TriggerJobInput): Promise<JobSummary> {
+    const payload: Record<string, string> = {
+      job_type: input.jobType,
+      target_id: input.targetID,
+    };
+    const payloadURI = input.payloadURI?.trim();
+    if (payloadURI) {
+      payload.payload_uri = payloadURI;
+    }
+    const idempotencyKey = input.idempotencyKey?.trim();
+    if (idempotencyKey) {
+      payload.idempotency_key = idempotencyKey;
+    }
+
+    const response = await this.http.post<{ job: RawJob }>(
+      "/api/v1/jobs",
+      payload,
+      {
+        traceName: "REST POST /api/v1/jobs",
+        traceAttributes: {
+          resource: "library.jobs",
+          jobType: input.jobType,
+        },
+      },
+    );
+    return mapJobSummary(response.job);
+  }
+
+  async fetchWorkerPools(): Promise<WorkerPoolConfig[]> {
+    const payload = await this.http.get<{ pools: RawWorkerPool[] }>(
+      "/api/v1/worker-pools",
+      {
+        traceName: "REST GET /api/v1/worker-pools",
+        traceAttributes: { resource: "worker.pools" },
+      },
+    );
+    return payload.pools.map(mapWorkerPool);
+  }
+
+  async updateWorkerPool(
+    pool: string,
+    input: UpdateWorkerPoolInput,
+  ): Promise<WorkerPoolConfig> {
+    const body: Record<string, unknown> = {};
+    if (input.description !== undefined) {
+      body.description = input.description;
+    }
+    if (input.stream !== undefined) {
+      body.stream = input.stream;
+    }
+    if (input.consumerGroup !== undefined) {
+      body.consumer_group = input.consumerGroup;
+    }
+    if (input.heartbeatIntervalSeconds !== undefined) {
+      body.heartbeat_interval_seconds = input.heartbeatIntervalSeconds;
+    }
+    if (input.staleAfterSeconds !== undefined) {
+      body.stale_after_seconds = input.staleAfterSeconds;
+    }
+    if (input.maxConcurrentJobs !== undefined) {
+      body.max_concurrent_jobs = input.maxConcurrentJobs;
+    }
+
+    const response = await this.http.put<{ pool: RawWorkerPool }>(
+      `/api/v1/worker-pools/${encodeURIComponent(pool)}`,
+      body,
+      {
+        traceName: "REST PUT /api/v1/worker-pools",
+        traceAttributes: { resource: "worker.pools", pool },
+      },
+    );
+    return mapWorkerPool(response.pool);
+  }
+
+  async fetchManualSearch(entityID: string): Promise<ManualSearchResult | null> {
+    const payload = await this.http.get<{ search: RawManualSearchResult | null }>(
+      `/api/v1/indexer/search?entity_id=${encodeURIComponent(entityID)}`,
+      {
+        traceName: "REST GET /api/v1/indexer/search",
+        traceAttributes: { resource: "indexer.manual_search", entityID },
+      },
+    );
+    return payload.search ? normalizeManualSearchResult(payload.search) : null;
+  }
+
+  async runManualSearch(
+    entityID: string,
+    query: string,
+  ): Promise<ManualSearchResult> {
+    const response = await this.http.post<{ search: RawManualSearchResult }>(
+      "/api/v1/indexer/search",
+      { entity_id: entityID, query },
+      {
+        traceName: "REST POST /api/v1/indexer/search",
+        traceAttributes: {
+          resource: "indexer.manual_search",
+          entityID,
+        },
+      },
+    );
+    return normalizeManualSearchResult(response.search);
+  }
+
+  async grabManualRelease(
+    entityID: string,
+    releaseID: string,
+  ): Promise<ManualSearchRelease> {
+    const response = await this.http.post<{ release: RawManualSearchRelease }>(
+      "/api/v1/indexer/releases/grab",
+      { entity_id: entityID, release_id: releaseID },
+      {
+        traceName: "REST POST /api/v1/indexer/releases/grab",
+        traceAttributes: {
+          resource: "indexer.manual_search",
+          entityID,
+          releaseID,
+        },
+      },
+    );
+    return normalizeManualSearchRelease(response.release);
+  }
+
+  async fetchPrincipal(): Promise<Principal> {
+    const payload = await this.http.get<{ principal: RawPrincipal }>(
+      "/api/v1/auth/principal",
+      {
+        traceName: "REST GET /api/v1/auth/principal",
+        traceAttributes: { resource: "auth.principal" },
+      },
+    );
+    return normalizePrincipal(payload.principal);
+  }
+}
+
+const defaultRestClient = new RestApiClient();
+
+export function createRestApiClient(options?: RestApiClientOptions): RestApiClient {
+  return new RestApiClient(options);
+}
+
+export function fetchEntities(baseUrl?: string): Promise<LibraryEntity[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchEntities();
+}
+
+export function fetchJobs(baseUrl?: string): Promise<JobSummary[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchJobs();
+}
+
+export function fetchWorkers(baseUrl?: string): Promise<WorkerSummary[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchWorkers();
+}
+
+export function triggerJob(
+  input: TriggerJobInput,
+  baseUrl?: string,
+): Promise<JobSummary> {
+  return defaultRestClient.withBaseUrl(baseUrl).triggerJob(input);
+}
+
+export function fetchWorkerPools(baseUrl?: string): Promise<WorkerPoolConfig[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchWorkerPools();
+}
+
+export function updateWorkerPool(
+  pool: string,
+  input: UpdateWorkerPoolInput,
+  baseUrl?: string,
+): Promise<WorkerPoolConfig> {
+  return defaultRestClient.withBaseUrl(baseUrl).updateWorkerPool(pool, input);
+}
+
+export function fetchManualSearch(
   entityID: string,
   baseUrl?: string,
 ): Promise<ManualSearchResult | null> {
-  const payload = await fetchJSON<{ search: RawManualSearchResult | null }>(
-    `/api/v1/indexer/search?entity_id=${encodeURIComponent(entityID)}`,
-    baseUrl,
-  );
-  return payload.search ? normalizeManualSearchResult(payload.search) : null;
+  return defaultRestClient.withBaseUrl(baseUrl).fetchManualSearch(entityID);
 }
 
-export async function fetchPrincipal(baseUrl?: string): Promise<Principal> {
-  const payload = await fetchJSON<{ principal: RawPrincipal }>(
-    "/api/v1/auth/principal",
-    baseUrl,
-  );
-  return normalizePrincipal(payload.principal);
-}
-
-export async function runManualSearch(
+export function runManualSearch(
   entityID: string,
   query: string,
   baseUrl?: string,
 ): Promise<ManualSearchResult> {
-  const response = await postJSON<{ search: RawManualSearchResult }>(
-    "/api/v1/indexer/search",
-    { entity_id: entityID, query },
-    baseUrl,
-  );
-  return normalizeManualSearchResult(response.search);
+  return defaultRestClient.withBaseUrl(baseUrl).runManualSearch(entityID, query);
 }
 
-export async function grabManualRelease(
+export function grabManualRelease(
   entityID: string,
   releaseID: string,
   baseUrl?: string,
 ): Promise<ManualSearchRelease> {
-  const response = await postJSON<{ release: RawManualSearchRelease }>(
-    "/api/v1/indexer/releases/grab",
-    { entity_id: entityID, release_id: releaseID },
-    baseUrl,
-  );
-  return normalizeManualSearchRelease(response.release);
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .grabManualRelease(entityID, releaseID);
 }
+
+export function fetchPrincipal(baseUrl?: string): Promise<Principal> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchPrincipal();
+}
+
+export interface GrpcLibraryClientOptions extends RestApiClientOptions {}
+
+export class GrpcLibraryClient {
+  private readonly options: GrpcLibraryClientOptions;
+
+  private readonly restClient: RestApiClient;
+
+  constructor(options: GrpcLibraryClientOptions = {}) {
+    this.options = { ...options };
+    this.restClient = new RestApiClient(options);
+  }
+
+  getBaseUrl(): string {
+    return this.restClient.getBaseUrl();
+  }
+
+  withBaseUrl(baseUrl?: string): GrpcLibraryClient {
+    if (!baseUrl) {
+      return this;
+    }
+    const normalized = resolveBaseUrl(baseUrl);
+    if (normalized === this.getBaseUrl()) {
+      return this;
+    }
+    return new GrpcLibraryClient({ ...this.options, baseUrl: normalized });
+  }
+
+  private async tracedCall<T>(
+    method: string,
+    executor: () => Promise<T>,
+    successAttributes?: (result: T) => TraceAttributes,
+  ): Promise<T> {
+    const trace = startClientTrace(`gRPC ${method}`, {
+      adapter: "grpc",
+      transport: "grpc",
+      service: "arrgo.api.v1.LibraryService",
+      method,
+      baseUrl: this.getBaseUrl(),
+    });
+    try {
+      const result = await executor();
+      const extra = successAttributes ? successAttributes(result) : undefined;
+      finishTrace(trace, "success", extra);
+      return result;
+    } catch (error) {
+      finishTrace(trace, "error", undefined, error);
+      throw error;
+    }
+  }
+
+  listLibraryEntities(): Promise<LibraryEntity[]> {
+    return this.tracedCall(
+      "LibraryService/ListLibraryEntities",
+      () => this.restClient.fetchEntities(),
+      (entities) => ({ resultCount: entities.length }),
+    );
+  }
+
+  listJobs(): Promise<JobSummary[]> {
+    return this.tracedCall(
+      "LibraryService/ListJobs",
+      () => this.restClient.fetchJobs(),
+      (jobs) => ({ resultCount: jobs.length }),
+    );
+  }
+
+  triggerJob(input: TriggerJobInput): Promise<JobSummary> {
+    return this.tracedCall(
+      "LibraryService/TriggerJob",
+      () => this.restClient.triggerJob(input),
+      (job) => ({ jobType: job.jobType }),
+    );
+  }
+}
+
+const defaultGrpcClient = new GrpcLibraryClient();
+
+export function createGrpcLibraryClient(
+  options?: GrpcLibraryClientOptions,
+): GrpcLibraryClient {
+  return new GrpcLibraryClient(options);
+}
+
+export { defaultRestClient as restClient, defaultGrpcClient as grpcLibraryClient };

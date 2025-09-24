@@ -1,26 +1,20 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { DataPanel } from "../../components/DataPanel";
 import { StatusPill } from "../../components/StatusPill";
 import { PageHeader } from "../../components/layout/PageHeader";
 import { useEnvironment } from "../../components/environment/EnvironmentContext";
 import { useAuth } from "../../components/auth/AuthContext";
-import { useApiData } from "../../hooks/useApiData";
-import {
-  fetchEntities,
-  fetchJobs,
-  fetchManualSearch,
-  fetchWorkerPools,
-  fetchWorkers,
-  grabManualRelease,
+import { useRestClient } from "../../hooks/useRestClient";
+import { useRestQuery } from "../../hooks/useRestQuery";
+import { useGrpcQuery } from "../../hooks/useGrpcQuery";
+import type {
   JobSummary,
   LibraryEntity,
   ManualSearchRelease,
   ManualSearchResult,
-  runManualSearch,
-  triggerJob,
-  updateWorkerPool,
   WorkerPoolConfig,
   WorkerSummary,
 } from "../../lib/api";
@@ -307,22 +301,118 @@ export default function DashboardPage() {
   const canWriteLibrary = isAuthenticated && hasPermission("library:write");
   const canManageWorkers = isAuthenticated && hasPermission("worker:manage");
 
-  const loadLibrary = useCallback(() => fetchEntities(apiBaseUrl), [apiBaseUrl]);
-  const loadJobs = useCallback(() => fetchJobs(apiBaseUrl), [apiBaseUrl]);
-  const loadWorkers = useCallback(() => fetchWorkers(apiBaseUrl), [apiBaseUrl]);
-  const loadPools = useCallback(
-    () => fetchWorkerPools(apiBaseUrl),
+  const queryClient = useQueryClient();
+  const restClient = useRestClient();
+
+  const libraryQueryKey = useMemo(
+    () => ["library", "entities", apiBaseUrl] as const,
+    [apiBaseUrl],
+  );
+  const jobsQueryKey = useMemo(
+    () => ["library", "jobs", apiBaseUrl] as const,
+    [apiBaseUrl],
+  );
+  const workersQueryKey = useMemo(
+    () => ["workers", "summary", apiBaseUrl] as const,
+    [apiBaseUrl],
+  );
+  const poolsQueryKey = useMemo(
+    () => ["workers", "pools", apiBaseUrl] as const,
     [apiBaseUrl],
   );
 
-  const library = useApiData(loadLibrary, [apiBaseUrl], {
-    enabled: canReadLibrary,
-  });
-  const jobs = useApiData(loadJobs, [apiBaseUrl], { enabled: canReadLibrary });
-  const workers = useApiData(loadWorkers, [apiBaseUrl], {
-    enabled: canReadWorkers,
-  });
-  const pools = useApiData(loadPools, [apiBaseUrl], { enabled: canReadWorkers });
+  const libraryQuery = useRestQuery(
+    libraryQueryKey,
+    (client) => client.fetchEntities(),
+    {
+      enabled: canReadLibrary,
+    },
+  );
+  const jobsQuery = useRestQuery(
+    jobsQueryKey,
+    (client) => client.fetchJobs(),
+    {
+      enabled: canReadLibrary,
+    },
+  );
+  const workersQuery = useRestQuery(
+    workersQueryKey,
+    (client) => client.fetchWorkers(),
+    {
+      enabled: canReadWorkers,
+      refetchInterval: 30000,
+    },
+  );
+  const poolsQuery = useRestQuery(
+    poolsQueryKey,
+    (client) => client.fetchWorkerPools(),
+    {
+      enabled: canReadWorkers,
+    },
+  );
+
+  const grpcLibraryQuery = useGrpcQuery<LibraryEntity[]>(
+    ["grpc", "library", apiBaseUrl],
+    (client) => client.listLibraryEntities(),
+    {
+      enabled: canReadLibrary,
+      errorRetryCount: 0,
+    },
+  );
+
+  useEffect(() => {
+    if (grpcLibraryQuery.data) {
+      queryClient.setQueryData(libraryQueryKey, grpcLibraryQuery.data);
+    }
+  }, [grpcLibraryQuery.data, libraryQueryKey, queryClient]);
+
+  const {
+    data: libraryData,
+    isPending: libraryPending,
+    error: libraryErrorObj,
+    refetch: refetchLibrary,
+  } = libraryQuery;
+  const libraryError = libraryErrorObj?.message;
+  const libraryLoading = libraryPending && !libraryData;
+  const refreshLibrary = useCallback(() => {
+    void refetchLibrary();
+  }, [refetchLibrary]);
+
+  const {
+    data: jobsData,
+    isPending: jobsPending,
+    error: jobsErrorObj,
+    refetch: refetchJobs,
+  } = jobsQuery;
+  const jobsError = jobsErrorObj?.message;
+  const jobsLoading = jobsPending && !jobsData;
+  const refreshJobs = useCallback(() => {
+    void refetchJobs();
+  }, [refetchJobs]);
+
+  const {
+    data: workersData,
+    isPending: workersPending,
+    error: workersErrorObj,
+    refetch: refetchWorkers,
+  } = workersQuery;
+  const workersError = workersErrorObj?.message;
+  const workersLoading = workersPending && !workersData;
+  const refreshWorkers = useCallback(() => {
+    void refetchWorkers();
+  }, [refetchWorkers]);
+
+  const {
+    data: poolsData,
+    isPending: poolsPending,
+    error: poolsErrorObj,
+    refetch: refetchPools,
+  } = poolsQuery;
+  const poolsError = poolsErrorObj?.message;
+  const poolsLoading = poolsPending && !poolsData;
+  const refreshPools = useCallback(() => {
+    void refetchPools();
+  }, [refetchPools]);
 
   const [libraryTypeFilter, setLibraryTypeFilter] = useState("all");
   const [jobStateFilter, setJobStateFilter] = useState("all");
@@ -368,26 +458,21 @@ export default function DashboardPage() {
   } | null>(null);
   const [grabInFlight, setGrabInFlight] = useState<string | null>(null);
 
-  const { refresh: refreshLibrary } = library;
-  const { refresh: refreshJobs } = jobs;
-  const { refresh: refreshWorkers } = workers;
-  const { refresh: refreshPools } = pools;
-
   const libraryStats = useMemo(
-    () => buildLibraryStats(library.data),
-    [library.data],
+    () => buildLibraryStats(libraryData),
+    [libraryData],
   );
-  const jobStats = useMemo(() => buildJobStats(jobs.data), [jobs.data]);
+  const jobStats = useMemo(() => buildJobStats(jobsData), [jobsData]);
   const workerStats = useMemo(
-    () => buildWorkerStats(workers.data),
-    [workers.data],
+    () => buildWorkerStats(workersData),
+    [workersData],
   );
   const queueAnalytics = useMemo(
-    () => buildQueueAnalytics(jobs.data),
-    [jobs.data],
+    () => buildQueueAnalytics(jobsData),
+    [jobsData],
   );
   const aggregateLoading =
-    library.loading || jobs.loading || workers.loading || pools.loading;
+    libraryLoading || jobsLoading || workersLoading || poolsLoading;
 
   const handleRefreshAll = useCallback(() => {
     refreshLibrary();
@@ -397,68 +482,68 @@ export default function DashboardPage() {
   }, [refreshJobs, refreshLibrary, refreshPools, refreshWorkers]);
   const libraryEntityOptions = useMemo(
     () =>
-      (library.data ?? [])
+      (libraryData ?? [])
         .map<EntityOption>((entity) => ({
           value: entity.id,
           label: entity.title || entity.id,
           entityType: entity.entityType || "Unknown",
         }))
         .sort((a, b) => a.label.localeCompare(b.label)),
-    [library.data],
+    [libraryData],
   );
 
   const libraryTypeOptions = useMemo(
     () =>
       buildOptions(
-        (library.data ?? []).map((entity) => entity.entityType),
+        (libraryData ?? []).map((entity) => entity.entityType),
         "Unknown",
         "unknown",
       ),
-    [library.data],
+    [libraryData],
   );
   const jobStateOptions = useMemo(
     () =>
       buildOptions(
-        (jobs.data ?? []).map((job) => job.state),
+        (jobsData ?? []).map((job) => job.state),
         "Unknown state",
         "unknown",
       ),
-    [jobs.data],
+    [jobsData],
   );
   const workerPoolOptions = useMemo(
     () =>
       buildOptions(
-        (workers.data ?? []).map((worker) => worker.pool),
+        (workersData ?? []).map((worker) => worker.pool),
         "Unassigned",
         "unassigned",
       ),
-    [workers.data],
+    [workersData],
   );
   const workerStatusOptions = useMemo(
     () =>
       buildOptions(
-        (workers.data ?? []).map((worker) => worker.status),
+        (workersData ?? []).map((worker) => worker.status),
         "Unknown status",
         "unknown",
       ),
-    [workers.data],
+    [workersData],
   );
   const poolOptions = useMemo(
     () =>
-      (pools.data ?? []).map<SelectOption>((pool) => ({
+      (poolsData ?? []).map<SelectOption>((pool) => ({
         value: pool.pool,
         label: pool.description
           ? pool.pool + " · " + pool.description
           : pool.pool,
       })),
-    [pools.data],
+    [poolsData],
   );
   const selectedPoolConfig = useMemo<WorkerPoolConfig | null>(() => {
-    if (!pools.data) {
+    if (!poolsData) {
       return null;
     }
-    return pools.data.find((cfg) => cfg.pool === poolSelection) ?? null;
-  }, [pools.data, poolSelection]);
+    return poolsData.find((cfg) => cfg.pool === poolSelection) ?? null;
+  }, [poolsData, poolSelection]);
   const selectedPoolWorkerCount = useMemo(() => {
     const match = workerStats.pools.find(([pool]) => pool === poolSelection);
     return match ? match[1] : 0;
@@ -474,7 +559,8 @@ export default function DashboardPage() {
     }
     setManualSearchLoading(true);
     setManualSearchError(null);
-    return fetchManualSearch(manualEntitySelection, apiBaseUrl)
+    return restClient
+      .fetchManualSearch(manualEntitySelection)
       .then((result) => {
         setManualSearchResult(result);
       })
@@ -486,7 +572,7 @@ export default function DashboardPage() {
       .finally(() => {
         setManualSearchLoading(false);
       });
-  }, [apiBaseUrl, manualEntitySelection]);
+  }, [manualEntitySelection, restClient]);
 
   useEffect(() => {
     if (
@@ -561,17 +647,17 @@ export default function DashboardPage() {
   }, [loadManualSearch]);
 
   useEffect(() => {
-    if (!pools.data || pools.data.length === 0) {
+    if (!poolsData || poolsData.length === 0) {
       if (poolSelection !== "") {
         setPoolSelection("");
       }
       return;
     }
-    if (poolSelection && pools.data.some((cfg) => cfg.pool === poolSelection)) {
+    if (poolSelection && poolsData.some((cfg) => cfg.pool === poolSelection)) {
       return;
     }
-    setPoolSelection(pools.data[0].pool);
-  }, [pools.data, poolSelection]);
+    setPoolSelection(poolsData[0].pool);
+  }, [poolsData, poolSelection]);
 
   useEffect(() => {
     if (!selectedPoolConfig) {
@@ -602,31 +688,31 @@ export default function DashboardPage() {
   }, [selectedPoolConfig]);
 
   useEffect(() => {
-    if (selectedJob && !jobs.data?.some((job) => job.id === selectedJob.id)) {
+    if (selectedJob && !jobsData?.some((job) => job.id === selectedJob.id)) {
       setSelectedJob(null);
     }
-  }, [jobs.data, selectedJob]);
+  }, [jobsData, selectedJob]);
 
   const visibleLibrary = useMemo(() => {
-    const entities = library.data ?? [];
+    const entities = libraryData ?? [];
     if (libraryTypeFilter === "all") {
       return entities;
     }
     return entities.filter(
       (entity) => normalize(entity.entityType) === libraryTypeFilter,
     );
-  }, [library.data, libraryTypeFilter]);
+  }, [libraryData, libraryTypeFilter]);
 
   const visibleJobs = useMemo(() => {
-    const items = jobs.data ?? [];
+    const items = jobsData ?? [];
     if (jobStateFilter === "all") {
       return items;
     }
     return items.filter((job) => normalize(job.state) === jobStateFilter);
-  }, [jobs.data, jobStateFilter]);
+  }, [jobsData, jobStateFilter]);
 
   const visibleWorkers = useMemo(() => {
-    const nodes = workers.data ?? [];
+    const nodes = workersData ?? [];
     return nodes.filter((worker) => {
       if (
         workerPoolFilter !== "all" &&
@@ -642,7 +728,7 @@ export default function DashboardPage() {
       }
       return true;
     });
-  }, [workers.data, workerPoolFilter, workerStatusFilter]);
+  }, [workersData, workerPoolFilter, workerStatusFilter]);
 
   const jobSubmitDisabled =
     !canWriteLibrary ||
@@ -747,15 +833,12 @@ export default function DashboardPage() {
     setJobSubmitting(true);
     setJobFeedback(null);
     try {
-      await triggerJob(
-        {
-          jobType: jobTypeValue,
-          targetID: jobTargetValue,
-          payloadURI: jobPayloadURI,
-          idempotencyKey: jobIdempotencyKey,
-        },
-        apiBaseUrl,
-      );
+      await restClient.triggerJob({
+        jobType: jobTypeValue,
+        targetID: jobTargetValue,
+        payloadURI: jobPayloadURI,
+        idempotencyKey: jobIdempotencyKey,
+      });
       setJobFeedback({
         kind: "success",
         message:
@@ -763,7 +846,7 @@ export default function DashboardPage() {
       });
       setJobPayloadURI("");
       setJobIdempotencyKey("");
-      jobs.refresh();
+      refreshJobs();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setJobFeedback({ kind: "error", message });
@@ -794,10 +877,9 @@ export default function DashboardPage() {
     setManualSearchLoading(true);
     setGrabInFlight(null);
     try {
-      const result = await runManualSearch(
+      const result = await restClient.runManualSearch(
         manualEntitySelection,
         manualQuery,
-        apiBaseUrl,
       );
       setManualSearchResult(result);
       const count = result.results.length;
@@ -831,10 +913,9 @@ export default function DashboardPage() {
     setManualSearchFeedback(null);
     setGrabInFlight(release.id);
     try {
-      const updated = await grabManualRelease(
+      const updated = await restClient.grabManualRelease(
         manualEntitySelection,
         release.id,
-        apiBaseUrl,
       );
       setManualSearchResult((current) => {
         if (!current) {
@@ -893,7 +974,7 @@ export default function DashboardPage() {
     setPoolSubmitting(true);
     setPoolFeedback(null);
     try {
-      await updateWorkerPool(
+      await restClient.updateWorkerPool(
         poolSelection,
         {
           description: poolForm.description,
@@ -903,13 +984,12 @@ export default function DashboardPage() {
           staleAfterSeconds: staleAfter,
           maxConcurrentJobs,
         },
-        apiBaseUrl,
       );
       setPoolFeedback({
         kind: "success",
         message: "Updated " + poolSelection + " pool configuration.",
       });
-      pools.refresh();
+      refreshPools();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setPoolFeedback({ kind: "error", message });
@@ -965,9 +1045,9 @@ export default function DashboardPage() {
         <DataPanel
           title="Library health"
           description="Snapshot of tracked media entities grouped by type."
-          loading={library.loading}
-          error={library.error}
-          onRetry={library.refresh}
+          loading={libraryLoading}
+          error={libraryError}
+          onRetry={refreshLibrary}
           actions={
             libraryStats.total ? (
               <>
@@ -1470,9 +1550,9 @@ export default function DashboardPage() {
         <DataPanel
           title="Job queue"
           description="Latest orchestration jobs dispatched by the master node."
-          loading={jobs.loading}
-          error={jobs.error}
-          onRetry={jobs.refresh}
+          loading={jobsLoading}
+          error={jobsError}
+          onRetry={refreshJobs}
           actions={
             jobStats.total ? (
               <div className={styles.panelControls}>
@@ -1667,9 +1747,9 @@ export default function DashboardPage() {
         <DataPanel
           title="Worker fleet"
           description="Active nodes reporting heartbeats to the master."
-          loading={workers.loading}
-          error={workers.error}
-          onRetry={workers.refresh}
+          loading={workersLoading}
+          error={workersError}
+          onRetry={refreshWorkers}
           actions={
             workerStats.total ? (
               <div className={styles.panelControls}>
@@ -1873,11 +1953,11 @@ export default function DashboardPage() {
         <DataPanel
           title="Worker pool configuration"
           description="Tune queue assignments and cadence for master/worker pools."
-          loading={pools.loading}
-          error={pools.error}
-          onRetry={pools.refresh}
+          loading={poolsLoading}
+          error={poolsError}
+          onRetry={refreshPools}
           actions={
-            pools.data && pools.data.length ? (
+            poolsData && poolsData.length ? (
               <div className={styles.panelControls}>
                 <div className={styles.controlGroup}>
                   <label className={styles.controlLabel} htmlFor="pool-select">
@@ -1903,7 +1983,7 @@ export default function DashboardPage() {
             ) : null
           }
         >
-          {pools.loading ? null : pools.data && pools.data.length ? (
+          {poolsLoading ? null : poolsData && poolsData.length ? (
             <form className={styles.poolForm} onSubmit={handlePoolSubmit}>
               <div className={styles.metricsRow}>
                 <div className={styles.metricCard}>
