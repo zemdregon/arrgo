@@ -209,5 +209,19 @@ When preparing a change:
 4. Provide actionable commit messages and PR descriptions that reference
    affected subsystems and include test evidence.
 
+## Legal Disclaimer
+This repository occasionally references integrations, research tooling, or
+automation patterns that could, in theory, be adapted for copyright-infringing
+workflows. Those materials are published exclusively to enable legitimate
+interoperability research, academic study, and testing of lawful media
+workloads. They are not an endorsement of piracy or other unlawful behavior.
+
+You are solely responsible for understanding and complying with the
+intellectual property, telecommunications, and data protection laws that apply
+where you operate. Before using any code or documentation from this project,
+consult qualified counsel or the relevant authorities to confirm that your
+intended use is legal in your jurisdiction. The maintainers disclaim any
+liability for misuse.
+
 ## License
 This project is licensed under the [Apache License 2.0](LICENSE).
