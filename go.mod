@@ -53,4 +53,8 @@ require (
 )
 
 // Pin genproto to a June 2024 snapshot so CI does not request unreleased pseudo-versions.
-replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20240624140628-dc46fd24d27d
+replace (
+	google.golang.org/genproto => google.golang.org/genproto v0.0.0-20240624140628-dc46fd24d27d
+	google.golang.org/genproto/googleapis/api => google.golang.org/genproto/googleapis/api v0.0.0-20240624140628-dc46fd24d27d
+	google.golang.org/genproto/googleapis/rpc => google.golang.org/genproto/googleapis/rpc v0.0.0-20240624140628-dc46fd24d27d
+)
