@@ -32,6 +32,33 @@ export interface WorkerSummary {
   activeJobs: number;
 }
 
+export interface ManualSearchRelease {
+  id: string;
+  searchID: string;
+  entityID: string;
+  title: string;
+  indexer: string;
+  protocol: string;
+  quality: string;
+  publishDate?: string;
+  sizeBytes: number;
+  seeders: number;
+  grabs: number;
+  score: number;
+  status: string;
+  rejectionReason?: string;
+  downloadURL: string;
+  grabbedAt?: string;
+}
+
+export interface ManualSearchResult {
+  id: string;
+  entityID: string;
+  query: string;
+  executedAt?: string;
+  results: ManualSearchRelease[];
+}
+
 export interface TriggerJobInput {
   jobType: string;
   targetID: string;
@@ -100,6 +127,33 @@ interface RawWorkerPool {
   max_concurrent_jobs?: number;
 }
 
+interface RawManualSearchRelease {
+  ID: string;
+  SearchID: string;
+  EntityID: string;
+  Title: string;
+  Indexer: string;
+  Protocol: string;
+  Quality: string;
+  PublishDate?: string;
+  SizeBytes: number;
+  Seeders: number;
+  Grabs: number;
+  Score: number;
+  Status: string;
+  RejectionReason?: string;
+  DownloadURL: string;
+  GrabbedAt?: string;
+}
+
+interface RawManualSearchResult {
+  ID: string;
+  EntityID: string;
+  Query: string;
+  ExecutedAt?: string;
+  Results: RawManualSearchRelease[];
+}
+
 function getBaseUrl(): string {
   const base = process.env.NEXT_PUBLIC_ARRGO_API_URL ?? FALLBACK_BASE_URL;
   return base.replace(/\/$/, "");
@@ -127,7 +181,7 @@ async function requestJSON<T>(path: string, init: RequestInit): Promise<T> {
     response = await fetch(url, {
       ...init,
       headers,
-      cache: "no-store"
+      cache: "no-store",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
@@ -170,7 +224,7 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return requestJSON<T>(path, {
     method: "POST",
     headers,
-    body: JSON.stringify(body ?? {})
+    body: JSON.stringify(body ?? {}),
   });
 }
 
@@ -179,19 +233,19 @@ async function putJSON<T>(path: string, body: unknown): Promise<T> {
   return requestJSON<T>(path, {
     method: "PUT",
     headers,
-    body: JSON.stringify(body ?? {})
+    body: JSON.stringify(body ?? {}),
   });
 }
 
 export async function fetchEntities(): Promise<LibraryEntity[]> {
   const payload = await fetchJSON<{ entities: RawEntity[] }>(
-    "/api/v1/library/entities"
+    "/api/v1/library/entities",
   );
   return payload.entities.map((entity) => ({
     id: entity.ID,
     entityType: entity.EntityType,
     title: entity.Title,
-    synopsis: entity.Synopsis
+    synopsis: entity.Synopsis,
   }));
 }
 
@@ -207,7 +261,7 @@ export async function fetchJobs(): Promise<JobSummary[]> {
     idempotencyKey: job.IdempotencyKey?.trim() || undefined,
     attempt: job.Attempt ?? 0,
     lastAttemptAt: normalizeTimestamp(job.LastAttemptAt),
-    completedAt: normalizeTimestamp(job.CompletedAt)
+    completedAt: normalizeTimestamp(job.CompletedAt),
   }));
 }
 
@@ -222,14 +276,14 @@ export async function fetchWorkers(): Promise<WorkerSummary[]> {
     status: worker.status,
     registeredAt: normalizeTimestamp(worker.registered_at),
     lastHeartbeatAt: normalizeTimestamp(worker.last_heartbeat_at),
-    activeJobs: worker.active_jobs
+    activeJobs: worker.active_jobs,
   }));
 }
 
 export async function triggerJob(input: TriggerJobInput): Promise<JobSummary> {
   const payload: Record<string, string> = {
     job_type: input.jobType,
-    target_id: input.targetID
+    target_id: input.targetID,
   };
   const payloadURI = input.payloadURI?.trim();
   if (payloadURI) {
@@ -252,12 +306,14 @@ export async function triggerJob(input: TriggerJobInput): Promise<JobSummary> {
     idempotencyKey: job.IdempotencyKey?.trim() || undefined,
     attempt: job.Attempt ?? 0,
     lastAttemptAt: normalizeTimestamp(job.LastAttemptAt),
-    completedAt: normalizeTimestamp(job.CompletedAt)
+    completedAt: normalizeTimestamp(job.CompletedAt),
   };
 }
 
 export async function fetchWorkerPools(): Promise<WorkerPoolConfig[]> {
-  const payload = await fetchJSON<{ pools: RawWorkerPool[] }>("/api/v1/worker-pools");
+  const payload = await fetchJSON<{ pools: RawWorkerPool[] }>(
+    "/api/v1/worker-pools",
+  );
   return payload.pools.map((pool) => ({
     pool: pool.pool,
     description: pool.description?.trim() || undefined,
@@ -265,13 +321,13 @@ export async function fetchWorkerPools(): Promise<WorkerPoolConfig[]> {
     consumerGroup: pool.consumer_group,
     heartbeatIntervalSeconds: pool.heartbeat_interval_seconds ?? 0,
     staleAfterSeconds: pool.stale_after_seconds ?? 0,
-    maxConcurrentJobs: pool.max_concurrent_jobs ?? undefined
+    maxConcurrentJobs: pool.max_concurrent_jobs ?? undefined,
   }));
 }
 
 export async function updateWorkerPool(
   pool: string,
-  input: UpdateWorkerPoolInput
+  input: UpdateWorkerPoolInput,
 ): Promise<WorkerPoolConfig> {
   const body: Record<string, unknown> = {};
   if (input.description !== undefined) {
@@ -295,7 +351,7 @@ export async function updateWorkerPool(
 
   const response = await putJSON<{ pool: RawWorkerPool }>(
     `/api/v1/worker-pools/${encodeURIComponent(pool)}`,
-    body
+    body,
   );
   const cfg = response.pool;
   return {
@@ -305,6 +361,72 @@ export async function updateWorkerPool(
     consumerGroup: cfg.consumer_group,
     heartbeatIntervalSeconds: cfg.heartbeat_interval_seconds ?? 0,
     staleAfterSeconds: cfg.stale_after_seconds ?? 0,
-    maxConcurrentJobs: cfg.max_concurrent_jobs ?? undefined
+    maxConcurrentJobs: cfg.max_concurrent_jobs ?? undefined,
   };
+}
+
+function normalizeManualSearchRelease(
+  release: RawManualSearchRelease,
+): ManualSearchRelease {
+  return {
+    id: release.ID,
+    searchID: release.SearchID,
+    entityID: release.EntityID,
+    title: release.Title,
+    indexer: release.Indexer,
+    protocol: release.Protocol,
+    quality: release.Quality,
+    publishDate: normalizeTimestamp(release.PublishDate),
+    sizeBytes: release.SizeBytes ?? 0,
+    seeders: release.Seeders ?? 0,
+    grabs: release.Grabs ?? 0,
+    score: release.Score ?? 0,
+    status: release.Status,
+    rejectionReason: release.RejectionReason?.trim() || undefined,
+    downloadURL: release.DownloadURL,
+    grabbedAt: normalizeTimestamp(release.GrabbedAt),
+  };
+}
+
+function normalizeManualSearchResult(
+  search: RawManualSearchResult,
+): ManualSearchResult {
+  return {
+    id: search.ID,
+    entityID: search.EntityID,
+    query: search.Query?.trim() || "",
+    executedAt: normalizeTimestamp(search.ExecutedAt),
+    results: (search.Results ?? []).map(normalizeManualSearchRelease),
+  };
+}
+
+export async function fetchManualSearch(
+  entityID: string,
+): Promise<ManualSearchResult | null> {
+  const payload = await fetchJSON<{ search: RawManualSearchResult | null }>(
+    `/api/v1/indexer/search?entity_id=${encodeURIComponent(entityID)}`,
+  );
+  return payload.search ? normalizeManualSearchResult(payload.search) : null;
+}
+
+export async function runManualSearch(
+  entityID: string,
+  query: string,
+): Promise<ManualSearchResult> {
+  const response = await postJSON<{ search: RawManualSearchResult }>(
+    "/api/v1/indexer/search",
+    { entity_id: entityID, query },
+  );
+  return normalizeManualSearchResult(response.search);
+}
+
+export async function grabManualRelease(
+  entityID: string,
+  releaseID: string,
+): Promise<ManualSearchRelease> {
+  const response = await postJSON<{ release: RawManualSearchRelease }>(
+    "/api/v1/indexer/releases/grab",
+    { entity_id: entityID, release_id: releaseID },
+  );
+  return normalizeManualSearchRelease(response.release);
 }

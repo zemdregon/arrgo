@@ -252,8 +252,37 @@
   color: #94a3b8;
 }
 
+.searchMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.85rem;
+  color: #cbd5f5;
+}
+
+.releaseTitle {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.releaseStatus {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.rejectionNote {
+  font-size: 0.75rem;
+  color: #f87171;
+  max-width: 280px;
+}
+
 .monospace {
-  font-family: "JetBrains Mono", "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family:
+    "JetBrains Mono", "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo,
+    Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .badgeGroup {
@@ -287,6 +316,11 @@
 
 .inlineForm {
   justify-content: flex-start;
+}
+
+.manualSearchForm {
+  justify-content: flex-start;
+  align-items: flex-end;
 }
 
 .controlGroup {
@@ -336,7 +370,9 @@
   border-radius: 999px;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
 }
 
 .primaryButton:disabled {
@@ -347,6 +383,31 @@
 
 .primaryButton:not(:disabled):hover {
   transform: translateY(-1px);
+}
+
+.secondaryButton {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #e2e8f0;
+  padding: 0.45rem 1.1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.secondaryButton:hover {
+  background: rgba(148, 163, 184, 0.22);
+  transform: translateY(-1px);
+}
+
+.secondaryButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .formMessage {

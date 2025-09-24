@@ -147,6 +147,152 @@ func TestTriggerJobEnforcesIdempotency(t *testing.T) {
 	}
 }
 
+func TestRunManualSearchAndLatest(t *testing.T) {
+	now := time.Date(2024, 7, 10, 15, 30, 0, 0, time.UTC)
+	svc, err := NewService(Config{
+		Entities: []Entity{{ID: "entity-1", EntityType: "series", Title: "Example Series"}},
+		Clock:    stubClock{now: now},
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	result, err := svc.RunManualSearch(context.Background(), "entity-1", "remux")
+	if err != nil {
+		t.Fatalf("RunManualSearch returned error: %v", err)
+	}
+	if result.ID == "" {
+		t.Fatalf("expected search id to be set")
+	}
+	if result.EntityID != "entity-1" {
+		t.Fatalf("unexpected entity id %s", result.EntityID)
+	}
+	if result.Query != "remux" {
+		t.Fatalf("expected trimmed query, got %q", result.Query)
+	}
+	if !result.ExecutedAt.Equal(now) {
+		t.Fatalf("expected executed timestamp to use clock, got %v", result.ExecutedAt)
+	}
+	if len(result.Results) < 2 {
+		t.Fatalf("expected multiple releases, got %d", len(result.Results))
+	}
+	for _, release := range result.Results {
+		if release.SearchID != result.ID {
+			t.Fatalf("expected release %s to reference search %s", release.ID, result.ID)
+		}
+	}
+
+	latest, found, err := svc.LatestManualSearch(context.Background(), "entity-1")
+	if err != nil {
+		t.Fatalf("LatestManualSearch returned error: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected manual search to be present")
+	}
+	if latest.ID != result.ID {
+		t.Fatalf("expected same search id, got %s", latest.ID)
+	}
+
+	// Running another search should replace previous release ids.
+	next, err := svc.RunManualSearch(context.Background(), "entity-1", "")
+	if err != nil {
+		t.Fatalf("RunManualSearch second call error: %v", err)
+	}
+	if next.ID == result.ID {
+		t.Fatalf("expected new search id to differ")
+	}
+	for _, release := range result.Results {
+		if _, err := svc.ForceGrabRelease(context.Background(), "entity-1", release.ID); !errors.Is(err, ErrManualSearchReleaseNotFound) {
+			t.Fatalf("expected prior release %s to be removed, got %v", release.ID, err)
+		}
+	}
+}
+
+func TestLatestManualSearchValidation(t *testing.T) {
+	svc, err := NewService(Config{Entities: []Entity{{ID: "entity-1", EntityType: "movie"}}})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	if _, _, err := svc.LatestManualSearch(context.Background(), ""); !errors.Is(err, ErrManualSearchEntityRequired) {
+		t.Fatalf("expected ErrManualSearchEntityRequired, got %v", err)
+	}
+	if _, _, err := svc.LatestManualSearch(context.Background(), "missing"); !errors.Is(err, ErrUnknownEntity) {
+		t.Fatalf("expected ErrUnknownEntity, got %v", err)
+	}
+
+	result, found, err := svc.LatestManualSearch(context.Background(), "entity-1")
+	if err != nil {
+		t.Fatalf("LatestManualSearch returned error: %v", err)
+	}
+	if found {
+		t.Fatalf("expected no manual search, got %+v", result)
+	}
+}
+
+func TestForceGrabRelease(t *testing.T) {
+	now := time.Date(2024, 7, 11, 9, 0, 0, 0, time.UTC)
+	svc, err := NewService(Config{
+		Entities: []Entity{{ID: "entity-1", EntityType: "series"}},
+		Clock:    stubClock{now: now},
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	search, err := svc.RunManualSearch(context.Background(), "entity-1", "4k")
+	if err != nil {
+		t.Fatalf("RunManualSearch returned error: %v", err)
+	}
+	release := search.Results[0]
+
+	grabbed, err := svc.ForceGrabRelease(context.Background(), "entity-1", release.ID)
+	if err != nil {
+		t.Fatalf("ForceGrabRelease returned error: %v", err)
+	}
+	if grabbed.Status != ManualReleaseStatusGrabbed {
+		t.Fatalf("expected status grabbed, got %s", grabbed.Status)
+	}
+	if grabbed.GrabbedAt.IsZero() {
+		t.Fatalf("expected grabbed timestamp to be populated")
+	}
+
+	// Confirm the cached search reflects the updated release state.
+	latest, found, err := svc.LatestManualSearch(context.Background(), "entity-1")
+	if err != nil {
+		t.Fatalf("LatestManualSearch returned error: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected manual search to exist")
+	}
+	matched := false
+	for _, candidate := range latest.Results {
+		if candidate.ID == release.ID {
+			matched = true
+			if candidate.Status != ManualReleaseStatusGrabbed {
+				t.Fatalf("expected cached status grabbed, got %s", candidate.Status)
+			}
+			break
+		}
+	}
+	if !matched {
+		t.Fatalf("expected release %s to remain in cache", release.ID)
+	}
+
+	if _, err := svc.ForceGrabRelease(context.Background(), "entity-1", release.ID); !errors.Is(err, ErrManualSearchReleaseGrabbed) {
+		t.Fatalf("expected ErrManualSearchReleaseGrabbed, got %v", err)
+	}
+	if _, err := svc.ForceGrabRelease(context.Background(), "entity-1", "missing-release"); !errors.Is(err, ErrManualSearchReleaseNotFound) {
+		t.Fatalf("expected ErrManualSearchReleaseNotFound, got %v", err)
+	}
+	if _, err := svc.ForceGrabRelease(context.Background(), "missing", release.ID); !errors.Is(err, ErrUnknownEntity) {
+		t.Fatalf("expected ErrUnknownEntity for missing entity, got %v", err)
+	}
+	if _, err := svc.ForceGrabRelease(context.Background(), "entity-1", ""); !errors.Is(err, ErrManualSearchReleaseRequired) {
+		t.Fatalf("expected ErrManualSearchReleaseRequired, got %v", err)
+	}
+}
+
 func TestClaimAckFlowUpdatesState(t *testing.T) {
 	svc := newRedisService(t, Config{Entities: []Entity{{ID: "entity-1", EntityType: "series"}}})
 
