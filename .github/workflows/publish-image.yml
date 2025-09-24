@@ -1,7 +1,9 @@
 name: Build and publish container image
 
 on:
-  # Temporarily disable automatic execution while the publish workflow is paused.
+  push:
+    branches: ["main"]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -14,8 +16,7 @@ env:
 
 jobs:
   publish:
-    if: false
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
