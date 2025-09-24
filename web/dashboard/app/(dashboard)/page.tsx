@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { DataPanel } from "../../components/DataPanel";
@@ -94,6 +95,32 @@ function formatBytes(value?: number): string {
   }
   const precision = size >= 100 || unitIndex === 0 ? 0 : 1;
   return `${size.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function entityDetailSegment(entityType: string): string | null {
+  switch (entityType?.toLowerCase()) {
+    case "series":
+    case "show":
+      return "shows";
+    case "movie":
+    case "film":
+      return "movies";
+    case "album":
+    case "music":
+      return "albums";
+    case "book":
+      return "books";
+    default:
+      return null;
+  }
+}
+
+function buildEntityDetailPath(entity: LibraryEntity): string | null {
+  const segment = entityDetailSegment(entity.entityType);
+  if (!segment) {
+    return null;
+  }
+  return `/library/${segment}/${encodeURIComponent(entity.id)}`;
 }
 
 type BreakdownEntry = [string, number];
@@ -1263,16 +1290,30 @@ export default function DashboardPage() {
                   })}
                 </div>
                 <ul className={styles.entityList}>
-                  {visibleLibrary.slice(0, 5).map((entity) => (
-                    <li key={entity.id} className={styles.entityItem}>
-                      <span className={styles.entityTitle}>
-                        {entity.title || entity.id}
-                      </span>
-                      <span className={styles.entityType}>
-                        {entity.entityType}
-                      </span>
-                    </li>
-                  ))}
+                  {visibleLibrary.slice(0, 5).map((entity) => {
+                    const detailPath = buildEntityDetailPath(entity);
+                    const title = entity.title || entity.id;
+                    return (
+                      <li key={entity.id} className={styles.entityItem}>
+                        {detailPath ? (
+                          <Link
+                            className={[
+                              styles.entityTitle,
+                              styles.entityLink,
+                            ].join(" ")}
+                            href={detailPath}
+                          >
+                            {title}
+                          </Link>
+                        ) : (
+                          <span className={styles.entityTitle}>{title}</span>
+                        )}
+                        <span className={styles.entityType}>
+                          {entity.entityType}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </>
             ) : (

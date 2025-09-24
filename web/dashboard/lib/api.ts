@@ -130,6 +130,81 @@ export interface Principal {
   permissions: string[];
 }
 
+export interface EpisodeCutoverOverride {
+  episodeID: string;
+  seasonNumber: number;
+  episodeNumber: number;
+  absoluteNumber?: number;
+  title?: string;
+  airDate?: string;
+  notes?: string;
+}
+
+export interface AlbumEditionOverride {
+  editionID: string;
+  name: string;
+  releaseDate?: string;
+  isDefault?: boolean;
+  notes?: string;
+}
+
+export interface TrackNumberOverride {
+  trackID: string;
+  discNumber?: number;
+  trackNumber: number;
+  totalTracks?: number;
+  isrc?: string;
+  notes?: string;
+}
+
+export interface MetadataOverrides {
+  episodeCutovers: EpisodeCutoverOverride[];
+  albumEditions: AlbumEditionOverride[];
+  trackNumberOverrides: TrackNumberOverride[];
+  updatedAt?: string;
+}
+
+export interface EpisodeTemplateSet {
+  seriesFolderPattern: string;
+  seasonFolderPattern: string;
+  episodeFilePattern: string;
+}
+
+export interface MovieTemplateSet {
+  movieFolderPattern: string;
+  movieFilePattern: string;
+}
+
+export interface MusicTemplateSet {
+  artistFolderPattern: string;
+  albumFolderPattern: string;
+  trackFilePattern: string;
+}
+
+export interface RenameOperation {
+  fileID: string;
+  workType: string;
+  sourcePath: string;
+  targetPath: string;
+  shouldRename: boolean;
+  reason: string;
+  lastRenamedAt?: string;
+  lastRenamedJobID?: string;
+}
+
+export interface RenameJobRecord {
+  id: string;
+  entityID: string;
+  entityType: string;
+  requestedAt?: string;
+  dryRun: boolean;
+  episodeTemplate?: EpisodeTemplateSet;
+  movieTemplate?: MovieTemplateSet;
+  musicTemplate?: MusicTemplateSet;
+  operations: RenameOperation[];
+  changes: number;
+}
+
 interface RawEntity {
   ID: string;
   EntityType: string;
@@ -197,6 +272,81 @@ interface RawManualSearchResult {
   Query: string;
   ExecutedAt?: string;
   Results: RawManualSearchRelease[];
+}
+
+interface RawEpisodeCutoverOverride {
+  episode_id: string;
+  season_number: number;
+  episode_number: number;
+  absolute_number?: number;
+  title?: string;
+  air_date?: string;
+  notes?: string;
+}
+
+interface RawAlbumEditionOverride {
+  edition_id: string;
+  name: string;
+  release_date?: string;
+  is_default?: boolean;
+  notes?: string;
+}
+
+interface RawTrackNumberOverride {
+  track_id: string;
+  disc_number?: number;
+  track_number: number;
+  total_tracks?: number;
+  isrc?: string;
+  notes?: string;
+}
+
+interface RawMetadataOverrides {
+  episode_cutovers?: RawEpisodeCutoverOverride[];
+  album_editions?: RawAlbumEditionOverride[];
+  track_number_overrides?: RawTrackNumberOverride[];
+  updated_at?: string;
+}
+
+interface RawEpisodeTemplateSet {
+  SeriesFolderPattern?: string;
+  SeasonFolderPattern?: string;
+  EpisodeFilePattern?: string;
+}
+
+interface RawMovieTemplateSet {
+  MovieFolderPattern?: string;
+  MovieFilePattern?: string;
+}
+
+interface RawMusicTemplateSet {
+  ArtistFolderPattern?: string;
+  AlbumFolderPattern?: string;
+  TrackFilePattern?: string;
+}
+
+interface RawRenameOperation {
+  FileID: string;
+  WorkType: string;
+  SourcePath: string;
+  TargetPath: string;
+  ShouldRename: boolean;
+  Reason: string;
+  LastRenamedAt?: string;
+  LastRenamedJobID?: string;
+}
+
+interface RawRenameJobRecord {
+  ID: string;
+  EntityID: string;
+  EntityType: string;
+  RequestedAt?: string;
+  DryRun: boolean;
+  EpisodeTemplate?: RawEpisodeTemplateSet | null;
+  MovieTemplate?: RawMovieTemplateSet | null;
+  MusicTemplate?: RawMusicTemplateSet | null;
+  Operations: RawRenameOperation[];
+  Changes: number;
 }
 
 interface RawPrincipal {
@@ -312,6 +462,128 @@ function normalizeManualSearchResult(
     query: search.Query?.trim() || "",
     executedAt: normalizeTimestamp(search.ExecutedAt),
     results: (search.Results ?? []).map(normalizeManualSearchRelease),
+  };
+}
+
+function mapEpisodeCutoverOverride(
+  override: RawEpisodeCutoverOverride,
+): EpisodeCutoverOverride {
+  return {
+    episodeID: override.episode_id,
+    seasonNumber: override.season_number ?? 0,
+    episodeNumber: override.episode_number ?? 0,
+    absoluteNumber: override.absolute_number ?? undefined,
+    title: override.title?.trim() || undefined,
+    airDate: normalizeTimestamp(override.air_date),
+    notes: override.notes?.trim() || undefined,
+  };
+}
+
+function mapAlbumEditionOverride(
+  override: RawAlbumEditionOverride,
+): AlbumEditionOverride {
+  return {
+    editionID: override.edition_id,
+    name: override.name?.trim() || "",
+    releaseDate: normalizeTimestamp(override.release_date),
+    isDefault: override.is_default ?? undefined,
+    notes: override.notes?.trim() || undefined,
+  };
+}
+
+function mapTrackNumberOverride(
+  override: RawTrackNumberOverride,
+): TrackNumberOverride {
+  return {
+    trackID: override.track_id,
+    discNumber: override.disc_number ?? undefined,
+    trackNumber: override.track_number ?? 0,
+    totalTracks: override.total_tracks ?? undefined,
+    isrc: override.isrc?.trim() || undefined,
+    notes: override.notes?.trim() || undefined,
+  };
+}
+
+function mapMetadataOverrides(
+  overrides: RawMetadataOverrides,
+): MetadataOverrides {
+  return {
+    episodeCutovers: (overrides.episode_cutovers ?? []).map(
+      mapEpisodeCutoverOverride,
+    ),
+    albumEditions: (overrides.album_editions ?? []).map(
+      mapAlbumEditionOverride,
+    ),
+    trackNumberOverrides: (overrides.track_number_overrides ?? []).map(
+      mapTrackNumberOverride,
+    ),
+    updatedAt: normalizeTimestamp(overrides.updated_at),
+  };
+}
+
+function mapEpisodeTemplateSet(
+  template: RawEpisodeTemplateSet | null | undefined,
+): EpisodeTemplateSet | undefined {
+  if (!template) {
+    return undefined;
+  }
+  return {
+    seriesFolderPattern: template.SeriesFolderPattern ?? "",
+    seasonFolderPattern: template.SeasonFolderPattern ?? "",
+    episodeFilePattern: template.EpisodeFilePattern ?? "",
+  };
+}
+
+function mapMovieTemplateSet(
+  template: RawMovieTemplateSet | null | undefined,
+): MovieTemplateSet | undefined {
+  if (!template) {
+    return undefined;
+  }
+  return {
+    movieFolderPattern: template.MovieFolderPattern ?? "",
+    movieFilePattern: template.MovieFilePattern ?? "",
+  };
+}
+
+function mapMusicTemplateSet(
+  template: RawMusicTemplateSet | null | undefined,
+): MusicTemplateSet | undefined {
+  if (!template) {
+    return undefined;
+  }
+  return {
+    artistFolderPattern: template.ArtistFolderPattern ?? "",
+    albumFolderPattern: template.AlbumFolderPattern ?? "",
+    trackFilePattern: template.TrackFilePattern ?? "",
+  };
+}
+
+function mapRenameOperation(operation: RawRenameOperation): RenameOperation {
+  return {
+    fileID: operation.FileID,
+    workType: operation.WorkType,
+    sourcePath: operation.SourcePath,
+    targetPath: operation.TargetPath,
+    shouldRename: Boolean(operation.ShouldRename),
+    reason: operation.Reason?.trim() || "",
+    lastRenamedAt: normalizeTimestamp(operation.LastRenamedAt),
+    lastRenamedJobID: operation.LastRenamedJobID?.trim() || undefined,
+  };
+}
+
+function mapRenameJobRecord(record: RawRenameJobRecord): RenameJobRecord {
+  return {
+    id: record.ID,
+    entityID: record.EntityID,
+    entityType: record.EntityType,
+    requestedAt: normalizeTimestamp(record.RequestedAt),
+    dryRun: Boolean(record.DryRun),
+    episodeTemplate: mapEpisodeTemplateSet(record.EpisodeTemplate),
+    movieTemplate: mapMovieTemplateSet(record.MovieTemplate),
+    musicTemplate: mapMusicTemplateSet(record.MusicTemplate),
+    operations: (record.Operations ?? []).map(mapRenameOperation),
+    changes: record.Changes ?? 0,
   };
 }
 
@@ -539,6 +811,56 @@ export class RestApiClient {
     return normalizeManualSearchRelease(response.release);
   }
 
+  async fetchMetadataOverrides(
+    entityID: string,
+  ): Promise<MetadataOverrides | null> {
+    const trimmed = entityID.trim();
+    if (!trimmed) {
+      throw new Error("entityID is required to fetch metadata overrides");
+    }
+    const payload = await this.http.get<{ overrides: RawMetadataOverrides | null }>(
+      `/api/v1/library/overrides/${encodeURIComponent(trimmed)}`,
+      {
+        traceName: "REST GET /api/v1/library/overrides/{entity}",
+        traceAttributes: {
+          resource: "library.metadata_overrides",
+          entityID: trimmed,
+        },
+      },
+    );
+    return payload.overrides ? mapMetadataOverrides(payload.overrides) : null;
+  }
+
+  async fetchRenameHistory(
+    entityID: string,
+    limit?: number,
+  ): Promise<RenameJobRecord[]> {
+    const trimmed = entityID.trim();
+    if (!trimmed) {
+      throw new Error("entityID is required to fetch rename history");
+    }
+    const params = new URLSearchParams();
+    if (typeof limit === "number" && limit > 0) {
+      params.set("limit", String(limit));
+    }
+    const query = params.toString();
+    const path = `/api/v1/library/entities/${encodeURIComponent(trimmed)}/rename-history${
+      query ? `?${query}` : ""
+    }`;
+    const payload = await this.http.get<{ history?: RawRenameJobRecord[] | null }>(
+      path,
+      {
+        traceName: "REST GET /api/v1/library/entities/{entity}/rename-history",
+        traceAttributes: {
+          resource: "library.rename_history",
+          entityID: trimmed,
+        },
+      },
+    );
+    const history = payload.history ?? [];
+    return history.map(mapRenameJobRecord);
+  }
+
   async fetchPrincipal(): Promise<Principal> {
     const payload = await this.http.get<{ principal: RawPrincipal }>(
       "/api/v1/auth/principal",
@@ -611,6 +933,25 @@ export function grabManualRelease(
   return defaultRestClient
     .withBaseUrl(baseUrl)
     .grabManualRelease(entityID, releaseID);
+}
+
+export function fetchMetadataOverrides(
+  entityID: string,
+  baseUrl?: string,
+): Promise<MetadataOverrides | null> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .fetchMetadataOverrides(entityID);
+}
+
+export function fetchRenameHistory(
+  entityID: string,
+  limit?: number,
+  baseUrl?: string,
+): Promise<RenameJobRecord[]> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .fetchRenameHistory(entityID, limit);
 }
 
 export function fetchPrincipal(baseUrl?: string): Promise<Principal> {
