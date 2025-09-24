@@ -88,7 +88,23 @@ func run(ctx context.Context, cfg masterConfig, logger *slog.Logger) error {
 	libraryLogger := logger.With("component", "library")
 	workerLogger := logger.With("component", "worker")
 
+	var libRepo library.Repository
+	if pool != nil {
+		postgresRepo, err := library.NewPostgresRepository(pool)
+		if err != nil {
+			return fmt.Errorf("initialize library repository: %w", err)
+		}
+		if err := postgresRepo.EnsureSchema(baseCtx); err != nil {
+			return fmt.Errorf("ensure library schema: %w", err)
+		}
+		libRepo = postgresRepo
+	} else {
+		libRepo = library.NewInMemoryRepository()
+		libraryLogger.Warn("postgres url not provided, using in-memory library repository")
+	}
+
 	libCfg := library.Config{
+		Repository:  libRepo,
 		RedisClient: redisClient,
 		Logger:      libraryLogger,
 	}
@@ -321,7 +337,7 @@ func connectRedis(ctx context.Context, cfg masterConfig, logger *slog.Logger) (*
 
 func connectPostgres(ctx context.Context, cfg masterConfig, logger *slog.Logger) (*pgxpool.Pool, error) {
 	if cfg.DatabaseURL == "" {
-		logger.Warn("database url not provided; worker metadata will not persist across restarts")
+		logger.Warn("database url not provided; library and worker metadata will not persist across restarts")
 		return nil, nil
 	}
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
