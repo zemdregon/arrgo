@@ -9,31 +9,15 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	downloadclient "github.com/arrgo/arrgo/sdk/downloadclient"
 )
 
 // Request captures the information required to enqueue a download operation.
-type Request struct {
-	// MediaType distinguishes between movies, series, music, etc.
-	MediaType string
-	// Protocol identifies the transport expected by the client (e.g. torrent, usenet).
-	Protocol string
-	// Tags allow routing hints such as preferred regions or capabilities.
-	Tags []string
-}
+type Request = downloadclient.Request
 
 // Client models an individual download client integration that can accept work.
-type Client interface {
-	// Name is a human readable identifier that must be unique within a router.
-	Name() string
-	// Priority determines the routing order (lower numbers are preferred).
-	Priority() int
-	// Supports determines whether the client can process the provided request.
-	Supports(Request) bool
-	// CheckHealth validates the current health of the client.
-	CheckHealth(context.Context) error
-	// Enqueue submits the download request to the backing client implementation.
-	Enqueue(context.Context, Request) error
-}
+type Client = downloadclient.Client
 
 // Clock abstracts time retrieval for deterministic testing.
 type Clock interface {
@@ -62,7 +46,7 @@ var (
 	ErrNoClientsRegistered  = errors.New("download: no download clients registered")
 	ErrNoSupportingClients  = errors.New("download: no download clients support the request")
 	ErrNoHealthyClients     = errors.New("download: no healthy download clients available")
-	ErrClientUnavailable    = errors.New("download: client temporarily unavailable")
+	ErrClientUnavailable    = downloadclient.ErrClientUnavailable
 	ErrDuplicateClient      = errors.New("download: client with name already registered")
 	errUnsupportedOperation = errors.New("download: operation unsupported")
 )

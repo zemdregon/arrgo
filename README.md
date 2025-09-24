@@ -49,6 +49,7 @@ Until the initial release is available, track the following tasks.
 
 ### Completed
 - ✅ Integrate prioritized download client failover with health-aware routing. See [`docs/download-client-failover.md`](docs/download-client-failover.md).
+- ✅ Publish the download client plugin SDK and contract tests so third-party adapters can target arrgo releases. See [`sdk/downloadclient`](sdk/downloadclient) and [`docs/download-plugin-sdk.md`](docs/download-plugin-sdk.md).
 - ✅ Implement role-based access controls with per-application API key generation, labeling, and rotation workflows. See [`docs/access-control.md`](docs/access-control.md).
 - ✅ Harden metadata ingestion resilience with rate limit backoff, provider-specific cache TTLs, tracing, and failure metrics.
 - ✅ Automate scheduled library scans and media imports with cron-driven orchestration and audit fan-out. See [`docs/library-scheduling.md`](docs/library-scheduling.md).
@@ -70,7 +71,6 @@ Until the initial release is available, track the following tasks.
 - ✅ Stand up automated performance and regression suites for large media libraries, covering scheduler fan-out and queue drain behavior. See [`docs/performance-regression.md`](docs/performance-regression.md).
 
 ### Up Next
-- 🚧 Finish the download client plugin SDK with contract tests so that third-party maintainers can publish adapters alongside arrgo releases.
 - 🚧 Expand the web dashboard with queue analytics, job drill-downs, and configuration editing for master/worker pools.
 - 🚧 Implement cross-region media replication workflows with S3-compatible object storage targets and policy-driven retention.
 - 🚧 Add automated indexer health scoring and discovery to help operators tune failover thresholds without manual intervention.
