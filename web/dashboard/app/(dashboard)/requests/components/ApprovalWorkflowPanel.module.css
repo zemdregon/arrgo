@@ -1,0 +1,250 @@
+.wrapper {
+  display: contents;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bulkGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.bulkButton {
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--surface-panel);
+  color: var(--color-text-primary);
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--transition-base), box-shadow var(--transition-base),
+    border-color var(--transition-base);
+}
+
+.bulkButton[data-tone="primary"] {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-muted);
+  color: var(--color-accent-strong);
+}
+
+.bulkButton[data-tone="danger"] {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--color-danger-strong);
+}
+
+.bulkButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.bulkButton:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.feedback {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-lg);
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+
+@media (max-width: 1024px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.list {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+  overflow: hidden;
+}
+
+.listHeader,
+.listRow {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) minmax(0, 8rem);
+  gap: var(--space-sm);
+  align-items: center;
+  padding: 0.65rem 0.85rem;
+}
+
+.listHeader {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  background: var(--surface-panel-strong);
+}
+
+.listRow {
+  cursor: pointer;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.listRow:first-of-type {
+  border-top: none;
+}
+
+.listRow[data-focused="true"] {
+  background: rgba(2, 132, 199, 0.15);
+  box-shadow: inset 2px 0 0 var(--color-accent-strong);
+}
+
+.rowTitle {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.rowMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.actionsColumn {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.checkbox {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.checkbox input {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.details {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-panel);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.detailsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.detailsTitle {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.detailMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.timeline {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.timelineEntry {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-sm);
+  align-items: start;
+}
+
+.timelineMarker {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 999px;
+  background: var(--color-accent);
+  margin-top: 0.35rem;
+}
+
+.timelineBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.timelineStatus {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.timelineMeta {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.automationList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.automationItem {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: var(--surface-panel);
+}
+
+.automationTitle {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.automationMeta {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
