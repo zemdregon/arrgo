@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -82,7 +83,7 @@ func Run(t *testing.T, suite Suite) {
 			if c.Setup != nil {
 				c.Setup(t, provider)
 			}
-			err := provider.CheckHealth(t.Context())
+			err := provider.CheckHealth(context.Background())
 			if c.Assert != nil {
 				c.Assert(t, err)
 				return
@@ -105,7 +106,7 @@ func Run(t *testing.T, suite Suite) {
 			if c.Setup != nil {
 				c.Setup(t, provider)
 			}
-			result, err := provider.Sync(t.Context(), c.Request)
+			result, err := provider.Sync(context.Background(), c.Request)
 			if c.Assert != nil {
 				c.Assert(t, result, err)
 				return
