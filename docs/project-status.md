@@ -5,6 +5,7 @@
 - The repository already documents and tracks a broad set of completed milestones (metadata pipeline hardening, orchestration queue, worker coordination, dashboard shell) with the next immediate UI goal called out separately.【F:README.md†L50-L69】
 - The README now outlines an extensibility roadmap spanning plugin categories (download clients, notifications, metadata, indexers, media servers, automation, storage, analysis, and authentication) plus labeled API key workflows.【F:README.md†L115-L154】
 - Automated indexer health scoring, discovery, and failover-threshold recommendations are now documented alongside the new monitoring package, reducing manual tuning for search integrations.【F:docs/indexer-health-scoring.md†L1-L73】【F:internal/integrations/indexer/monitor.go†L1-L358】
+- Release profile scoring with reusable custom formats, group/codec preferences, and Servarr import helpers is documented for operators migrating complex automation rules.【F:docs/release-profile-scoring.md†L1-L143】【F:internal/automation/releaseprofile/profile.go†L1-L108】【F:internal/automation/releaseprofile/import_sonarr.go†L1-L337】
 
 ## What works today
 ### Library orchestration
