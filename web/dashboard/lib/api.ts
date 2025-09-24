@@ -130,6 +130,94 @@ export interface Principal {
   permissions: string[];
 }
 
+export interface ReleaseProfile {
+  id: string;
+  name: string;
+  description?: string;
+  defaultScore: number;
+  minFormatScore?: number;
+  cutoffFormatScore?: number;
+  minUpgradeFormatScore?: number;
+  formats: unknown[];
+  preferences: unknown[];
+  blocklist: unknown[];
+  updatedAt?: string;
+}
+
+export interface UpsertReleaseProfileInput {
+  name: string;
+  description?: string;
+  defaultScore?: number;
+  minFormatScore?: number | null;
+  cutoffFormatScore?: number | null;
+  minUpgradeFormatScore?: number | null;
+  formats: unknown[];
+  preferences: unknown[];
+  blocklist: unknown[];
+}
+
+export interface RetentionPolicy {
+  maxVersions?: number | null;
+  maxAge?: string | null;
+}
+
+export interface RetentionTargetOverride {
+  target: string;
+  description?: string;
+  policy: RetentionPolicy;
+}
+
+export interface RetentionWorkflow {
+  name: string;
+  description?: string;
+  defaultPolicy: RetentionPolicy;
+  overrides: RetentionTargetOverride[];
+  updatedAt?: string;
+}
+
+export interface UpsertRetentionWorkflowInput {
+  name: string;
+  description?: string;
+  defaultPolicy: RetentionPolicy;
+  overrides: RetentionTargetOverride[];
+}
+
+export interface EpisodeCutoverOverride {
+  episodeId: string;
+  seasonNumber: number;
+  episodeNumber: number;
+  absoluteNumber?: number | null;
+  title?: string;
+  airDate?: string;
+  notes?: string;
+}
+
+export interface AlbumEditionOverride {
+  editionId: string;
+  name: string;
+  releaseDate?: string;
+  isDefault?: boolean;
+  notes?: string;
+}
+
+export interface TrackNumberOverride {
+  trackId: string;
+  discNumber?: number | null;
+  trackNumber: number;
+  totalTracks?: number | null;
+  isrc?: string;
+  notes?: string;
+}
+
+export interface MetadataOverrides {
+  episodeCutovers: EpisodeCutoverOverride[];
+  albumEditions: AlbumEditionOverride[];
+  trackNumberOverrides: TrackNumberOverride[];
+  updatedAt?: string;
+}
+
+export type MetadataOverridesInput = Omit<MetadataOverrides, "updatedAt">;
+
 interface RawEntity {
   ID: string;
   EntityType: string;
@@ -217,6 +305,108 @@ interface RawPrincipal {
     permissions?: string[];
   };
   permissions?: string[];
+}
+
+interface RawReleaseProfile {
+  id?: string;
+  ID?: string;
+  name?: string;
+  Name?: string;
+  description?: string;
+  Description?: string;
+  default_score?: number;
+  DefaultScore?: number;
+  min_format_score?: number | null;
+  MinFormatScore?: number | null;
+  cutoff_format_score?: number | null;
+  CutoffFormatScore?: number | null;
+  min_upgrade_format_score?: number | null;
+  MinUpgradeFormatScore?: number | null;
+  formats?: unknown[];
+  Formats?: unknown[];
+  preferences?: unknown[];
+  Preferences?: unknown[];
+  blocklist?: unknown[];
+  Blocklist?: unknown[];
+  updated_at?: string;
+  UpdatedAt?: string;
+}
+
+interface RawRetentionPolicy {
+  max_versions?: number | null;
+  MaxVersions?: number | null;
+  max_age?: string | number | null;
+  MaxAge?: string | number | null;
+  max_age_hours?: number | null;
+  MaxAgeHours?: number | null;
+  max_age_seconds?: number | null;
+  MaxAgeSeconds?: number | null;
+  max_age_duration?: string | null;
+  MaxAgeDuration?: string | null;
+}
+
+interface RawRetentionTargetOverride {
+  target?: string;
+  Target?: string;
+  name?: string;
+  Name?: string;
+  description?: string;
+  Description?: string;
+  retention?: RawRetentionPolicy | null;
+  Retention?: RawRetentionPolicy | null;
+  policy?: RawRetentionPolicy | null;
+  Policy?: RawRetentionPolicy | null;
+}
+
+interface RawRetentionWorkflow {
+  name?: string;
+  Name?: string;
+  description?: string;
+  Description?: string;
+  default_policy?: RawRetentionPolicy | null;
+  DefaultPolicy?: RawRetentionPolicy | null;
+  retention?: RawRetentionPolicy | null;
+  Retention?: RawRetentionPolicy | null;
+  overrides?: RawRetentionTargetOverride[];
+  Overrides?: RawRetentionTargetOverride[];
+  targets?: RawRetentionTargetOverride[];
+  Targets?: RawRetentionTargetOverride[];
+  updated_at?: string;
+  UpdatedAt?: string;
+}
+
+interface RawEpisodeCutoverOverride {
+  episode_id: string;
+  season_number?: number;
+  episode_number?: number;
+  absolute_number?: number;
+  title?: string;
+  air_date?: string;
+  notes?: string;
+}
+
+interface RawAlbumEditionOverride {
+  edition_id: string;
+  name: string;
+  release_date?: string;
+  is_default?: boolean;
+  notes?: string;
+}
+
+interface RawTrackNumberOverride {
+  track_id: string;
+  disc_number?: number;
+  track_number: number;
+  total_tracks?: number;
+  isrc?: string;
+  notes?: string;
+}
+
+interface RawMetadataOverrides {
+  episode_cutovers?: RawEpisodeCutoverOverride[];
+  album_editions?: RawAlbumEditionOverride[];
+  track_number_overrides?: RawTrackNumberOverride[];
+  updated_at?: string;
 }
 
 function normalizeTimestamp(value?: string): string | undefined {
@@ -346,6 +536,439 @@ function normalizePrincipal(payload: RawPrincipal): Principal {
     permissions: (payload.permissions ?? [])
       .map((permission) => permission.trim())
       .filter(Boolean),
+  };
+}
+
+function parseNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function parseNumberOrNull(value: unknown): number | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  return parseNumber(value);
+}
+
+function cloneUnknownArray(value: unknown): unknown[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => item);
+}
+
+function normalizeReleaseProfile(profile: RawReleaseProfile): ReleaseProfile {
+  const idSource =
+    profile.id ?? profile.ID ?? profile.name ?? profile.Name ?? "";
+  const rawId =
+    typeof idSource === "number"
+      ? String(idSource)
+      : typeof idSource === "string"
+        ? idSource.trim()
+        : "";
+  const nameSource =
+    typeof profile.name === "string"
+      ? profile.name.trim()
+      : typeof profile.Name === "string"
+        ? profile.Name.trim()
+        : "";
+  const safeId =
+    rawId ||
+    (nameSource
+      ? nameSource.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+      : "profile");
+
+  const descriptionValue =
+    typeof profile.description === "string"
+      ? profile.description
+      : typeof profile.Description === "string"
+        ? profile.Description
+        : undefined;
+
+  const minFormatScore = parseNumber(
+    profile.min_format_score ?? profile.MinFormatScore,
+  );
+  const cutoffFormatScore = parseNumber(
+    profile.cutoff_format_score ?? profile.CutoffFormatScore,
+  );
+  const minUpgradeFormatScore = parseNumber(
+    profile.min_upgrade_format_score ?? profile.MinUpgradeFormatScore,
+  );
+
+  return {
+    id: safeId,
+    name: nameSource || safeId,
+    description: descriptionValue?.trim() || undefined,
+    defaultScore:
+      parseNumber(profile.default_score ?? profile.DefaultScore) ?? 0,
+    minFormatScore: minFormatScore,
+    cutoffFormatScore: cutoffFormatScore,
+    minUpgradeFormatScore: minUpgradeFormatScore,
+    formats: cloneUnknownArray(profile.formats ?? profile.Formats),
+    preferences: cloneUnknownArray(profile.preferences ?? profile.Preferences),
+    blocklist: cloneUnknownArray(profile.blocklist ?? profile.Blocklist),
+    updatedAt: normalizeTimestamp(profile.updated_at ?? profile.UpdatedAt),
+  };
+}
+
+function serializeReleaseProfileInput(
+  input: UpsertReleaseProfileInput,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    name: input.name,
+    formats: Array.isArray(input.formats)
+      ? input.formats.map((item) => item)
+      : [],
+    preferences: Array.isArray(input.preferences)
+      ? input.preferences.map((item) => item)
+      : [],
+    blocklist: Array.isArray(input.blocklist)
+      ? input.blocklist.map((item) => item)
+      : [],
+  };
+
+  if (input.description !== undefined) {
+    payload.description = input.description?.trim() ?? "";
+  }
+  if (input.defaultScore !== undefined) {
+    payload.default_score = input.defaultScore;
+  }
+  if (input.minFormatScore !== undefined) {
+    payload.min_format_score =
+      input.minFormatScore === null ? null : input.minFormatScore;
+  }
+  if (input.cutoffFormatScore !== undefined) {
+    payload.cutoff_format_score =
+      input.cutoffFormatScore === null ? null : input.cutoffFormatScore;
+  }
+  if (input.minUpgradeFormatScore !== undefined) {
+    payload.min_upgrade_format_score =
+      input.minUpgradeFormatScore === null
+        ? null
+        : input.minUpgradeFormatScore;
+  }
+
+  return payload;
+}
+
+function normalizeRetentionPolicy(
+  policy: RawRetentionPolicy | null | undefined,
+): RetentionPolicy {
+  if (!policy) {
+    return {};
+  }
+  const maxVersionsValue = parseNumberOrNull(
+    policy.max_versions ?? policy.MaxVersions,
+  );
+
+  const maxAgeSource =
+    policy.max_age ??
+    policy.MaxAge ??
+    policy.max_age_duration ??
+    policy.MaxAgeDuration ??
+    policy.max_age_hours ??
+    policy.MaxAgeHours ??
+    policy.max_age_seconds ??
+    policy.MaxAgeSeconds;
+
+  let maxAge: string | null | undefined;
+  if (maxAgeSource === undefined) {
+    maxAge = undefined;
+  } else if (maxAgeSource === null) {
+    maxAge = null;
+  } else if (typeof maxAgeSource === "number") {
+    maxAge = String(maxAgeSource);
+  } else if (typeof maxAgeSource === "string") {
+    maxAge = maxAgeSource.trim() || null;
+  } else {
+    maxAge = String(maxAgeSource);
+  }
+
+  return {
+    maxVersions:
+      maxVersionsValue === undefined || maxVersionsValue === null
+        ? undefined
+        : maxVersionsValue,
+    maxAge,
+  };
+}
+
+function normalizeRetentionTargetOverride(
+  override: RawRetentionTargetOverride,
+): RetentionTargetOverride {
+  const targetSource =
+    typeof override.target === "string"
+      ? override.target.trim()
+      : typeof override.Target === "string"
+        ? override.Target.trim()
+        : typeof override.name === "string"
+          ? override.name.trim()
+          : typeof override.Name === "string"
+            ? override.Name.trim()
+            : "";
+
+  const descriptionSource =
+    typeof override.description === "string"
+      ? override.description
+      : typeof override.Description === "string"
+        ? override.Description
+        : undefined;
+
+  return {
+    target: targetSource || "target",
+    description: descriptionSource?.trim() || undefined,
+    policy: normalizeRetentionPolicy(
+      override.retention ?? override.Retention ?? override.policy ?? override.Policy,
+    ),
+  };
+}
+
+function normalizeRetentionWorkflow(
+  workflow: RawRetentionWorkflow,
+): RetentionWorkflow {
+  const nameSource =
+    typeof workflow.name === "string"
+      ? workflow.name.trim()
+      : typeof workflow.Name === "string"
+        ? workflow.Name.trim()
+        : "";
+  const descriptionSource =
+    typeof workflow.description === "string"
+      ? workflow.description
+      : typeof workflow.Description === "string"
+        ? workflow.Description
+        : undefined;
+  const overridesSource =
+    workflow.overrides ??
+    workflow.Overrides ??
+    workflow.targets ??
+    workflow.Targets ??
+    [];
+
+  return {
+    name: nameSource || "workflow",
+    description: descriptionSource?.trim() || undefined,
+    defaultPolicy: normalizeRetentionPolicy(
+      workflow.default_policy ?? workflow.DefaultPolicy ?? workflow.retention ?? workflow.Retention,
+    ),
+    overrides: (overridesSource ?? []).map(normalizeRetentionTargetOverride),
+    updatedAt: normalizeTimestamp(workflow.updated_at ?? workflow.UpdatedAt),
+  };
+}
+
+function serializeRetentionPolicyInput(
+  policy: RetentionPolicy,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (policy.maxVersions !== undefined) {
+    payload.max_versions =
+      policy.maxVersions === null ? null : policy.maxVersions;
+  }
+  if (policy.maxAge !== undefined) {
+    if (policy.maxAge === null) {
+      payload.max_age = null;
+    } else {
+      const trimmed = policy.maxAge?.trim() ?? "";
+      payload.max_age = trimmed || null;
+    }
+  }
+  return payload;
+}
+
+function serializeRetentionTargetOverride(
+  override: RetentionTargetOverride,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    target: override.target,
+  };
+  if (override.description !== undefined) {
+    payload.description = override.description?.trim() ?? "";
+  }
+  const retentionPayload = serializeRetentionPolicyInput(override.policy);
+  if (Object.keys(retentionPayload).length > 0) {
+    payload.retention = retentionPayload;
+  } else {
+    payload.retention = {};
+  }
+  return payload;
+}
+
+function serializeRetentionWorkflowInput(
+  input: UpsertRetentionWorkflowInput,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    name: input.name,
+    default_policy: serializeRetentionPolicyInput(input.defaultPolicy),
+    overrides: input.overrides
+      .filter((override) => override.target.trim())
+      .map((override) => serializeRetentionTargetOverride(override)),
+  };
+  if (input.description !== undefined) {
+    payload.description = input.description?.trim() ?? "";
+  }
+  return payload;
+}
+
+function normalizeEpisodeCutover(
+  raw: RawEpisodeCutoverOverride,
+): EpisodeCutoverOverride {
+  return {
+    episodeId: raw.episode_id?.trim() ?? "",
+    seasonNumber: raw.season_number ?? 0,
+    episodeNumber: raw.episode_number ?? 0,
+    absoluteNumber:
+      raw.absolute_number === undefined ? undefined : raw.absolute_number,
+    title: raw.title?.trim() || undefined,
+    airDate: normalizeTimestamp(raw.air_date),
+    notes: raw.notes?.trim() || undefined,
+  };
+}
+
+function normalizeAlbumEdition(
+  raw: RawAlbumEditionOverride,
+): AlbumEditionOverride {
+  return {
+    editionId: raw.edition_id?.trim() ?? "",
+    name: raw.name?.trim() ?? "",
+    releaseDate: normalizeTimestamp(raw.release_date),
+    isDefault:
+      raw.is_default === undefined ? undefined : Boolean(raw.is_default),
+    notes: raw.notes?.trim() || undefined,
+  };
+}
+
+function normalizeTrackNumberOverride(
+  raw: RawTrackNumberOverride,
+): TrackNumberOverride {
+  return {
+    trackId: raw.track_id?.trim() ?? "",
+    discNumber:
+      raw.disc_number === undefined ? undefined : raw.disc_number ?? undefined,
+    trackNumber: raw.track_number ?? 0,
+    totalTracks:
+      raw.total_tracks === undefined
+        ? undefined
+        : raw.total_tracks ?? undefined,
+    isrc: raw.isrc?.trim() || undefined,
+    notes: raw.notes?.trim() || undefined,
+  };
+}
+
+function normalizeMetadataOverridesPayload(
+  payload: RawMetadataOverrides | null | undefined,
+): MetadataOverrides {
+  if (!payload) {
+    return {
+      episodeCutovers: [],
+      albumEditions: [],
+      trackNumberOverrides: [],
+      updatedAt: undefined,
+    };
+  }
+  return {
+    episodeCutovers: (payload.episode_cutovers ?? []).map(
+      normalizeEpisodeCutover,
+    ),
+    albumEditions: (payload.album_editions ?? []).map(normalizeAlbumEdition),
+    trackNumberOverrides: (payload.track_number_overrides ?? []).map(
+      normalizeTrackNumberOverride,
+    ),
+    updatedAt: normalizeTimestamp(payload.updated_at),
+  };
+}
+
+function serializeEpisodeCutoverInput(
+  cutover: EpisodeCutoverOverride,
+): RawEpisodeCutoverOverride {
+  const payload: RawEpisodeCutoverOverride = {
+    episode_id: cutover.episodeId,
+    season_number: cutover.seasonNumber,
+    episode_number: cutover.episodeNumber,
+  };
+  if (cutover.absoluteNumber !== undefined && cutover.absoluteNumber !== null) {
+    payload.absolute_number = cutover.absoluteNumber;
+  }
+  if (cutover.title) {
+    payload.title = cutover.title;
+  }
+  if (cutover.airDate) {
+    payload.air_date = cutover.airDate;
+  }
+  if (cutover.notes) {
+    payload.notes = cutover.notes;
+  }
+  return payload;
+}
+
+function serializeAlbumEditionInput(
+  edition: AlbumEditionOverride,
+): RawAlbumEditionOverride {
+  const payload: RawAlbumEditionOverride = {
+    edition_id: edition.editionId,
+    name: edition.name,
+  };
+  if (edition.releaseDate) {
+    payload.release_date = edition.releaseDate;
+  }
+  if (edition.isDefault !== undefined) {
+    payload.is_default = edition.isDefault ?? false;
+  }
+  if (edition.notes) {
+    payload.notes = edition.notes;
+  }
+  return payload;
+}
+
+function serializeTrackNumberOverrideInput(
+  override: TrackNumberOverride,
+): RawTrackNumberOverride {
+  const payload: RawTrackNumberOverride = {
+    track_id: override.trackId,
+    track_number: override.trackNumber,
+  };
+  if (override.discNumber !== undefined && override.discNumber !== null) {
+    payload.disc_number = override.discNumber;
+  }
+  if (override.totalTracks !== undefined && override.totalTracks !== null) {
+    payload.total_tracks = override.totalTracks;
+  }
+  if (override.isrc) {
+    payload.isrc = override.isrc;
+  }
+  if (override.notes) {
+    payload.notes = override.notes;
+  }
+  return payload;
+}
+
+function serializeMetadataOverridesInput(
+  input: MetadataOverridesInput,
+): RawMetadataOverrides {
+  return {
+    episode_cutovers: input.episodeCutovers.map(serializeEpisodeCutoverInput),
+    album_editions: input.albumEditions.map(serializeAlbumEditionInput),
+    track_number_overrides: input.trackNumberOverrides.map(
+      serializeTrackNumberOverrideInput,
+    ),
   };
 }
 
@@ -539,6 +1162,179 @@ export class RestApiClient {
     return normalizeManualSearchRelease(response.release);
   }
 
+  async fetchReleaseProfiles(): Promise<ReleaseProfile[]> {
+    const payload = await this.http.get<{ profiles: RawReleaseProfile[] }>(
+      "/api/v1/policies/release-profiles",
+      {
+        traceName: "REST GET /api/v1/policies/release-profiles",
+        traceAttributes: { resource: "policies.release_profiles" },
+      },
+    );
+    return (payload.profiles ?? []).map(normalizeReleaseProfile);
+  }
+
+  async createReleaseProfile(
+    input: UpsertReleaseProfileInput,
+  ): Promise<ReleaseProfile> {
+    const response = await this.http.post<{ profile: RawReleaseProfile }>(
+      "/api/v1/policies/release-profiles",
+      serializeReleaseProfileInput(input),
+      {
+        traceName: "REST POST /api/v1/policies/release-profiles",
+        traceAttributes: { resource: "policies.release_profiles" },
+      },
+    );
+    return normalizeReleaseProfile(response.profile);
+  }
+
+  async updateReleaseProfile(
+    profileID: string,
+    input: UpsertReleaseProfileInput,
+  ): Promise<ReleaseProfile> {
+    const id = profileID.trim();
+    const response = await this.http.put<{ profile: RawReleaseProfile }>(
+      `/api/v1/policies/release-profiles/${encodeURIComponent(id)}`,
+      serializeReleaseProfileInput(input),
+      {
+        traceName: "REST PUT /api/v1/policies/release-profiles",
+        traceAttributes: {
+          resource: "policies.release_profiles",
+          profileID: id,
+        },
+      },
+    );
+    return normalizeReleaseProfile(response.profile);
+  }
+
+  async deleteReleaseProfile(profileID: string): Promise<void> {
+    const id = profileID.trim();
+    await this.http.request(
+      `/api/v1/policies/release-profiles/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+      {
+        traceName: "REST DELETE /api/v1/policies/release-profiles",
+        traceAttributes: {
+          resource: "policies.release_profiles",
+          profileID: id,
+        },
+        parse: async () => undefined,
+      },
+    );
+  }
+
+  async fetchRetentionWorkflows(): Promise<RetentionWorkflow[]> {
+    const payload = await this.http.get<{ workflows: RawRetentionWorkflow[] }>(
+      "/api/v1/policies/retention",
+      {
+        traceName: "REST GET /api/v1/policies/retention",
+        traceAttributes: { resource: "policies.retention" },
+      },
+    );
+    return (payload.workflows ?? []).map(normalizeRetentionWorkflow);
+  }
+
+  async createRetentionWorkflow(
+    input: UpsertRetentionWorkflowInput,
+  ): Promise<RetentionWorkflow> {
+    const response = await this.http.post<{ workflow: RawRetentionWorkflow }>(
+      "/api/v1/policies/retention",
+      serializeRetentionWorkflowInput(input),
+      {
+        traceName: "REST POST /api/v1/policies/retention",
+        traceAttributes: { resource: "policies.retention" },
+      },
+    );
+    return normalizeRetentionWorkflow(response.workflow);
+  }
+
+  async updateRetentionWorkflow(
+    workflowName: string,
+    input: UpsertRetentionWorkflowInput,
+  ): Promise<RetentionWorkflow> {
+    const name = workflowName.trim();
+    const response = await this.http.put<{ workflow: RawRetentionWorkflow }>(
+      `/api/v1/policies/retention/${encodeURIComponent(name)}`,
+      serializeRetentionWorkflowInput(input),
+      {
+        traceName: "REST PUT /api/v1/policies/retention",
+        traceAttributes: {
+          resource: "policies.retention",
+          workflow: name,
+        },
+      },
+    );
+    return normalizeRetentionWorkflow(response.workflow);
+  }
+
+  async deleteRetentionWorkflow(name: string): Promise<void> {
+    const trimmed = name.trim();
+    await this.http.request(
+      `/api/v1/policies/retention/${encodeURIComponent(trimmed)}`,
+      { method: "DELETE" },
+      {
+        traceName: "REST DELETE /api/v1/policies/retention",
+        traceAttributes: {
+          resource: "policies.retention",
+          workflow: trimmed,
+        },
+        parse: async () => undefined,
+      },
+    );
+  }
+
+  async fetchMetadataOverrides(
+    entityID: string,
+  ): Promise<MetadataOverrides | null> {
+    const id = entityID.trim();
+    const payload = await this.http.get<{
+      overrides: RawMetadataOverrides | null;
+    }>(
+      `/api/v1/library/overrides/${encodeURIComponent(id)}`,
+      {
+        traceName: "REST GET /api/v1/library/overrides/{entity}",
+        traceAttributes: {
+          resource: "library.metadata_overrides",
+          entityID: id,
+        },
+      },
+    );
+    if (!payload.overrides) {
+      return null;
+    }
+    return normalizeMetadataOverridesPayload(payload.overrides);
+  }
+
+  async setMetadataOverrides(
+    entityID: string,
+    overrides: MetadataOverridesInput,
+  ): Promise<MetadataOverrides> {
+    const id = entityID.trim();
+    const response = await this.http.put<{
+      overrides: RawMetadataOverrides;
+    }>(
+      `/api/v1/library/overrides/${encodeURIComponent(id)}`,
+      serializeMetadataOverridesInput(overrides),
+      {
+        traceName: "REST PUT /api/v1/library/overrides/{entity}",
+        traceAttributes: { resource: "library.metadata_overrides", entityID: id },
+      },
+    );
+    return normalizeMetadataOverridesPayload(response.overrides);
+  }
+
+  async clearMetadataOverrides(entityID: string): Promise<void> {
+    const id = entityID.trim();
+    await this.http.request(
+      `/api/v1/library/overrides/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+      {
+        traceName: "REST DELETE /api/v1/library/overrides/{entity}",
+        traceAttributes: { resource: "library.metadata_overrides", entityID: id },
+        parse: async () => undefined,
+      },
+    );
+  }
+
   async fetchPrincipal(): Promise<Principal> {
     const payload = await this.http.get<{ principal: RawPrincipal }>(
       "/api/v1/auth/principal",
@@ -615,6 +1411,98 @@ export function grabManualRelease(
 
 export function fetchPrincipal(baseUrl?: string): Promise<Principal> {
   return defaultRestClient.withBaseUrl(baseUrl).fetchPrincipal();
+}
+
+export function fetchReleaseProfiles(baseUrl?: string): Promise<ReleaseProfile[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchReleaseProfiles();
+}
+
+export function createReleaseProfile(
+  input: UpsertReleaseProfileInput,
+  baseUrl?: string,
+): Promise<ReleaseProfile> {
+  return defaultRestClient.withBaseUrl(baseUrl).createReleaseProfile(input);
+}
+
+export function updateReleaseProfile(
+  profileID: string,
+  input: UpsertReleaseProfileInput,
+  baseUrl?: string,
+): Promise<ReleaseProfile> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .updateReleaseProfile(profileID, input);
+}
+
+export function deleteReleaseProfile(
+  profileID: string,
+  baseUrl?: string,
+): Promise<void> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .deleteReleaseProfile(profileID);
+}
+
+export function fetchRetentionWorkflows(
+  baseUrl?: string,
+): Promise<RetentionWorkflow[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchRetentionWorkflows();
+}
+
+export function createRetentionWorkflow(
+  input: UpsertRetentionWorkflowInput,
+  baseUrl?: string,
+): Promise<RetentionWorkflow> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .createRetentionWorkflow(input);
+}
+
+export function updateRetentionWorkflow(
+  workflowName: string,
+  input: UpsertRetentionWorkflowInput,
+  baseUrl?: string,
+): Promise<RetentionWorkflow> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .updateRetentionWorkflow(workflowName, input);
+}
+
+export function deleteRetentionWorkflow(
+  workflowName: string,
+  baseUrl?: string,
+): Promise<void> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .deleteRetentionWorkflow(workflowName);
+}
+
+export function fetchMetadataOverrides(
+  entityID: string,
+  baseUrl?: string,
+): Promise<MetadataOverrides | null> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .fetchMetadataOverrides(entityID);
+}
+
+export function setMetadataOverrides(
+  entityID: string,
+  overrides: MetadataOverridesInput,
+  baseUrl?: string,
+): Promise<MetadataOverrides> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .setMetadataOverrides(entityID, overrides);
+}
+
+export function clearMetadataOverrides(
+  entityID: string,
+  baseUrl?: string,
+): Promise<void> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .clearMetadataOverrides(entityID);
 }
 
 export interface GrpcLibraryClientOptions extends RestApiClientOptions {}

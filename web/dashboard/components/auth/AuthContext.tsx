@@ -103,54 +103,53 @@ function sanitizeStore(raw: unknown): AuthStore {
     const keysValue = Array.isArray((value as { keys?: unknown }).keys)
       ? ((value as { keys: unknown[] }).keys as unknown[])
       : [];
-    const keys: StoredKey[] = keysValue
-      .map((item) => {
-        if (!item || typeof item !== "object") {
-          return undefined;
-        }
-        const token = typeof (item as { token?: unknown }).token === "string"
-          ? (item as { token: string }).token.trim()
-          : "";
-        if (!token) {
-          return undefined;
-        }
-        const idRaw = typeof (item as { id?: unknown }).id === "string"
-          ? (item as { id: string }).id.trim()
-          : "";
-        const id = idRaw || generateKeyId(token);
-        const labelRaw = typeof (item as { label?: unknown }).label === "string"
-          ? (item as { label: string }).label.trim()
-          : "";
-        const label = labelRaw || safeTokenPrefix(token) || id;
-        const tokenIdRaw = typeof (item as { tokenId?: unknown }).tokenId === "string"
-          ? (item as { tokenId: string }).tokenId.trim()
-          : "";
-        const roleRaw = typeof (item as { role?: unknown }).role === "string"
-          ? (item as { role: string }).role.trim()
-          : "";
-        const permissionsValue = Array.isArray(
-          (item as { permissions?: unknown }).permissions,
-        )
-          ? ((item as { permissions: unknown[] }).permissions as unknown[])
-          : [];
-        const permissions = permissionsValue
-          .map((value) => (typeof value === "string" ? value.trim() : ""))
-          .filter((value) => value.length > 0);
-        const validatedRaw = typeof (item as { lastValidatedAt?: unknown })
-          .lastValidatedAt === "string"
-          ? (item as { lastValidatedAt: string }).lastValidatedAt
-          : undefined;
-        return {
-          id,
-          label,
-          token,
-          tokenId: tokenIdRaw || safeTokenPrefix(token),
-          role: roleRaw || undefined,
-          permissions: permissions.length ? permissions : undefined,
-          lastValidatedAt: validatedRaw,
-        } satisfies StoredKey;
-      })
-      .filter((value): value is StoredKey => Boolean(value));
+    const keys = keysValue.flatMap((item) => {
+      if (!item || typeof item !== "object") {
+        return [];
+      }
+      const token = typeof (item as { token?: unknown }).token === "string"
+        ? (item as { token: string }).token.trim()
+        : "";
+      if (!token) {
+        return [];
+      }
+      const idRaw = typeof (item as { id?: unknown }).id === "string"
+        ? (item as { id: string }).id.trim()
+        : "";
+      const id = idRaw || generateKeyId(token);
+      const labelRaw = typeof (item as { label?: unknown }).label === "string"
+        ? (item as { label: string }).label.trim()
+        : "";
+      const label = labelRaw || safeTokenPrefix(token) || id;
+      const tokenIdRaw = typeof (item as { tokenId?: unknown }).tokenId === "string"
+        ? (item as { tokenId: string }).tokenId.trim()
+        : "";
+      const roleRaw = typeof (item as { role?: unknown }).role === "string"
+        ? (item as { role: string }).role.trim()
+        : "";
+      const permissionsValue = Array.isArray(
+        (item as { permissions?: unknown }).permissions,
+      )
+        ? ((item as { permissions: unknown[] }).permissions as unknown[])
+        : [];
+      const permissions = permissionsValue
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter((value) => value.length > 0);
+      const validatedRaw = typeof (item as { lastValidatedAt?: unknown })
+        .lastValidatedAt === "string"
+        ? (item as { lastValidatedAt: string }).lastValidatedAt
+        : undefined;
+      const entry: StoredKey = {
+        id,
+        label,
+        token,
+        tokenId: tokenIdRaw || safeTokenPrefix(token),
+        role: roleRaw || undefined,
+        permissions: permissions.length ? permissions : undefined,
+        lastValidatedAt: validatedRaw,
+      };
+      return [entry];
+    });
 
     let activeKeyId = typeof (value as { activeKeyId?: unknown }).activeKeyId === "string"
       ? (value as { activeKeyId: string }).activeKeyId.trim()

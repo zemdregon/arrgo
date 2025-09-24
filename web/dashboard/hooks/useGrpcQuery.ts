@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import useSWR, { SWRConfiguration, SWRKey, SWRResponse } from "swr";
+import useSWR, { Key, SWRConfiguration, SWRResponse } from "swr";
 import {
   createGrpcLibraryClient,
   GrpcLibraryClient,
@@ -11,18 +11,18 @@ import { useEnvironment } from "../components/environment/EnvironmentContext";
 
 type ClientFactory = (options: GrpcLibraryClientOptions) => GrpcLibraryClient;
 
-export interface UseGrpcQueryOptions<Data = unknown, Error = Error>
-  extends Omit<SWRConfiguration<Data, Error>, "isPaused"> {
+export interface UseGrpcQueryOptions<Data = unknown, Err = Error>
+  extends Omit<SWRConfiguration<Data, Err>, "isPaused"> {
   baseUrl?: string;
   enabled?: boolean;
   clientFactory?: ClientFactory;
 }
 
-export function useGrpcQuery<Data = unknown, Error = Error>(
-  key: SWRKey,
+export function useGrpcQuery<Data = unknown, Err = Error>(
+  key: Key,
   queryFn: (client: GrpcLibraryClient) => Promise<Data>,
-  options: UseGrpcQueryOptions<Data, Error> = {},
-): SWRResponse<Data, Error> {
+  options: UseGrpcQueryOptions<Data, Err> = {},
+): SWRResponse<Data, Err> {
   const { current } = useEnvironment();
   const { baseUrl: overrideBaseUrl, enabled = true, clientFactory, ...swrOptions } = options;
   const baseUrl = overrideBaseUrl ?? current.apiUrl;
@@ -38,7 +38,7 @@ export function useGrpcQuery<Data = unknown, Error = Error>(
     }
     if (typeof key === "function") {
       return (...args: unknown[]) => {
-        const resolved = (key as (...params: unknown[]) => SWRKey)(...args);
+        const resolved = (key as (...params: unknown[]) => Key)(...args);
         if (resolved == null) {
           return resolved;
         }
@@ -57,5 +57,5 @@ export function useGrpcQuery<Data = unknown, Error = Error>(
     return [key, baseUrl];
   }, [enabled, key, baseUrl]);
 
-  return useSWR<Data, Error>(resolvedKey, () => queryFn(client), swrOptions);
+  return useSWR<Data, Err>(resolvedKey, () => queryFn(client), swrOptions);
 }

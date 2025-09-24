@@ -2,7 +2,7 @@ import type {
   JobSummary,
   LibraryEntity,
   WorkerSummary,
-} from "../../lib/api";
+} from "../../../lib/api";
 
 export type SelectOption = {
   value: string;

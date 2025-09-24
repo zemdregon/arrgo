@@ -1,0 +1,362 @@
+.panelWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.tabList {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  padding: 0.25rem;
+}
+
+.tabButton {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  padding: 0.4rem 0.95rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: color var(--transition-base), background var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+.tabButton:hover {
+  color: var(--color-text-primary);
+}
+
+.tabButtonActive {
+  background: var(--color-accent-muted);
+  color: var(--color-accent-strong);
+  box-shadow: 0 0 0 1px var(--color-accent-border);
+}
+
+.panelContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xl);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.sectionHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-md);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.sectionDescription {
+  margin: 0.35rem 0 0;
+  color: var(--color-text-muted);
+  max-width: 56ch;
+}
+
+.sectionControls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.inlineControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.select,
+.textInput,
+.textArea {
+  width: 100%;
+  border: 1px solid var(--color-border-subtle);
+  background: var(--surface-base);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-lg);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.95rem;
+  transition: border-color var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+.select:focus,
+.textInput:focus,
+.textArea:focus {
+  outline: none;
+  border-color: var(--color-accent-border);
+  box-shadow: 0 0 0 1px var(--color-accent-border);
+}
+
+.textArea {
+  min-height: 3rem;
+  resize: vertical;
+}
+
+.monospace {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 0.9rem;
+}
+
+.fieldLabel {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.formGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.fieldRow {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.actionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+}
+
+.actionsSpacer {
+  flex: 1 1 auto;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: transform var(--transition-base),
+    box-shadow var(--transition-base),
+    opacity var(--transition-base);
+}
+
+.primaryButton {
+  border: none;
+  background: linear-gradient(
+    135deg,
+    var(--color-accent),
+    var(--color-accent-strong)
+  );
+  color: var(--color-text-inverse);
+  box-shadow: var(--shadow-accent);
+}
+
+.primaryButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.primaryButton:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.secondaryButton {
+  border: 1px solid var(--color-border-subtle);
+  background: var(--surface-panel);
+  color: var(--color-text-primary);
+}
+
+.secondaryButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.secondaryButton:not(:disabled):hover {
+  border-color: var(--color-border-strong);
+}
+
+.dangerButton {
+  border: 1px solid var(--status-danger-border);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+}
+
+.dangerButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.dangerButton:not(:disabled):hover {
+  box-shadow: 0 0 0 1px var(--status-danger-border);
+}
+
+.feedback {
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+}
+
+.feedbackSuccess {
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success-text);
+}
+
+.feedbackError {
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+  color: var(--status-danger-text);
+}
+
+.overrideHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.overrideList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.overrideCard {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
+  padding: var(--space-lg);
+  background: var(--surface-panel);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  box-shadow: var(--shadow-xs);
+}
+
+.overrideGrid {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.overrideActions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.overrideIndex {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.emptyState {
+  margin: 0;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.subsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.subsectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.subsectionTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.subsectionDescription {
+  margin: 0;
+  color: var(--color-text-muted);
+  max-width: 52ch;
+}
+
+.checkboxGroup {
+  display: flex;
+  align-items: center;
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.updatedAt {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.errorState {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--status-danger-border);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
+  max-width: 420px;
+}
+
+.errorMessage {
+  margin: 0;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .actionsSpacer {
+    display: none;
+  }
+
+  .sectionControls {
+    align-items: stretch;
+  }
+}

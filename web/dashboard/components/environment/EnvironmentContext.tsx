@@ -65,21 +65,20 @@ function resolveDefaultEnvironments(): EnvironmentOption[] {
 
   try {
     const parsed = JSON.parse(raw) as Array<Partial<EnvironmentOption>>;
-    const sanitized: EnvironmentOption[] = parsed
-      .map((item) => {
-        const id = typeof item.id === "string" ? normalizeId(item.id) : undefined;
-        const label = typeof item.label === "string" ? item.label.trim() : undefined;
-        const apiUrl = typeof item.apiUrl === "string" ? item.apiUrl.trim() : undefined;
-        const description =
-          typeof item.description === "string" && item.description.trim()
-            ? item.description.trim()
-            : undefined;
-        if (!id || !label || !apiUrl) {
-          return undefined;
-        }
-        return { id, label, apiUrl, description };
-      })
-      .filter((value): value is EnvironmentOption => Boolean(value));
+    const sanitized = parsed.flatMap((item) => {
+      const id = typeof item.id === "string" ? normalizeId(item.id) : undefined;
+      const label = typeof item.label === "string" ? item.label.trim() : undefined;
+      const apiUrl = typeof item.apiUrl === "string" ? item.apiUrl.trim() : undefined;
+      const description =
+        typeof item.description === "string" && item.description.trim()
+          ? item.description.trim()
+          : undefined;
+      if (!id || !label || !apiUrl) {
+        return [];
+      }
+      const option: EnvironmentOption = { id, label, apiUrl, description };
+      return [option];
+    });
 
     if (sanitized.length) {
       return sanitized;

@@ -26,11 +26,11 @@ type ErrorBoundaryState = {
 };
 
 class ErrorBoundaryInner extends Component<
-  {
+  PropsWithChildren<{
     fallback?: ErrorBoundaryProps["fallback"];
     onError?: (error: Error, info: ErrorInfo) => void;
     onReset?: () => void;
-  },
+  }>,
   ErrorBoundaryState
 > {
   state: ErrorBoundaryState = {
