@@ -312,6 +312,75 @@ func TestMetadataOverrideEndpoints(t *testing.T) {
 	})
 }
 
+func TestRenameHistoryEndpoint(t *testing.T) {
+	now := time.Unix(1700003000, 0)
+	svc := mustRedisBackedService(t, library.Config{
+		Entities: []library.Entity{{ID: "series-1", EntityType: "series", Title: "History Show"}},
+		Clock:    stubClock{now: now},
+		LibraryFiles: map[string][]library.LibraryFile{
+			"series-1": {{
+				ID:            "file-1",
+				EntityID:      "series-1",
+				WorkType:      "episode",
+				RelativePath:  "History Show/Season 01/History Show - S01E01 - Pilot.mkv",
+				Extension:     "mkv",
+				Quality:       "WEBDL-1080p",
+				SeasonNumber:  1,
+				EpisodeNumber: 1,
+				EpisodeTitle:  "Pilot",
+				SeriesTitle:   "History Show",
+				ReleaseYear:   2023,
+			}},
+		},
+	})
+	if _, err := svc.StartRenameJob(context.Background(), "series-1", library.RenameOptions{}); err != nil {
+		t.Fatalf("StartRenameJob returned error: %v", err)
+	}
+	if _, err := svc.StartRenameJob(context.Background(), "series-1", library.RenameOptions{}); err != nil {
+		t.Fatalf("StartRenameJob second run returned error: %v", err)
+	}
+
+	authSvc := mustAuthService(t)
+	token := mustAPIKey(t, authSvc, "observer")
+	srv := NewServer(svc, nil, authSvc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/library/entities/series-1/rename-history?limit=1", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+
+	srv.handleLibraryEntityRoutes(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.Code)
+	}
+
+	var payload struct {
+		History []library.RenameJobRecord `json:"history"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode rename history payload: %v", err)
+	}
+	if len(payload.History) != 1 {
+		t.Fatalf("expected history limit to apply, got %d entries", len(payload.History))
+	}
+
+	badReq := httptest.NewRequest(http.MethodGet, "/api/v1/library/entities/series-1/rename-history?limit=oops", nil)
+	badReq.Header.Set("Authorization", "Bearer "+token)
+	badResp := httptest.NewRecorder()
+	srv.handleLibraryEntityRoutes(badResp, badReq)
+	if badResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for invalid limit, got %d", badResp.Code)
+	}
+
+	missingReq := httptest.NewRequest(http.MethodGet, "/api/v1/library/entities/missing/rename-history", nil)
+	missingReq.Header.Set("Authorization", "Bearer "+token)
+	missingResp := httptest.NewRecorder()
+	srv.handleLibraryEntityRoutes(missingResp, missingReq)
+	if missingResp.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404 for missing entity, got %d", missingResp.Code)
+	}
+}
+
 func TestWorkerRegistrationEndpoint(t *testing.T) {
 	libSvc := mustLibraryService(t, library.Config{})
 	workerSvc := mustWorkerService(t)

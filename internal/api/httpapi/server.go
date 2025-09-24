@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/pprof"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,6 +35,7 @@ func NewServer(service *library.Service, workerService *worker.Service, authoriz
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/v1/library/entities", s.instrument("/api/v1/library/entities", http.HandlerFunc(s.handleListEntities)))
+	mux.Handle("/api/v1/library/entities/", s.instrument("/api/v1/library/entities/{entity}", http.HandlerFunc(s.handleLibraryEntityRoutes)))
 	mux.Handle("/api/v1/jobs", s.instrument("/api/v1/jobs", http.HandlerFunc(s.handleJobs)))
 	mux.Handle("/api/v1/indexer/search", s.instrument("/api/v1/indexer/search", http.HandlerFunc(s.handleIndexerSearch)))
 	mux.Handle("/api/v1/indexer/releases/grab", s.instrument("/api/v1/indexer/releases/grab", http.HandlerFunc(s.handleIndexerGrab)))
@@ -68,6 +70,69 @@ func (s *Server) handleListEntities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]any{"entities": entities})
+}
+
+func (s *Server) handleLibraryEntityRoutes(w http.ResponseWriter, r *http.Request) {
+	trimmed := strings.TrimPrefix(r.URL.Path, "/api/v1/library/entities/")
+	trimmed = strings.Trim(trimmed, "/")
+	if trimmed == "" {
+		respondError(w, http.StatusNotFound, "library entity resource not found")
+		return
+	}
+
+	parts := strings.Split(trimmed, "/")
+	entityID := strings.TrimSpace(parts[0])
+	if entityID == "" {
+		respondError(w, http.StatusNotFound, "library entity resource not found")
+		return
+	}
+
+	if len(parts) == 1 {
+		respondError(w, http.StatusNotFound, "library entity resource not found")
+		return
+	}
+
+	switch parts[1] {
+	case "rename-history":
+		s.handleRenameHistory(w, r, entityID)
+	default:
+		respondError(w, http.StatusNotFound, "library entity resource not found")
+	}
+}
+
+func (s *Server) handleRenameHistory(w http.ResponseWriter, r *http.Request, entityID string) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	if _, ok := s.requirePermission(w, r, auth.PermissionLibraryRead); !ok {
+		return
+	}
+
+	limitParam := strings.TrimSpace(r.URL.Query().Get("limit"))
+	limit := 0
+	if limitParam != "" {
+		parsed, err := strconv.Atoi(limitParam)
+		if err != nil || parsed < 0 {
+			respondError(w, http.StatusBadRequest, "limit must be a non-negative integer")
+			return
+		}
+		limit = parsed
+	}
+
+	history, err := s.service.RenameHistory(r.Context(), entityID, limit)
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, library.ErrUnknownEntity):
+			status = http.StatusNotFound
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{"history": history})
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {

@@ -266,6 +266,21 @@
   color: var(--color-text-primary);
 }
 
+.entityLink {
+  text-decoration: none;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  transition: color var(--transition-base), text-decoration var(--transition-base);
+}
+
+.entityLink:hover,
+.entityLink:focus-visible {
+  color: var(--color-accent-strong);
+  text-decoration: underline;
+}
+
 .entityType {
   font-size: 0.8rem;
   text-transform: uppercase;
