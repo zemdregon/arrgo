@@ -4,7 +4,7 @@ arrgo now routes download requests through a prioritized failover stack so that 
 
 ## Router Overview
 
-The download router accepts one or more client adapters that implement the following interface:
+The download router accepts one or more client adapters that implement the following interface (exported for third-party use in [`sdk/downloadclient`](../sdk/downloadclient)):
 
 ```go
 // Client models an individual download client integration that can accept work.
@@ -32,7 +32,7 @@ The router maintains per-client health state and records the timestamp of the la
 
 ## Failover Semantics
 
-When dispatching a request, the router evaluates every registered client that supports the request, ordered by priority. The first healthy client to successfully accept the request wins. If a client reports `download.ErrClientUnavailable` from `Enqueue`, the router immediately marks it unhealthy, logs the failure, and retries the next candidate in priority order. Other errors are surfaced to the caller to preserve adapter-specific error reporting.
+When dispatching a request, the router evaluates every registered client that supports the request, ordered by priority. The first healthy client to successfully accept the request wins. If a client reports `downloadclient.ErrClientUnavailable` from `Enqueue`, the router immediately marks it unhealthy, logs the failure, and retries the next candidate in priority order. Other errors are surfaced to the caller to preserve adapter-specific error reporting.
 
 If all candidates are unhealthy, the router returns `download.ErrNoHealthyClients` (joined with the most recent probe failure) so that upstream workflows can surface actionable telemetry. When no registered client supports the request, `download.ErrNoSupportingClients` is returned.
 
@@ -53,7 +53,7 @@ if err != nil {
 log.Printf("queued download via %s after %d attempt(s)", result.ClientName, result.Attempts)
 ```
 
-Adapters should wrap transient failures with `download.ErrClientUnavailable` to opt into the automatic failover behavior. Persistent errors can be returned directly and will bubble up to the caller.
+Adapters should wrap transient failures with `downloadclient.ErrClientUnavailable` to opt into the automatic failover behavior. Persistent errors can be returned directly and will bubble up to the caller.
 
 ## Observability
 
