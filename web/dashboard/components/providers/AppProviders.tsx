@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SWRConfig } from "swr";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { EnvironmentProvider } from "../environment/EnvironmentContext";
+import { DiagnosticsProvider } from "../diagnostics/DiagnosticsProvider";
+import { ErrorBoundary } from "../diagnostics/ErrorBoundary";
 import { AuthProvider } from "../auth/AuthContext";
 
 function createQueryClient() {
@@ -45,7 +47,11 @@ export function AppProviders({ children }: PropsWithChildren) {
       <SWRConfig value={swrValue}>
         <ThemeProvider>
           <EnvironmentProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <DiagnosticsProvider>
+              <ErrorBoundary>
+                <AuthProvider>{children}</AuthProvider>
+              </ErrorBoundary>
+            </DiagnosticsProvider>
           </EnvironmentProvider>
         </ThemeProvider>
       </SWRConfig>

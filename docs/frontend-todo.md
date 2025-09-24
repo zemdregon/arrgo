@@ -15,7 +15,7 @@
 - [x] Implement global design system (theme tokens, typography, color, spacing) with light/dark mode support.
 - [x] Configure authentication guards, API key selection, and RBAC-aware route protection.
 - [x] Build REST/gRPC client adapters with SWR/React Query hooks and request tracing instrumentation.
-- [ ] Set up error boundaries, toast/alert primitives, and structured logging for client-side diagnostics.
+- [x] Set up error boundaries, toast/alert primitives, and structured logging for client-side diagnostics.
 
 ### Navigation & Layout
 - [x] Create persistent shell with navigation, environment context switcher, and worker status indicator.
