@@ -10,6 +10,44 @@
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 
+@media (min-width: 1440px) {
+  .page {
+    gap: var(--space-3xl);
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: var(--space-2xl);
+  }
+
+  .metricsRow {
+    gap: var(--space-lg);
+  }
+
+  .metricCard {
+    flex: 1 1 200px;
+  }
+
+  .analyticsGrid {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--space-lg);
+  }
+
+  .poolFormGrid {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+}
+
+@media (min-width: 1800px) {
+  .grid {
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  }
+
+  .analyticsGrid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+}
+
 .refreshButton {
   display: inline-flex;
   align-items: center;
@@ -557,9 +595,72 @@
   color: var(--color-text-muted);
 }
 
+@media (max-width: 960px) {
+  .page {
+    gap: var(--space-2xl);
+  }
+
+  .metricsRow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
+  .panelControls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-sm);
+  }
+
+  .inlineForm,
+  .manualSearchForm {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .controlGroup {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .controlSelect,
+  .controlInput {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .primaryButton,
+  .secondaryButton {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .searchMeta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 @media (max-width: 720px) {
+  .page {
+    gap: var(--space-xl);
+  }
+
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .metricsRow {
+    gap: var(--space-sm);
+  }
+
+  .analyticsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .panelControls {
+    gap: var(--space-sm);
   }
 
   .panelControls {
