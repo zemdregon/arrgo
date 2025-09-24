@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useEnvironment } from "../environment/EnvironmentContext";
-import { useApiData } from "../../hooks/useApiData";
-import { fetchWorkers, WorkerSummary } from "../../lib/api";
+import { useRestQuery } from "../../hooks/useRestQuery";
+import type { WorkerSummary } from "../../lib/api";
 import styles from "./WorkerStatusIndicator.module.css";
 
 type OverallStatus = "unknown" | "healthy" | "warning" | "danger";
@@ -89,31 +89,29 @@ export function WorkerStatusIndicator() {
   const { current } = useEnvironment();
   const apiBaseUrl = current.apiUrl;
 
-  const loadWorkers = useCallback(() => fetchWorkers(apiBaseUrl), [apiBaseUrl]);
+  const workersQuery = useRestQuery(
+    ["workers", "indicator", apiBaseUrl],
+    (client) => client.fetchWorkers(),
+    { refetchInterval: 30000 },
+  );
 
-  const { data, loading, error, refresh } = useApiData(loadWorkers, [apiBaseUrl]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      refresh();
-    }, 30000);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [refresh]);
-
+  const { data, isPending, isFetching, error, refetch } = workersQuery;
+  const loading = isPending && !data;
+  const errorMessage = error?.message;
   const summary = useMemo(() => summarizeWorkers(data), [data]);
-  const overallStatus = computeOverallStatus(summary, loading, error);
-  const label = formatSummary(summary, loading, error);
+  const overallStatus = computeOverallStatus(summary, loading, errorMessage);
+  const label = formatSummary(summary, loading, errorMessage);
 
   return (
     <button
       type="button"
       className={styles.root}
       data-status={overallStatus}
-      onClick={refresh}
+      onClick={() => {
+        void refetch();
+      }}
       disabled={loading && !data}
-      aria-busy={loading}
+      aria-busy={isFetching}
       title="Refresh worker status"
     >
       <span className={styles.statusDot} aria-hidden />

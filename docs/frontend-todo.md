@@ -14,7 +14,7 @@
 - [x] Establish Next.js app router structure, TypeScript strict mode, and shared layout primitives.
 - [x] Implement global design system (theme tokens, typography, color, spacing) with light/dark mode support.
 - [x] Configure authentication guards, API key selection, and RBAC-aware route protection.
-- [ ] Build REST/gRPC client adapters with SWR/React Query hooks and request tracing instrumentation.
+- [x] Build REST/gRPC client adapters with SWR/React Query hooks and request tracing instrumentation.
 - [ ] Set up error boundaries, toast/alert primitives, and structured logging for client-side diagnostics.
 
 ### Navigation & Layout
