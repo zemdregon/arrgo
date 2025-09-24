@@ -47,8 +47,8 @@ referenced before planning new workstreams.
   and the repository `.github/workflows` directory.
 
 ## In-Flight Priorities (Alpha Polishing)
-- Replace the in-memory catalog backing the API with the finalized Postgres data
-  model and migrations.
+- Harden the Postgres-backed catalog with repeatable migrations, backups, and
+  validation tooling.
 - Harden worker lifecycle management with grace periods, back-pressure
   heuristics, and alert-friendly metrics.
 - Expand contract test coverage for plugin SDKs (download clients, list
@@ -68,10 +68,11 @@ referenced before planning new workstreams.
   still need final packaging; missing instrumentation could slow incident
   response. *Mitigation:* prioritize observability tasks in Alpha exit criteria
   and ensure docs include dashboard import instructions.
-- **Stateful migration** — moving from the in-memory catalog to Postgres will
-  require a controlled migration path for existing dev/test data. *Mitigation:*
-  document migration tooling in [`docs/migration-guidelines.md`](migration-guidelines.md)
-  and deliver upgrade scripts alongside schema changes.
+- **Stateful migration** — early adopters running pre-Postgres builds still need
+  a controlled path for importing dev/test data into the database-backed
+  catalog. *Mitigation:* document migration tooling in
+  [`docs/migration-guidelines.md`](migration-guidelines.md) and deliver upgrade
+  scripts alongside schema changes.
 - **Plugin ecosystem readiness** — third-party connectors rely on contract tests
   and packaging guidance that are partially drafted. *Mitigation:* continue to
   grow the SDK docs and publish sample adapters.

@@ -12,12 +12,14 @@ import (
 type Repository interface {
 	EnsureSchema(ctx context.Context) error
 	UpsertEntity(ctx context.Context, entity Entity) error
+	GetEntity(ctx context.Context, id string) (Entity, bool, error)
 	ListEntities(ctx context.Context) ([]Entity, error)
 	SaveJob(ctx context.Context, job Job) error
 	UpdateJob(ctx context.Context, job Job) error
 	ListJobs(ctx context.Context) ([]Job, error)
 	UpsertMetadataOverrides(ctx context.Context, entityID string, overrides MetadataOverrides) error
 	DeleteMetadataOverrides(ctx context.Context, entityID string) error
+	GetMetadataOverrides(ctx context.Context, entityID string) (MetadataOverrides, bool, error)
 	ListMetadataOverrides(ctx context.Context) (map[string]MetadataOverrides, error)
 }
 
@@ -74,6 +76,22 @@ func (r *InMemoryRepository) ListEntities(_ context.Context) ([]Entity, error) {
 		return strings.ToLower(results[i].Title) < strings.ToLower(results[j].Title)
 	})
 	return results, nil
+}
+
+// GetEntity returns a single entity by id.
+func (r *InMemoryRepository) GetEntity(_ context.Context, id string) (Entity, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	trimmedID := strings.TrimSpace(id)
+	if trimmedID == "" {
+		return Entity{}, false, nil
+	}
+	entity, ok := r.entities[trimmedID]
+	if !ok {
+		return Entity{}, false, nil
+	}
+	return entity, true, nil
 }
 
 // SaveJob stores a new job record.
@@ -166,6 +184,22 @@ func (r *InMemoryRepository) ListMetadataOverrides(_ context.Context) (map[strin
 		results[entityID] = cloneMetadataOverrides(overrides)
 	}
 	return results, nil
+}
+
+// GetMetadataOverrides returns overrides for a single entity when present.
+func (r *InMemoryRepository) GetMetadataOverrides(_ context.Context, entityID string) (MetadataOverrides, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	trimmedID := strings.TrimSpace(entityID)
+	if trimmedID == "" {
+		return MetadataOverrides{}, false, nil
+	}
+	overrides, ok := r.overrides[trimmedID]
+	if !ok {
+		return MetadataOverrides{}, false, nil
+	}
+	return cloneMetadataOverrides(overrides), true, nil
 }
 
 func cloneJob(src Job) Job {

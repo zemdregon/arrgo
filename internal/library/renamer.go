@@ -221,12 +221,20 @@ func (s *Service) ListRenameTemplates(ctx context.Context) RenameTemplates {
 
 // PreviewRename builds a rename plan without mutating state.
 func (s *Service) PreviewRename(ctx context.Context, entityID string) (RenamePreview, error) {
-	s.mu.RLock()
-	entity, ok := s.entitiesByID[strings.TrimSpace(entityID)]
-	if !ok {
-		s.mu.RUnlock()
+	trimmed := strings.TrimSpace(entityID)
+	if trimmed == "" {
 		return RenamePreview{}, ErrUnknownEntity
 	}
+
+	entity, found, err := s.lookupEntity(ctx, trimmed)
+	if err != nil {
+		return RenamePreview{}, err
+	}
+	if !found {
+		return RenamePreview{}, ErrUnknownEntity
+	}
+
+	s.mu.RLock()
 	files := cloneLibraryFiles(s.libraryFiles[entity.ID])
 	templates := s.renameTemplates
 	state := cloneRenameState(s.renameState[entity.ID])
@@ -256,13 +264,20 @@ func (s *Service) PreviewRename(ctx context.Context, entityID string) (RenamePre
 func (s *Service) StartRenameJob(ctx context.Context, entityID string, opts RenameOptions) (RenameJobRecord, error) {
 	trimmed := strings.TrimSpace(entityID)
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	entity, ok := s.entitiesByID[trimmed]
-	if !ok {
+	if trimmed == "" {
 		return RenameJobRecord{}, ErrUnknownEntity
 	}
+
+	entity, found, err := s.lookupEntity(ctx, trimmed)
+	if err != nil {
+		return RenameJobRecord{}, err
+	}
+	if !found {
+		return RenameJobRecord{}, ErrUnknownEntity
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	files := cloneLibraryFiles(s.libraryFiles[entity.ID])
 	if len(files) == 0 {
@@ -324,13 +339,21 @@ func (s *Service) StartRenameJob(ctx context.Context, entityID string, opts Rena
 
 // RenameHistory returns the recorded rename jobs for an entity ordered from newest to oldest.
 func (s *Service) RenameHistory(ctx context.Context, entityID string, limit int) ([]RenameJobRecord, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	entity, ok := s.entitiesByID[strings.TrimSpace(entityID)]
-	if !ok {
+	trimmed := strings.TrimSpace(entityID)
+	if trimmed == "" {
 		return nil, ErrUnknownEntity
 	}
+
+	entity, found, err := s.lookupEntity(ctx, trimmed)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, ErrUnknownEntity
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	history := s.renameHistory[entity.ID]
 	if len(history) == 0 {
@@ -353,14 +376,21 @@ func (s *Service) RenameHistory(ctx context.Context, entityID string, limit int)
 
 // SetLibraryFiles replaces the tracked files for an entity. Primarily used in tests.
 func (s *Service) SetLibraryFiles(entityID string, files []LibraryFile) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	trimmed := strings.TrimSpace(entityID)
-	entity, ok := s.entitiesByID[trimmed]
-	if !ok {
+	if trimmed == "" {
 		return ErrUnknownEntity
 	}
+
+	entity, found, err := s.lookupEntity(context.Background(), trimmed)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrUnknownEntity
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	copies := make([]LibraryFile, len(files))
 	copy(copies, files)
