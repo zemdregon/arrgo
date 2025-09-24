@@ -36,6 +36,10 @@
   flex-shrink: 0;
 }
 
+.apiKeySelector {
+  max-width: 16rem;
+}
+
 .themeToggle {
   margin-left: var(--space-xs);
 }

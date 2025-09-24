@@ -6,13 +6,23 @@ interface AsyncState<T> {
   error?: string;
 }
 
+interface UseApiDataOptions {
+  enabled?: boolean;
+}
+
 export function useApiData<T>(
   loader: () => Promise<T>,
-  deps: DependencyList = []
+  deps: DependencyList = [],
+  options: UseApiDataOptions = {}
 ): AsyncState<T> & { refresh: () => void } {
-  const [state, setState] = useState<AsyncState<T>>({ loading: true });
+  const enabled = options.enabled ?? true;
+  const [state, setState] = useState<AsyncState<T>>({ loading: enabled });
 
   const refresh = useCallback(() => {
+    if (!enabled) {
+      setState((previous) => ({ ...previous, loading: false }));
+      return;
+    }
     setState((previous) => ({ ...previous, loading: true, error: undefined }));
     loader()
       .then((result) => {
@@ -22,11 +32,15 @@ export function useApiData<T>(
         const message = error instanceof Error ? error.message : String(error);
         setState({ error: message, loading: false });
       });
-  }, [loader, ...deps]);
+  }, [enabled, loader, ...deps]);
 
   useEffect(() => {
+    if (!enabled) {
+      setState((previous) => ({ ...previous, loading: false }));
+      return;
+    }
     refresh();
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   return { ...state, refresh };
 }

@@ -1,0 +1,85 @@
+.guard {
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2xl) var(--space-lg);
+}
+
+.card {
+  width: min(32rem, 100%);
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-xl) var(--space-lg);
+  background: var(--surface-overlay);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+}
+
+.message {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: var(--line-height-relaxed);
+}
+
+.selectorContainer {
+  display: flex;
+  justify-content: center;
+}
+
+.permissionList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2xs);
+}
+
+.permissionItem {
+  padding: var(--space-3xs) var(--space-2xs);
+  border-radius: var(--radius-full);
+  background: var(--surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-sm);
+}
+
+.primaryButton {
+  border: none;
+  border-radius: var(--radius-full);
+  padding: var(--space-3xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  cursor: pointer;
+}
+
+.primaryButton:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: var(--space-lg);
+  }
+}
