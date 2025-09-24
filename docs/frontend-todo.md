@@ -24,9 +24,9 @@
 
 ### Library & Automation Views
 - [x] Library overview with filterable status cards (pending imports, quality upgrades, failures).
-- [ ] Detail pages for shows, movies, albums, and books that expose metadata, history, and manual job triggers.
+- [x] Detail pages for shows, movies, albums, and books that expose metadata, history, and manual job triggers.
 - [x] Queue analytics dashboard with stream lag, retry counts, and SLA indicators.
-- [ ] Policy management editor for release profiles, retention rules, and media-specific overrides.
+- [x] Policy management editor for release profiles, retention rules, and media-specific overrides.
 - [x] Readarr replacement UI: reading lists, audiobook/ebook metadata comparisons, and download history timelines.
 
 ### Request Management (Overseerr Replacement)
