@@ -32,3 +32,19 @@ into the worker service, which now tracks per-pool overrides and immediately
 reconciles metrics to reflect new settings. The panel also summarizes current
 heartbeat and stale thresholds alongside live worker counts drawn from the
 worker listing endpoint, giving administrators context while adjusting knobs.
+
+## Manual indexer search overrides
+
+Operators can now launch manual indexer searches directly from the dashboard via
+the **Manual indexer search** panel. Selecting a library entity issues a
+`GET /api/v1/indexer/search?entity_id=<id>` call to hydrate the most recent
+results, including the last query, execution timestamp, and a per-release
+history. Running a new search submits to `POST /api/v1/indexer/search`, which
+returns a synthetic set of releases to review.
+
+Each release row exposes the indexer, quality, publish time, and score along
+with status pills so rejections are surfaced alongside the rejection reason. The
+**Grab** action invokes `POST /api/v1/indexer/releases/grab` to override
+automation and mark a candidate as manually grabbed. Results update in-place so
+operators can track which releases have been queued while auditing additional
+candidates.

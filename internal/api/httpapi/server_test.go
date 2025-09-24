@@ -110,6 +110,83 @@ func TestTriggerJobEndpoint(t *testing.T) {
 	}
 }
 
+func TestManualSearchEndpoints(t *testing.T) {
+	svc := mustLibraryService(t, library.Config{Entities: []library.Entity{{ID: "entity-1", EntityType: "series"}}, Clock: stubClock{now: time.Unix(1700001000, 0)}})
+	authSvc := mustAuthService(t)
+	readToken := mustAPIKey(t, authSvc, "observer")
+	writeToken := mustAPIKey(t, authSvc, "admin")
+	srv := NewServer(svc, nil, authSvc)
+
+	// Initial fetch should return no cached search yet.
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/indexer/search?entity_id=entity-1", nil)
+	getReq.Header.Set("Authorization", "Bearer "+readToken)
+	getResp := httptest.NewRecorder()
+	srv.handleIndexerSearch(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for initial fetch, got %d", getResp.Code)
+	}
+	var emptyPayload struct {
+		Search *library.ManualSearchResult `json:"search"`
+	}
+	if err := json.Unmarshal(getResp.Body.Bytes(), &emptyPayload); err != nil {
+		t.Fatalf("failed to decode empty payload: %v", err)
+	}
+	if emptyPayload.Search != nil {
+		t.Fatalf("expected no cached search, got %+v", emptyPayload.Search)
+	}
+
+	// Run a manual search.
+	searchBody, _ := json.Marshal(map[string]string{"entity_id": "entity-1", "query": "remux"})
+	postReq := httptest.NewRequest(http.MethodPost, "/api/v1/indexer/search", bytes.NewReader(searchBody))
+	postReq.Header.Set("Authorization", "Bearer "+writeToken)
+	postResp := httptest.NewRecorder()
+	srv.handleIndexerSearch(postResp, postReq)
+	if postResp.Code != http.StatusOK {
+		t.Fatalf("expected search status 200, got %d", postResp.Code)
+	}
+	var searchPayload struct {
+		Search library.ManualSearchResult `json:"search"`
+	}
+	if err := json.Unmarshal(postResp.Body.Bytes(), &searchPayload); err != nil {
+		t.Fatalf("failed to decode search payload: %v", err)
+	}
+	if searchPayload.Search.ID == "" {
+		t.Fatalf("expected search id to be populated")
+	}
+	if len(searchPayload.Search.Results) == 0 {
+		t.Fatalf("expected manual search results")
+	}
+
+	// Grab the first release.
+	releaseID := searchPayload.Search.Results[0].ID
+	grabBody, _ := json.Marshal(map[string]string{"entity_id": "entity-1", "release_id": releaseID})
+	grabReq := httptest.NewRequest(http.MethodPost, "/api/v1/indexer/releases/grab", bytes.NewReader(grabBody))
+	grabReq.Header.Set("Authorization", "Bearer "+writeToken)
+	grabResp := httptest.NewRecorder()
+	srv.handleIndexerGrab(grabResp, grabReq)
+	if grabResp.Code != http.StatusOK {
+		t.Fatalf("expected grab status 200, got %d", grabResp.Code)
+	}
+	var grabPayload struct {
+		Release library.ManualSearchRelease `json:"release"`
+	}
+	if err := json.Unmarshal(grabResp.Body.Bytes(), &grabPayload); err != nil {
+		t.Fatalf("failed to decode grab payload: %v", err)
+	}
+	if grabPayload.Release.Status != library.ManualReleaseStatusGrabbed {
+		t.Fatalf("expected grabbed status, got %s", grabPayload.Release.Status)
+	}
+
+	// Subsequent grab should conflict.
+	conflictReq := httptest.NewRequest(http.MethodPost, "/api/v1/indexer/releases/grab", bytes.NewReader(grabBody))
+	conflictReq.Header.Set("Authorization", "Bearer "+writeToken)
+	conflictResp := httptest.NewRecorder()
+	srv.handleIndexerGrab(conflictResp, conflictReq)
+	if conflictResp.Code != http.StatusConflict {
+		t.Fatalf("expected conflict status, got %d", conflictResp.Code)
+	}
+}
+
 func TestWorkerRegistrationEndpoint(t *testing.T) {
 	libSvc := mustLibraryService(t, library.Config{})
 	workerSvc := mustWorkerService(t)

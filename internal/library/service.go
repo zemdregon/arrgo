@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sort"
@@ -55,6 +56,42 @@ const (
 	JobStateDone    = "completed"
 )
 
+// Manual release statuses exposed by manual search helpers.
+const (
+	ManualReleaseStatusAvailable = "available"
+	ManualReleaseStatusGrabbed   = "grabbed"
+	ManualReleaseStatusRejected  = "rejected"
+)
+
+// ManualSearchResult captures the outcome of an operator-driven indexer search.
+type ManualSearchResult struct {
+	ID         string
+	EntityID   string
+	Query      string
+	ExecutedAt time.Time
+	Results    []ManualSearchRelease
+}
+
+// ManualSearchRelease describes a candidate release surfaced by a manual search.
+type ManualSearchRelease struct {
+	ID              string
+	SearchID        string
+	EntityID        string
+	Title           string
+	Indexer         string
+	Protocol        string
+	Quality         string
+	PublishDate     time.Time
+	SizeBytes       int64
+	Seeders         int
+	Grabs           int
+	Score           float64
+	Status          string
+	RejectionReason string
+	DownloadURL     string
+	GrabbedAt       time.Time
+}
+
 // ListEntitiesFilter constrains a ListEntities call.
 type ListEntitiesFilter struct {
 	EntityType string
@@ -97,26 +134,32 @@ type Config struct {
 
 // Errors returned by the Service APIs.
 var (
-	ErrInvalidJobType   = errors.New("library: job type is required")
-	ErrInvalidTarget    = errors.New("library: target id is required")
-	ErrUnknownEntity    = errors.New("library: target entity not found")
-	ErrQueueUnavailable = errors.New("library: orchestration queue unavailable")
-	ErrDuplicateJob     = errors.New("library: duplicate job for idempotency key")
+	ErrInvalidJobType              = errors.New("library: job type is required")
+	ErrInvalidTarget               = errors.New("library: target id is required")
+	ErrUnknownEntity               = errors.New("library: target entity not found")
+	ErrQueueUnavailable            = errors.New("library: orchestration queue unavailable")
+	ErrDuplicateJob                = errors.New("library: duplicate job for idempotency key")
+	ErrManualSearchEntityRequired  = errors.New("library: manual search entity id is required")
+	ErrManualSearchReleaseRequired = errors.New("library: manual search release id is required")
+	ErrManualSearchReleaseNotFound = errors.New("library: manual search release not found")
+	ErrManualSearchReleaseGrabbed  = errors.New("library: manual search release already grabbed")
 )
 
 // Service exposes read/write helpers that back both REST and gRPC front-ends.
 type Service struct {
-	mu           sync.RWMutex
-	entities     []Entity
-	entitiesByID map[string]Entity
-	jobs         []Job
-	jobIndex     map[string]int
-	clock        Clock
-	idGen        IDGenerator
-	queue        *OrchestrationQueue
-	logger       *slog.Logger
-	auditSink    AuditSink
-	tracer       trace.Tracer
+	mu             sync.RWMutex
+	entities       []Entity
+	entitiesByID   map[string]Entity
+	jobs           []Job
+	jobIndex       map[string]int
+	clock          Clock
+	idGen          IDGenerator
+	queue          *OrchestrationQueue
+	logger         *slog.Logger
+	auditSink      AuditSink
+	tracer         trace.Tracer
+	manualSearches map[string]ManualSearchResult
+	manualReleases map[string]ManualSearchRelease
 }
 
 // NewService constructs a library orchestration service with optional seed data.
@@ -153,6 +196,9 @@ func NewService(cfg Config) (*Service, error) {
 	if svc.tracer == nil {
 		svc.tracer = otel.Tracer("github.com/arrgo/arrgo/internal/library")
 	}
+
+	svc.manualSearches = make(map[string]ManualSearchResult)
+	svc.manualReleases = make(map[string]ManualSearchRelease)
 
 	if len(svc.entities) == 0 {
 		svc.entities = append(svc.entities, defaultEntities()...)
@@ -244,6 +290,145 @@ func (s *Service) ListJobs(ctx context.Context) (jobs []Job, err error) {
 
 	span.SetAttributes(attribute.Int("library.job_count", len(jobs)))
 	return jobs, nil
+}
+
+// RunManualSearch synthesizes indexer results for an entity so operators can review candidates.
+func (s *Service) RunManualSearch(ctx context.Context, entityID, query string) (result ManualSearchResult, err error) {
+	ctx, span := s.startSpan(ctx, "library.Service.RunManualSearch",
+		attribute.String("library.entity_id", strings.TrimSpace(entityID)),
+		attribute.String("library.manual_query", strings.TrimSpace(query)),
+	)
+	defer endSpan(span, &err)
+
+	trimmedID := strings.TrimSpace(entityID)
+	if trimmedID == "" {
+		err = ErrManualSearchEntityRequired
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	entity, ok := s.entitiesByID[trimmedID]
+	if !ok {
+		err = ErrUnknownEntity
+		return
+	}
+
+	executedAt := s.clock.Now()
+	searchID := uuid.NewString()
+	trimmedQuery := strings.TrimSpace(query)
+
+	if previous, ok := s.manualSearches[trimmedID]; ok {
+		for _, release := range previous.Results {
+			delete(s.manualReleases, release.ID)
+		}
+	}
+
+	releases := s.buildManualSearchReleases(entity, searchID, trimmedQuery, executedAt)
+	result = ManualSearchResult{
+		ID:         searchID,
+		EntityID:   trimmedID,
+		Query:      trimmedQuery,
+		ExecutedAt: executedAt,
+		Results:    releases,
+	}
+	s.manualSearches[trimmedID] = result
+	for _, release := range releases {
+		s.manualReleases[release.ID] = release
+	}
+
+	span.SetAttributes(
+		attribute.String("library.manual_search_id", searchID),
+		attribute.Int("library.manual_search_result_count", len(releases)),
+	)
+	s.logger.Info("library manual search completed", "entityID", trimmedID, "query", trimmedQuery, "results", len(releases))
+
+	return cloneManualSearchResult(result), nil
+}
+
+// LatestManualSearch returns the most recent manual search results for an entity.
+func (s *Service) LatestManualSearch(ctx context.Context, entityID string) (result ManualSearchResult, found bool, err error) {
+	ctx, span := s.startSpan(ctx, "library.Service.LatestManualSearch",
+		attribute.String("library.entity_id", strings.TrimSpace(entityID)),
+	)
+	defer endSpan(span, &err)
+
+	trimmedID := strings.TrimSpace(entityID)
+	if trimmedID == "" {
+		err = ErrManualSearchEntityRequired
+		return
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if !s.entityExistsLocked(trimmedID) {
+		err = ErrUnknownEntity
+		return
+	}
+
+	search, ok := s.manualSearches[trimmedID]
+	if !ok {
+		return ManualSearchResult{}, false, nil
+	}
+
+	span.SetAttributes(
+		attribute.String("library.manual_search_id", search.ID),
+		attribute.Int("library.manual_search_result_count", len(search.Results)),
+	)
+	return cloneManualSearchResult(search), true, nil
+}
+
+// ForceGrabRelease marks a manual search candidate as grabbed so operators can override automation.
+func (s *Service) ForceGrabRelease(ctx context.Context, entityID, releaseID string) (release ManualSearchRelease, err error) {
+	ctx, span := s.startSpan(ctx, "library.Service.ForceGrabRelease",
+		attribute.String("library.entity_id", strings.TrimSpace(entityID)),
+		attribute.String("library.release_id", strings.TrimSpace(releaseID)),
+	)
+	defer endSpan(span, &err)
+
+	trimmedEntityID := strings.TrimSpace(entityID)
+	if trimmedEntityID == "" {
+		err = ErrManualSearchEntityRequired
+		return
+	}
+	trimmedReleaseID := strings.TrimSpace(releaseID)
+	if trimmedReleaseID == "" {
+		err = ErrManualSearchReleaseRequired
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.entityExistsLocked(trimmedEntityID) {
+		err = ErrUnknownEntity
+		return
+	}
+
+	existing, ok := s.manualReleases[trimmedReleaseID]
+	if !ok || existing.EntityID != trimmedEntityID {
+		err = ErrManualSearchReleaseNotFound
+		return
+	}
+	if existing.Status == ManualReleaseStatusGrabbed {
+		err = ErrManualSearchReleaseGrabbed
+		return
+	}
+
+	existing.Status = ManualReleaseStatusGrabbed
+	existing.GrabbedAt = s.clock.Now()
+	s.manualReleases[existing.ID] = existing
+	s.updateManualSearchReleaseLocked(existing)
+
+	span.SetAttributes(
+		attribute.String("library.manual_search_id", existing.SearchID),
+		attribute.String("library.manual_release_status", existing.Status),
+	)
+	s.logger.Info("library manual release grabbed", "entityID", existing.EntityID, "releaseID", existing.ID)
+
+	return existing, nil
 }
 
 // TriggerJob enqueues a new orchestration job targeting a catalog entity.
@@ -446,6 +631,102 @@ func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (updated Job, er
 func (s *Service) entityExistsLocked(id string) bool {
 	_, ok := s.entitiesByID[id]
 	return ok
+}
+
+func (s *Service) buildManualSearchReleases(entity Entity, searchID, query string, now time.Time) []ManualSearchRelease {
+	title := entity.Title
+	if strings.TrimSpace(title) == "" {
+		title = entity.ID
+	}
+	highlight := title
+	if query != "" {
+		highlight = fmt.Sprintf("%s · %s", title, query)
+	}
+
+	releases := []ManualSearchRelease{
+		{
+			ID:          uuid.NewString(),
+			SearchID:    searchID,
+			EntityID:    entity.ID,
+			Title:       fmt.Sprintf("%s — Premium 4K WEB-DL", highlight),
+			Indexer:     "Velocity Index",
+			Protocol:    "torrent",
+			Quality:     "2160p WEB-DL",
+			PublishDate: now.Add(-6 * time.Hour),
+			SizeBytes:   int64(58 << 30),
+			Seeders:     142,
+			Grabs:       87,
+			Score:       92.4,
+			Status:      ManualReleaseStatusAvailable,
+		},
+		{
+			ID:          uuid.NewString(),
+			SearchID:    searchID,
+			EntityID:    entity.ID,
+			Title:       fmt.Sprintf("%s — 1080p WEBRip", title),
+			Indexer:     "Scene Rush",
+			Protocol:    "torrent",
+			Quality:     "1080p WEBRip",
+			PublishDate: now.Add(-26 * time.Hour),
+			SizeBytes:   int64(8 << 30),
+			Seeders:     36,
+			Grabs:       21,
+			Score:       84.1,
+			Status:      ManualReleaseStatusAvailable,
+		},
+		{
+			ID:              uuid.NewString(),
+			SearchID:        searchID,
+			EntityID:        entity.ID,
+			Title:           fmt.Sprintf("%s — CAM Leak", title),
+			Indexer:         "Sketchy Releases",
+			Protocol:        "torrent",
+			Quality:         "CAM",
+			PublishDate:     now.Add(-2 * time.Hour),
+			SizeBytes:       int64(2 << 30),
+			Seeders:         5,
+			Grabs:           2,
+			Score:           9.5,
+			Status:          ManualReleaseStatusRejected,
+			RejectionReason: "Blocked by quality profile",
+		},
+	}
+
+	for idx := range releases {
+		releases[idx].DownloadURL = fmt.Sprintf("https://example.invalid/releases/%s", releases[idx].ID)
+	}
+
+	return releases
+}
+
+func (s *Service) updateManualSearchReleaseLocked(release ManualSearchRelease) {
+	search, ok := s.manualSearches[release.EntityID]
+	if !ok {
+		return
+	}
+	updated := false
+	for idx := range search.Results {
+		if search.Results[idx].ID == release.ID {
+			search.Results[idx] = release
+			updated = true
+			break
+		}
+	}
+	if updated {
+		s.manualSearches[release.EntityID] = search
+	}
+}
+
+func cloneManualSearchResult(result ManualSearchResult) ManualSearchResult {
+	copyResult := ManualSearchResult{
+		ID:         result.ID,
+		EntityID:   result.EntityID,
+		Query:      result.Query,
+		ExecutedAt: result.ExecutedAt,
+		Results:    make([]ManualSearchRelease, len(result.Results)),
+	}
+	copy(copyResult.Results, result.Results)
+	return copyResult
 }
 
 func (s *Service) updateJobLocked(id string, fn func(*Job)) {

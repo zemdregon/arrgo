@@ -35,6 +35,8 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/v1/library/entities", s.instrument("/api/v1/library/entities", http.HandlerFunc(s.handleListEntities)))
 	mux.Handle("/api/v1/jobs", s.instrument("/api/v1/jobs", http.HandlerFunc(s.handleJobs)))
+	mux.Handle("/api/v1/indexer/search", s.instrument("/api/v1/indexer/search", http.HandlerFunc(s.handleIndexerSearch)))
+	mux.Handle("/api/v1/indexer/releases/grab", s.instrument("/api/v1/indexer/releases/grab", http.HandlerFunc(s.handleIndexerGrab)))
 	if s.workerService != nil {
 		mux.Handle("/api/v1/workers", s.instrument("/api/v1/workers", http.HandlerFunc(s.handleListWorkers)))
 		mux.Handle("/api/v1/workers/register", s.instrument("/api/v1/workers/register", http.HandlerFunc(s.handleRegisterWorker)))
@@ -118,6 +120,100 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w, http.MethodGet, http.MethodPost)
 	}
+}
+
+func (s *Server) handleIndexerSearch(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if _, ok := s.requirePermission(w, r, auth.PermissionLibraryRead); !ok {
+			return
+		}
+		entityID := strings.TrimSpace(r.URL.Query().Get("entity_id"))
+		if entityID == "" {
+			respondError(w, http.StatusBadRequest, "entity_id is required")
+			return
+		}
+		result, found, err := s.service.LatestManualSearch(r.Context(), entityID)
+		if err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, library.ErrManualSearchEntityRequired):
+				status = http.StatusBadRequest
+			case errors.Is(err, library.ErrUnknownEntity):
+				status = http.StatusNotFound
+			}
+			respondError(w, status, err.Error())
+			return
+		}
+		if !found {
+			respondJSON(w, http.StatusOK, map[string]any{"search": nil})
+			return
+		}
+		respondJSON(w, http.StatusOK, map[string]any{"search": result})
+	case http.MethodPost:
+		if _, ok := s.requirePermission(w, r, auth.PermissionLibraryWrite); !ok {
+			return
+		}
+		var payload struct {
+			EntityID string `json:"entity_id"`
+			Query    string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		result, err := s.service.RunManualSearch(r.Context(), payload.EntityID, payload.Query)
+		if err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, library.ErrManualSearchEntityRequired):
+				status = http.StatusBadRequest
+			case errors.Is(err, library.ErrUnknownEntity):
+				status = http.StatusNotFound
+			}
+			respondError(w, status, err.Error())
+			return
+		}
+		respondJSON(w, http.StatusOK, map[string]any{"search": result})
+	default:
+		methodNotAllowed(w, http.MethodGet, http.MethodPost)
+	}
+}
+
+func (s *Server) handleIndexerGrab(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if _, ok := s.requirePermission(w, r, auth.PermissionLibraryWrite); !ok {
+		return
+	}
+
+	var payload struct {
+		EntityID  string `json:"entity_id"`
+		ReleaseID string `json:"release_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	release, err := s.service.ForceGrabRelease(r.Context(), payload.EntityID, payload.ReleaseID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, library.ErrManualSearchEntityRequired), errors.Is(err, library.ErrManualSearchReleaseRequired):
+			status = http.StatusBadRequest
+		case errors.Is(err, library.ErrUnknownEntity), errors.Is(err, library.ErrManualSearchReleaseNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, library.ErrManualSearchReleaseGrabbed):
+			status = http.StatusConflict
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{"release": release})
 }
 
 func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {

@@ -1,20 +1,25 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { DataPanel } from "../components/DataPanel";
 import { StatusPill } from "../components/StatusPill";
 import { useApiData } from "../hooks/useApiData";
 import {
   fetchEntities,
   fetchJobs,
+  fetchManualSearch,
   fetchWorkerPools,
   fetchWorkers,
+  grabManualRelease,
   JobSummary,
   LibraryEntity,
+  ManualSearchRelease,
+  ManualSearchResult,
+  runManualSearch,
   triggerJob,
   updateWorkerPool,
   WorkerPoolConfig,
-  WorkerSummary
+  WorkerSummary,
 } from "../lib/api";
 import styles from "./page.module.css";
 
@@ -30,7 +35,7 @@ function formatTimestamp(value?: string): string {
   }
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
-    timeStyle: "short"
+    timeStyle: "short",
   }).format(date);
 }
 
@@ -58,6 +63,17 @@ function workerTone(status: string): Tone {
   }
 }
 
+function releaseTone(status: string): Tone {
+  switch (status?.toLowerCase()) {
+    case "grabbed":
+      return "success";
+    case "rejected":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
 function shortenIdentifier(value: string, size = 12): string {
   if (!value) {
     return "—";
@@ -66,6 +82,21 @@ function shortenIdentifier(value: string, size = 12): string {
     return value;
   }
   return `${value.slice(0, size)}…`;
+}
+
+function formatBytes(value?: number): string {
+  if (!value || value <= 0) {
+    return "—";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let size = value;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  const precision = size >= 100 || unitIndex === 0 ? 0 : 1;
+  return `${size.toFixed(precision)} ${units[unitIndex]}`;
 }
 
 type BreakdownEntry = [string, number];
@@ -108,7 +139,7 @@ type EntityOption = {
 
 const JOB_TYPE_OPTIONS: SelectOption[] = [
   { value: "scan", label: "Scan" },
-  { value: "import", label: "Import" }
+  { value: "import", label: "Import" },
 ];
 
 function normalize(value?: string, fallback = "unknown"): string {
@@ -122,7 +153,7 @@ function normalize(value?: string, fallback = "unknown"): string {
 function buildOptions(
   values: Array<string | undefined>,
   fallbackLabel = "Unknown",
-  fallbackValue = "unknown"
+  fallbackValue = "unknown",
 ): SelectOption[] {
   const map = new Map<string, string>();
   for (const raw of values) {
@@ -146,7 +177,7 @@ function buildOptions(
 function optionLabel(
   options: SelectOption[],
   value: string,
-  fallback: string
+  fallback: string,
 ): string {
   const match = options.find((option) => option.value === value);
   return match ? match.label : fallback;
@@ -162,8 +193,8 @@ function buildLibraryStats(data?: LibraryEntity[]): LibraryStats {
   return {
     total: entities.length,
     breakdown: Array.from(counts.entries()).sort((a, b) =>
-      a[0].localeCompare(b[0])
-    )
+      a[0].localeCompare(b[0]),
+    ),
   };
 }
 
@@ -194,7 +225,7 @@ function buildWorkerStats(data?: WorkerSummary[]): WorkerStats {
     total: workers.length,
     healthy,
     stale,
-    pools: Array.from(pools.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+    pools: Array.from(pools.entries()).sort((a, b) => a[0].localeCompare(b[0])),
   };
 }
 
@@ -223,10 +254,14 @@ function buildQueueAnalytics(data?: JobSummary[]): QueueAnalytics {
 
   return {
     total: jobs.length,
-    byType: Array.from(typeCounts.entries()).sort((a, b) => a[0].localeCompare(b[0])),
-    byState: Array.from(stateCounts.entries()).sort((a, b) => a[0].localeCompare(b[0])),
+    byType: Array.from(typeCounts.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0]),
+    ),
+    byState: Array.from(stateCounts.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0]),
+    ),
     averageAttempts: jobs.length ? totalAttempts / jobs.length : 0,
-    latestSubmittedAt: latestSubmission
+    latestSubmittedAt: latestSubmission,
   };
 }
 
@@ -269,15 +304,16 @@ export default function DashboardPage() {
   const [workerPoolFilter, setWorkerPoolFilter] = useState("all");
   const [workerStatusFilter, setWorkerStatusFilter] = useState("all");
   const [jobTypeSelection, setJobTypeSelection] = useState(
-    JOB_TYPE_OPTIONS[0]?.value ?? "scan"
+    JOB_TYPE_OPTIONS[0]?.value ?? "scan",
   );
   const [jobTargetSelection, setJobTargetSelection] = useState("");
   const [jobPayloadURI, setJobPayloadURI] = useState("");
   const [jobIdempotencyKey, setJobIdempotencyKey] = useState("");
   const [jobSubmitting, setJobSubmitting] = useState(false);
-  const [jobFeedback, setJobFeedback] = useState<
-    { kind: "success" | "error"; message: string } | null
-  >(null);
+  const [jobFeedback, setJobFeedback] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
   const [selectedJob, setSelectedJob] = useState<JobSummary | null>(null);
   const [poolSelection, setPoolSelection] = useState("");
   const [poolForm, setPoolForm] = useState({
@@ -286,33 +322,50 @@ export default function DashboardPage() {
     consumerGroup: "",
     heartbeatIntervalSeconds: "",
     staleAfterSeconds: "",
-    maxConcurrentJobs: ""
+    maxConcurrentJobs: "",
   });
   const [poolSubmitting, setPoolSubmitting] = useState(false);
-  const [poolFeedback, setPoolFeedback] = useState<
-    { kind: "success" | "error"; message: string } | null
-  >(null);
+  const [poolFeedback, setPoolFeedback] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [manualEntitySelection, setManualEntitySelection] = useState("");
+  const [manualQuery, setManualQuery] = useState("");
+  const [manualSearchResult, setManualSearchResult] =
+    useState<ManualSearchResult | null>(null);
+  const [manualSearchLoading, setManualSearchLoading] = useState(false);
+  const [manualSearchError, setManualSearchError] = useState<string | null>(
+    null,
+  );
+  const [manualSearchFeedback, setManualSearchFeedback] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [grabInFlight, setGrabInFlight] = useState<string | null>(null);
 
-  const libraryStats = useMemo(() => buildLibraryStats(library.data), [
-    library.data
-  ]);
+  const libraryStats = useMemo(
+    () => buildLibraryStats(library.data),
+    [library.data],
+  );
   const jobStats = useMemo(() => buildJobStats(jobs.data), [jobs.data]);
-  const workerStats = useMemo(() => buildWorkerStats(workers.data), [
-    workers.data
-  ]);
-  const queueAnalytics = useMemo(() => buildQueueAnalytics(jobs.data), [
-    jobs.data
-  ]);
+  const workerStats = useMemo(
+    () => buildWorkerStats(workers.data),
+    [workers.data],
+  );
+  const queueAnalytics = useMemo(
+    () => buildQueueAnalytics(jobs.data),
+    [jobs.data],
+  );
   const libraryEntityOptions = useMemo(
     () =>
       (library.data ?? [])
         .map<EntityOption>((entity) => ({
           value: entity.id,
           label: entity.title || entity.id,
-          entityType: entity.entityType || "Unknown"
+          entityType: entity.entityType || "Unknown",
         }))
         .sort((a, b) => a.label.localeCompare(b.label)),
-    [library.data]
+    [library.data],
   );
 
   const libraryTypeOptions = useMemo(
@@ -320,36 +373,36 @@ export default function DashboardPage() {
       buildOptions(
         (library.data ?? []).map((entity) => entity.entityType),
         "Unknown",
-        "unknown"
+        "unknown",
       ),
-    [library.data]
+    [library.data],
   );
   const jobStateOptions = useMemo(
     () =>
       buildOptions(
         (jobs.data ?? []).map((job) => job.state),
         "Unknown state",
-        "unknown"
+        "unknown",
       ),
-    [jobs.data]
+    [jobs.data],
   );
   const workerPoolOptions = useMemo(
     () =>
       buildOptions(
         (workers.data ?? []).map((worker) => worker.pool),
         "Unassigned",
-        "unassigned"
+        "unassigned",
       ),
-    [workers.data]
+    [workers.data],
   );
   const workerStatusOptions = useMemo(
     () =>
       buildOptions(
         (workers.data ?? []).map((worker) => worker.status),
         "Unknown status",
-        "unknown"
+        "unknown",
       ),
-    [workers.data]
+    [workers.data],
   );
   const poolOptions = useMemo(
     () =>
@@ -357,9 +410,9 @@ export default function DashboardPage() {
         value: pool.pool,
         label: pool.description
           ? pool.pool + " · " + pool.description
-          : pool.pool
+          : pool.pool,
       })),
-    [pools.data]
+    [pools.data],
   );
   const selectedPoolConfig = useMemo<WorkerPoolConfig | null>(() => {
     if (!pools.data) {
@@ -371,6 +424,30 @@ export default function DashboardPage() {
     const match = workerStats.pools.find(([pool]) => pool === poolSelection);
     return match ? match[1] : 0;
   }, [workerStats.pools, poolSelection]);
+
+  const loadManualSearch = useCallback(() => {
+    setGrabInFlight(null);
+    if (!manualEntitySelection) {
+      setManualSearchResult(null);
+      setManualSearchError(null);
+      setManualSearchLoading(false);
+      return Promise.resolve();
+    }
+    setManualSearchLoading(true);
+    setManualSearchError(null);
+    return fetchManualSearch(manualEntitySelection)
+      .then((result) => {
+        setManualSearchResult(result);
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setManualSearchError(message);
+        setManualSearchResult(null);
+      })
+      .finally(() => {
+        setManualSearchLoading(false);
+      });
+  }, [manualEntitySelection]);
 
   useEffect(() => {
     if (
@@ -423,6 +500,28 @@ export default function DashboardPage() {
   }, [jobTargetSelection, libraryEntityOptions]);
 
   useEffect(() => {
+    if (!libraryEntityOptions.length) {
+      setManualEntitySelection("");
+      setManualSearchResult(null);
+      return;
+    }
+    if (
+      manualEntitySelection &&
+      libraryEntityOptions.some(
+        (option) => option.value === manualEntitySelection,
+      )
+    ) {
+      return;
+    }
+    setManualEntitySelection(libraryEntityOptions[0].value);
+  }, [libraryEntityOptions, manualEntitySelection]);
+
+  useEffect(() => {
+    setManualSearchFeedback(null);
+    void loadManualSearch();
+  }, [loadManualSearch]);
+
+  useEffect(() => {
     if (!pools.data || pools.data.length === 0) {
       if (poolSelection !== "") {
         setPoolSelection("");
@@ -443,7 +542,7 @@ export default function DashboardPage() {
         consumerGroup: "",
         heartbeatIntervalSeconds: "",
         staleAfterSeconds: "",
-        maxConcurrentJobs: ""
+        maxConcurrentJobs: "",
       });
       return;
     }
@@ -452,13 +551,13 @@ export default function DashboardPage() {
       stream: selectedPoolConfig.stream,
       consumerGroup: selectedPoolConfig.consumerGroup,
       heartbeatIntervalSeconds: String(
-        selectedPoolConfig.heartbeatIntervalSeconds || 0
+        selectedPoolConfig.heartbeatIntervalSeconds || 0,
       ),
       staleAfterSeconds: String(selectedPoolConfig.staleAfterSeconds || 0),
       maxConcurrentJobs:
         selectedPoolConfig.maxConcurrentJobs !== undefined
           ? String(selectedPoolConfig.maxConcurrentJobs)
-          : ""
+          : "",
     });
     setPoolFeedback(null);
   }, [selectedPoolConfig]);
@@ -475,7 +574,7 @@ export default function DashboardPage() {
       return entities;
     }
     return entities.filter(
-      (entity) => normalize(entity.entityType) === libraryTypeFilter
+      (entity) => normalize(entity.entityType) === libraryTypeFilter,
     );
   }, [library.data, libraryTypeFilter]);
 
@@ -508,12 +607,18 @@ export default function DashboardPage() {
 
   const jobSubmitDisabled =
     !libraryEntityOptions.length || !jobTargetSelection || jobSubmitting;
+  const manualSearchSubmitDisabled =
+    manualSearchLoading ||
+    !manualEntitySelection ||
+    !libraryEntityOptions.length;
+  const manualSearchResults = manualSearchResult?.results ?? [];
+  const manualSearchExecutedAt = manualSearchResult?.executedAt;
 
   const formatShowingSummary = (
     visibleCount: number,
     limit: number,
     noun: string,
-    totalCount: number
+    totalCount: number,
   ): string => {
     return (
       "Showing " +
@@ -532,7 +637,7 @@ export default function DashboardPage() {
         visibleLibrary.length,
         5,
         libraryTypeFilter === "all" ? "entities" : "matches",
-        libraryStats.total
+        libraryStats.total,
       )
     : undefined;
   const jobFooter = jobStats.total
@@ -540,7 +645,7 @@ export default function DashboardPage() {
         visibleJobs.length,
         8,
         jobStateFilter === "all" ? "jobs" : "matches",
-        jobStats.total
+        jobStats.total,
       )
     : undefined;
   const workerFooter = workerStats.total
@@ -550,7 +655,7 @@ export default function DashboardPage() {
         workerPoolFilter === "all" && workerStatusFilter === "all"
           ? "workers"
           : "matches",
-        workerStats.total
+        workerStats.total,
       )
     : undefined;
 
@@ -571,7 +676,7 @@ export default function DashboardPage() {
     if (!jobTargetSelection) {
       setJobFeedback({
         kind: "error",
-        message: "Select a target entity before queueing a job."
+        message: "Select a target entity before queueing a job.",
       });
       return;
     }
@@ -579,7 +684,7 @@ export default function DashboardPage() {
     const jobTypeValue = jobTypeSelection;
     const jobTargetValue = jobTargetSelection;
     const jobTargetOption = libraryEntityOptions.find(
-      (option) => option.value === jobTargetValue
+      (option) => option.value === jobTargetValue,
     );
     const jobTargetDescription = jobTargetOption
       ? jobTargetOption.label + " · " + jobTargetOption.entityType
@@ -595,16 +700,12 @@ export default function DashboardPage() {
         jobType: jobTypeValue,
         targetID: jobTargetValue,
         payloadURI: jobPayloadURI,
-        idempotencyKey: jobIdempotencyKey
+        idempotencyKey: jobIdempotencyKey,
       });
       setJobFeedback({
         kind: "success",
         message:
-          "Queued " +
-          jobTypeLabel +
-          " job for " +
-          jobTargetDescription +
-          "."
+          "Queued " + jobTypeLabel + " job for " + jobTargetDescription + ".",
       });
       setJobPayloadURI("");
       setJobIdempotencyKey("");
@@ -617,25 +718,94 @@ export default function DashboardPage() {
     }
   };
 
+  const handleManualSearchSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    if (!manualEntitySelection) {
+      setManualSearchFeedback({
+        kind: "error",
+        message: "Select an entity before running a manual search.",
+      });
+      return;
+    }
+    setManualSearchFeedback(null);
+    setManualSearchLoading(true);
+    setGrabInFlight(null);
+    try {
+      const result = await runManualSearch(manualEntitySelection, manualQuery);
+      setManualSearchResult(result);
+      const count = result.results.length;
+      setManualSearchFeedback({
+        kind: "success",
+        message:
+          count > 0
+            ? `Search returned ${count} release${count === 1 ? "" : "s"}.`
+            : "Search completed with no matching releases.",
+      });
+      setManualSearchError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setManualSearchFeedback({ kind: "error", message });
+    } finally {
+      setManualSearchLoading(false);
+    }
+  };
+
+  const handleManualGrab = async (release: ManualSearchRelease) => {
+    if (!manualEntitySelection) {
+      return;
+    }
+    setManualSearchFeedback(null);
+    setGrabInFlight(release.id);
+    try {
+      const updated = await grabManualRelease(
+        manualEntitySelection,
+        release.id,
+      );
+      setManualSearchResult((current) => {
+        if (!current) {
+          return current;
+        }
+        return {
+          ...current,
+          results: current.results.map((candidate) =>
+            candidate.id === updated.id ? updated : candidate,
+          ),
+        };
+      });
+      setManualSearchFeedback({
+        kind: "success",
+        message: `Marked "${release.title}" as grabbed.`,
+      });
+      setManualSearchError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setManualSearchFeedback({ kind: "error", message });
+    } finally {
+      setGrabInFlight(null);
+    }
+  };
+
   const handlePoolSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!poolSelection) {
       setPoolFeedback({
         kind: "error",
-        message: "Select a worker pool to update before saving changes."
+        message: "Select a worker pool to update before saving changes.",
       });
       return;
     }
     if (!poolForm.stream.trim() || !poolForm.consumerGroup.trim()) {
       setPoolFeedback({
         kind: "error",
-        message: "Stream and consumer group values are required."
+        message: "Stream and consumer group values are required.",
       });
       return;
     }
 
     const heartbeatInterval = parseOptionalNumber(
-      poolForm.heartbeatIntervalSeconds
+      poolForm.heartbeatIntervalSeconds,
     );
     const staleAfter = parseOptionalNumber(poolForm.staleAfterSeconds);
     const maxConcurrentJobs = parseOptionalNumber(poolForm.maxConcurrentJobs);
@@ -649,11 +819,11 @@ export default function DashboardPage() {
         consumerGroup: poolForm.consumerGroup,
         heartbeatIntervalSeconds: heartbeatInterval,
         staleAfterSeconds: staleAfter,
-        maxConcurrentJobs
+        maxConcurrentJobs,
       });
       setPoolFeedback({
         kind: "success",
-        message: "Updated " + poolSelection + " pool configuration."
+        message: "Updated " + poolSelection + " pool configuration.",
       });
       pools.refresh();
     } catch (error) {
@@ -685,7 +855,7 @@ export default function DashboardPage() {
   const workerFilterDescription =
     [
       workerStatusFilter !== "all" ? selectedStatusLabel : null,
-      workerPoolFilter !== "all" ? selectedPoolLabel : null
+      workerPoolFilter !== "all" ? selectedPoolLabel : null,
     ]
       .filter(Boolean)
       .join(" · ") || "Selected filters";
@@ -696,8 +866,8 @@ export default function DashboardPage() {
         <p className={styles.eyebrow}>arrgo</p>
         <h1 className={styles.title}>Cluster overview</h1>
         <p className={styles.subtitle}>
-          Stay on top of library health, orchestration jobs, and worker availability
-          across your arrgo deployment.
+          Stay on top of library health, orchestration jobs, and worker
+          availability across your arrgo deployment.
         </p>
       </header>
       <div className={styles.grid}>
@@ -722,7 +892,9 @@ export default function DashboardPage() {
                       id="library-type-filter"
                       className={styles.controlSelect}
                       value={libraryTypeFilter}
-                      onChange={(event) => setLibraryTypeFilter(event.target.value)}
+                      onChange={(event) =>
+                        setLibraryTypeFilter(event.target.value)
+                      }
                     >
                       <option value="all">All types</option>
                       {libraryTypeOptions.map((option) => (
@@ -735,11 +907,16 @@ export default function DashboardPage() {
                 </div>
                 {libraryEntityOptions.length ? (
                   <form
-                    className={[styles.panelControls, styles.inlineForm].join(" ")}
+                    className={[styles.panelControls, styles.inlineForm].join(
+                      " ",
+                    )}
                     onSubmit={handleTriggerJob}
                   >
                     <div className={styles.controlGroup}>
-                      <label className={styles.controlLabel} htmlFor="job-type-select">
+                      <label
+                        className={styles.controlLabel}
+                        htmlFor="job-type-select"
+                      >
                         Job type
                       </label>
                       <select
@@ -838,19 +1015,19 @@ export default function DashboardPage() {
           {libraryStats.total ? (
             visibleLibrary.length ? (
               <>
-                  {jobFeedback ? (
-                    <div
-                      className={[
-                        styles.formMessage,
-                        jobFeedback.kind === "success"
-                          ? styles.formMessageSuccess
-                          : styles.formMessageError
-                      ].join(" ")}
-                      role={jobFeedback.kind === "error" ? "alert" : "status"}
-                      aria-live={
-                        jobFeedback.kind === "error" ? "assertive" : "polite"
-                      }
-                    >
+                {jobFeedback ? (
+                  <div
+                    className={[
+                      styles.formMessage,
+                      jobFeedback.kind === "success"
+                        ? styles.formMessageSuccess
+                        : styles.formMessageError,
+                    ].join(" ")}
+                    role={jobFeedback.kind === "error" ? "alert" : "status"}
+                    aria-live={
+                      jobFeedback.kind === "error" ? "assertive" : "polite"
+                    }
+                  >
                     <span>{jobFeedback.message}</span>
                     <button
                       type="button"
@@ -861,25 +1038,31 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 ) : null}
-                  <div className={styles.metricsRow}>
-                    <div
-                      className={[
-                        styles.metricCard,
-                        libraryTypeFilter !== "all" ? styles.metricCardEmphasis : ""
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                    <span className={styles.metricValue}>{visibleLibrary.length}</span>
-                      <span className={styles.metricLabel}>
-                        {libraryTypeFilter === "all"
-                          ? "Total entities"
-                          : "Filtered · " + selectedLibraryLabel}
-                      </span>
+                <div className={styles.metricsRow}>
+                  <div
+                    className={[
+                      styles.metricCard,
+                      libraryTypeFilter !== "all"
+                        ? styles.metricCardEmphasis
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <span className={styles.metricValue}>
+                      {visibleLibrary.length}
+                    </span>
+                    <span className={styles.metricLabel}>
+                      {libraryTypeFilter === "all"
+                        ? "Total entities"
+                        : "Filtered · " + selectedLibraryLabel}
+                    </span>
                   </div>
                   {libraryTypeFilter !== "all" ? (
                     <div className={styles.metricCard}>
-                      <span className={styles.metricValue}>{libraryStats.total}</span>
+                      <span className={styles.metricValue}>
+                        {libraryStats.total}
+                      </span>
                       <span className={styles.metricLabel}>Cluster total</span>
                     </div>
                   ) : null}
@@ -890,7 +1073,10 @@ export default function DashboardPage() {
                     return (
                       <div
                         key={type}
-                        className={[styles.metricCard, isActive ? styles.metricCardActive : ""]
+                        className={[
+                          styles.metricCard,
+                          isActive ? styles.metricCardActive : "",
+                        ]
                           .filter(Boolean)
                           .join(" ")}
                       >
@@ -906,7 +1092,9 @@ export default function DashboardPage() {
                       <span className={styles.entityTitle}>
                         {entity.title || entity.id}
                       </span>
-                      <span className={styles.entityType}>{entity.entityType}</span>
+                      <span className={styles.entityType}>
+                        {entity.entityType}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -919,8 +1107,255 @@ export default function DashboardPage() {
             )
           ) : (
             <p className={styles.emptyState}>
-              No entities have been indexed yet. Once ingestion runs you&apos;ll see
-              titles and counts here.
+              No entities have been indexed yet. Once ingestion runs you&apos;ll
+              see titles and counts here.
+            </p>
+          )}
+        </DataPanel>
+        <DataPanel
+          title="Manual indexer search"
+          description="Review indexer results and override automation when needed."
+          loading={manualSearchLoading && !manualSearchResult}
+          error={manualSearchError ?? undefined}
+          onRetry={loadManualSearch}
+          actions={
+            libraryEntityOptions.length ? (
+              <div className={styles.panelControls}>
+                <div className={styles.controlGroup}>
+                  <label
+                    className={styles.controlLabel}
+                    htmlFor="manual-search-entity"
+                  >
+                    Entity
+                  </label>
+                  <select
+                    id="manual-search-entity"
+                    className={styles.controlSelect}
+                    value={manualEntitySelection}
+                    onChange={(event) => {
+                      setManualEntitySelection(event.target.value);
+                      setManualSearchFeedback(null);
+                      setGrabInFlight(null);
+                    }}
+                  >
+                    {libraryEntityOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label} · {option.entityType}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : null
+          }
+        >
+          {libraryEntityOptions.length ? (
+            <>
+              <form
+                className={[styles.panelControls, styles.manualSearchForm].join(
+                  " ",
+                )}
+                onSubmit={handleManualSearchSubmit}
+              >
+                <div className={styles.controlGroup}>
+                  <label
+                    className={styles.controlLabel}
+                    htmlFor="manual-search-query"
+                  >
+                    Search query
+                  </label>
+                  <input
+                    id="manual-search-query"
+                    className={styles.controlInput}
+                    type="text"
+                    value={manualQuery}
+                    onChange={(event) => setManualQuery(event.target.value)}
+                    placeholder="Optional keywords"
+                    autoComplete="off"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className={styles.primaryButton}
+                  disabled={manualSearchSubmitDisabled}
+                >
+                  {manualSearchLoading ? "Searching…" : "Search indexers"}
+                </button>
+              </form>
+              {manualSearchFeedback ? (
+                <div
+                  className={[
+                    styles.formMessage,
+                    manualSearchFeedback.kind === "success"
+                      ? styles.formMessageSuccess
+                      : styles.formMessageError,
+                  ].join(" ")}
+                  role={
+                    manualSearchFeedback.kind === "error" ? "alert" : "status"
+                  }
+                  aria-live={
+                    manualSearchFeedback.kind === "error"
+                      ? "assertive"
+                      : "polite"
+                  }
+                >
+                  <span>{manualSearchFeedback.message}</span>
+                  <button
+                    type="button"
+                    className={styles.messageDismiss}
+                    onClick={() => setManualSearchFeedback(null)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              ) : null}
+              {manualSearchResult ? (
+                <>
+                  <div className={styles.searchMeta}>
+                    <span>
+                      {manualSearchExecutedAt
+                        ? [
+                            formatRelativeTime(manualSearchExecutedAt),
+                            formatTimestamp(manualSearchExecutedAt),
+                          ].join(" · ")
+                        : "Search not yet run"}
+                    </span>
+                    {manualSearchResult.query ? (
+                      <span>Query “{manualSearchResult.query}”</span>
+                    ) : null}
+                    <span>
+                      {manualSearchResults.length === 1
+                        ? "1 result"
+                        : `${manualSearchResults.length} results`}
+                    </span>
+                  </div>
+                  {manualSearchResults.length ? (
+                    <div className={styles.tableWrapper}>
+                      <table className={styles.table}>
+                        <thead>
+                          <tr>
+                            <th scope="col">Release</th>
+                            <th scope="col">Indexer</th>
+                            <th scope="col">Quality</th>
+                            <th scope="col">Size</th>
+                            <th scope="col">Published</th>
+                            <th scope="col">Score</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {manualSearchResults.map((release) => {
+                            const status = release.status || "unknown";
+                            const isGrabbed =
+                              status.toLowerCase() === "grabbed";
+                            const isRejected =
+                              status.toLowerCase() === "rejected";
+                            const downloadURL = release.downloadURL?.trim();
+                            return (
+                              <tr key={release.id}>
+                                <td>
+                                  <div className={styles.jobDetails}>
+                                    <span className={styles.releaseTitle}>
+                                      {release.title}
+                                    </span>
+                                    {downloadURL ? (
+                                      <a
+                                        href={downloadURL}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className={styles.smallText}
+                                        title={downloadURL}
+                                      >
+                                        {shortenIdentifier(downloadURL, 48)}
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                <td>{release.indexer}</td>
+                                <td>{release.quality || "—"}</td>
+                                <td>{formatBytes(release.sizeBytes)}</td>
+                                <td>
+                                  {release.publishDate ? (
+                                    <span className={styles.smallText}>
+                                      {[
+                                        formatRelativeTime(release.publishDate),
+                                        formatTimestamp(release.publishDate),
+                                      ].join(" · ")}
+                                    </span>
+                                  ) : (
+                                    "—"
+                                  )}
+                                </td>
+                                <td>
+                                  {Number.isFinite(release.score)
+                                    ? release.score.toFixed(1)
+                                    : "—"}
+                                </td>
+                                <td>
+                                  <div className={styles.releaseStatus}>
+                                    <StatusPill
+                                      label={status}
+                                      tone={releaseTone(status)}
+                                    />
+                                    {isRejected && release.rejectionReason ? (
+                                      <span className={styles.rejectionNote}>
+                                        {release.rejectionReason}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                <td>
+                                  {isGrabbed ? (
+                                    <span className={styles.smallText}>
+                                      {release.grabbedAt
+                                        ? [
+                                            formatRelativeTime(
+                                              release.grabbedAt,
+                                            ),
+                                            formatTimestamp(release.grabbedAt),
+                                          ].join(" · ")
+                                        : "Queued"}
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={styles.secondaryButton}
+                                      onClick={() => handleManualGrab(release)}
+                                      disabled={
+                                        grabInFlight === release.id ||
+                                        manualSearchLoading
+                                      }
+                                    >
+                                      {grabInFlight === release.id
+                                        ? "Grabbing…"
+                                        : "Grab"}
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className={styles.emptyState}>
+                      Search completed with no matching releases. Try refining
+                      the query or selecting a different entity.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className={styles.emptyState}>
+                  Run a manual search to review candidate releases for the
+                  selected entity.
+                </p>
+              )}
+            </>
+          ) : (
+            <p className={styles.emptyState}>
+              Add library entities to enable manual search workflows.
             </p>
           )}
         </DataPanel>
@@ -934,7 +1369,10 @@ export default function DashboardPage() {
             jobStats.total ? (
               <div className={styles.panelControls}>
                 <div className={styles.controlGroup}>
-                  <label className={styles.controlLabel} htmlFor="job-state-filter">
+                  <label
+                    className={styles.controlLabel}
+                    htmlFor="job-state-filter"
+                  >
                     Job state
                   </label>
                   <select
@@ -959,44 +1397,51 @@ export default function DashboardPage() {
           {jobStats.total ? (
             visibleJobs.length ? (
               <>
-                  <div className={styles.metricsRow}>
-                    <div
-                      className={[
-                        styles.metricCard,
-                        jobStateFilter !== "all" ? styles.metricCardEmphasis : ""
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                    <span className={styles.metricValue}>{visibleJobs.length}</span>
-                      <span className={styles.metricLabel}>
-                        {jobStateFilter === "all"
-                          ? "Total jobs"
-                          : "Filtered · " + selectedJobLabel}
-                      </span>
+                <div className={styles.metricsRow}>
+                  <div
+                    className={[
+                      styles.metricCard,
+                      jobStateFilter !== "all" ? styles.metricCardEmphasis : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <span className={styles.metricValue}>
+                      {visibleJobs.length}
+                    </span>
+                    <span className={styles.metricLabel}>
+                      {jobStateFilter === "all"
+                        ? "Total jobs"
+                        : "Filtered · " + selectedJobLabel}
+                    </span>
                   </div>
                   {jobStateFilter !== "all" ? (
                     <div className={styles.metricCard}>
-                      <span className={styles.metricValue}>{jobStats.total}</span>
+                      <span className={styles.metricValue}>
+                        {jobStats.total}
+                      </span>
                       <span className={styles.metricLabel}>Cluster total</span>
                     </div>
                   ) : null}
-                    {jobStats.counts.map(([state, count]) => {
-                      const isActive =
-                        jobStateFilter !== "all" &&
-                        normalize(state) === jobStateFilter;
-                      return (
-                        <div
-                          key={state}
-                          className={[styles.metricCard, isActive ? styles.metricCardActive : ""]
-                            .filter(Boolean)
-                            .join(" ")}
-                        >
-                          <span className={styles.metricValue}>{count}</span>
-                          <span className={styles.metricLabel}>{state}</span>
-                        </div>
-                      );
-                    })}
+                  {jobStats.counts.map(([state, count]) => {
+                    const isActive =
+                      jobStateFilter !== "all" &&
+                      normalize(state) === jobStateFilter;
+                    return (
+                      <div
+                        key={state}
+                        className={[
+                          styles.metricCard,
+                          isActive ? styles.metricCardActive : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        <span className={styles.metricValue}>{count}</span>
+                        <span className={styles.metricLabel}>{state}</span>
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className={styles.analyticsGrid}>
                   <div className={styles.analyticsCard}>
@@ -1005,8 +1450,12 @@ export default function DashboardPage() {
                       <ul className={styles.analyticsList}>
                         {queueAnalytics.byType.map(([type, count]) => (
                           <li key={type} className={styles.analyticsListItem}>
-                            <span className={styles.analyticsLabel}>{type}</span>
-                            <span className={styles.analyticsValue}>{count}</span>
+                            <span className={styles.analyticsLabel}>
+                              {type}
+                            </span>
+                            <span className={styles.analyticsValue}>
+                              {count}
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -1030,8 +1479,12 @@ export default function DashboardPage() {
                         <dd>
                           {queueAnalytics.latestSubmittedAt
                             ? [
-                                formatRelativeTime(queueAnalytics.latestSubmittedAt),
-                                formatTimestamp(queueAnalytics.latestSubmittedAt)
+                                formatRelativeTime(
+                                  queueAnalytics.latestSubmittedAt,
+                                ),
+                                formatTimestamp(
+                                  queueAnalytics.latestSubmittedAt,
+                                ),
                               ].join(" · ")
                             : "—"}
                         </dd>
@@ -1060,7 +1513,9 @@ export default function DashboardPage() {
                                 {job.jobType}
                               </span>
                               {job.payloadURI ? (
-                                <span className={styles.smallText}>{job.payloadURI}</span>
+                                <span className={styles.smallText}>
+                                  {job.payloadURI}
+                                </span>
                               ) : null}
                             </div>
                           </td>
@@ -1111,14 +1566,19 @@ export default function DashboardPage() {
             workerStats.total ? (
               <div className={styles.panelControls}>
                 <div className={styles.controlGroup}>
-                  <label className={styles.controlLabel} htmlFor="worker-pool-filter">
+                  <label
+                    className={styles.controlLabel}
+                    htmlFor="worker-pool-filter"
+                  >
                     Worker pool
                   </label>
                   <select
                     id="worker-pool-filter"
                     className={styles.controlSelect}
                     value={workerPoolFilter}
-                    onChange={(event) => setWorkerPoolFilter(event.target.value)}
+                    onChange={(event) =>
+                      setWorkerPoolFilter(event.target.value)
+                    }
                   >
                     <option value="all">All pools</option>
                     {workerPoolOptions.map((option) => (
@@ -1129,14 +1589,19 @@ export default function DashboardPage() {
                   </select>
                 </div>
                 <div className={styles.controlGroup}>
-                  <label className={styles.controlLabel} htmlFor="worker-status-filter">
+                  <label
+                    className={styles.controlLabel}
+                    htmlFor="worker-status-filter"
+                  >
                     Status
                   </label>
                   <select
                     id="worker-status-filter"
                     className={styles.controlSelect}
                     value={workerStatusFilter}
-                    onChange={(event) => setWorkerStatusFilter(event.target.value)}
+                    onChange={(event) =>
+                      setWorkerStatusFilter(event.target.value)
+                    }
                   >
                     <option value="all">All statuses</option>
                     {workerStatusOptions.map((option) => (
@@ -1154,52 +1619,60 @@ export default function DashboardPage() {
           {workerStats.total ? (
             visibleWorkers.length ? (
               <>
-                  <div className={styles.metricsRow}>
-                    <div
-                      className={[
-                        styles.metricCard,
-                        workerFiltersActive ? styles.metricCardEmphasis : ""
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                    <span className={styles.metricValue}>{visibleWorkers.length}</span>
-                      <span className={styles.metricLabel}>
-                        {workerFiltersActive
-                          ? "Filtered · " + workerFilterDescription
-                          : "Total workers"}
-                      </span>
+                <div className={styles.metricsRow}>
+                  <div
+                    className={[
+                      styles.metricCard,
+                      workerFiltersActive ? styles.metricCardEmphasis : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <span className={styles.metricValue}>
+                      {visibleWorkers.length}
+                    </span>
+                    <span className={styles.metricLabel}>
+                      {workerFiltersActive
+                        ? "Filtered · " + workerFilterDescription
+                        : "Total workers"}
+                    </span>
                   </div>
                   {workerFiltersActive ? (
                     <div className={styles.metricCard}>
-                      <span className={styles.metricValue}>{workerStats.total}</span>
+                      <span className={styles.metricValue}>
+                        {workerStats.total}
+                      </span>
                       <span className={styles.metricLabel}>Cluster total</span>
                     </div>
                   ) : null}
-                    <div
-                      className={[
-                        styles.metricCard,
-                        workerStatusFilter === "healthy"
-                          ? styles.metricCardActive
-                          : ""
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                    <span className={styles.metricValue}>{workerStats.healthy}</span>
+                  <div
+                    className={[
+                      styles.metricCard,
+                      workerStatusFilter === "healthy"
+                        ? styles.metricCardActive
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <span className={styles.metricValue}>
+                      {workerStats.healthy}
+                    </span>
                     <span className={styles.metricLabel}>Healthy</span>
                   </div>
-                    <div
-                      className={[
-                        styles.metricCard,
-                        workerStatusFilter === "stale"
-                          ? styles.metricCardActive
-                          : ""
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                    >
-                    <span className={styles.metricValue}>{workerStats.stale}</span>
+                  <div
+                    className={[
+                      styles.metricCard,
+                      workerStatusFilter === "stale"
+                        ? styles.metricCardActive
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <span className={styles.metricValue}>
+                      {workerStats.stale}
+                    </span>
                     <span className={styles.metricLabel}>Stale</span>
                   </div>
                 </div>
@@ -1210,17 +1683,20 @@ export default function DashboardPage() {
                         workerPoolFilter !== "all" &&
                         normalize(pool, "unassigned") === workerPoolFilter;
                       return (
-                          <span
-                            key={pool}
-                            className={[
-                              styles.poolBadge,
-                              styles.monospace,
-                              isActive ? styles.poolBadgeActive : ""
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                            title={String(count) + (count === 1 ? " worker" : " workers")}
-                          >
+                        <span
+                          key={pool}
+                          className={[
+                            styles.poolBadge,
+                            styles.monospace,
+                            isActive ? styles.poolBadgeActive : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          title={
+                            String(count) +
+                            (count === 1 ? " worker" : " workers")
+                          }
+                        >
                           {pool} · {count}
                         </span>
                       );
@@ -1243,13 +1719,15 @@ export default function DashboardPage() {
                         <tr key={worker.id}>
                           <td>
                             <div className={styles.jobDetails}>
-                                <span
-                                  className={styles.monospace}
-                                  title={worker.id}
-                                >
+                              <span
+                                className={styles.monospace}
+                                title={worker.id}
+                              >
                                 {shortenIdentifier(worker.id)}
                               </span>
-                              <span className={styles.smallText}>{worker.version}</span>
+                              <span className={styles.smallText}>
+                                {worker.version}
+                              </span>
                             </div>
                           </td>
                           <td>{worker.pool}</td>
@@ -1273,14 +1751,14 @@ export default function DashboardPage() {
               </>
             ) : (
               <p className={styles.emptyState}>
-                No workers match the current filters. Broaden the filters to view
-                other pools or statuses.
+                No workers match the current filters. Broaden the filters to
+                view other pools or statuses.
               </p>
             )
           ) : (
             <p className={styles.emptyState}>
-              No workers are currently registered. Bring a worker online or send a
-              heartbeat to populate this view.
+              No workers are currently registered. Bring a worker online or send
+              a heartbeat to populate this view.
             </p>
           )}
         </DataPanel>
@@ -1321,13 +1799,16 @@ export default function DashboardPage() {
             <form className={styles.poolForm} onSubmit={handlePoolSubmit}>
               <div className={styles.metricsRow}>
                 <div className={styles.metricCard}>
-                  <span className={styles.metricValue}>{selectedPoolWorkerCount}</span>
+                  <span className={styles.metricValue}>
+                    {selectedPoolWorkerCount}
+                  </span>
                   <span className={styles.metricLabel}>Workers in pool</span>
                 </div>
                 <div className={styles.metricCard}>
                   <span className={styles.metricValue}>
                     {selectedPoolConfig
-                      ? String(selectedPoolConfig.heartbeatIntervalSeconds) + "s"
+                      ? String(selectedPoolConfig.heartbeatIntervalSeconds) +
+                        "s"
                       : "—"}
                   </span>
                   <span className={styles.metricLabel}>Heartbeat interval</span>
@@ -1345,13 +1826,18 @@ export default function DashboardPage() {
                     <span className={styles.metricValue}>
                       {selectedPoolConfig.maxConcurrentJobs}
                     </span>
-                    <span className={styles.metricLabel}>Max concurrent jobs</span>
+                    <span className={styles.metricLabel}>
+                      Max concurrent jobs
+                    </span>
                   </div>
                 ) : null}
               </div>
               <div className={styles.poolFormGrid}>
                 <div className={styles.controlGroup}>
-                  <label className={styles.controlLabel} htmlFor="pool-description">
+                  <label
+                    className={styles.controlLabel}
+                    htmlFor="pool-description"
+                  >
                     Description
                   </label>
                   <input
@@ -1361,7 +1847,7 @@ export default function DashboardPage() {
                     onChange={(event) => {
                       setPoolForm((previous) => ({
                         ...previous,
-                        description: event.target.value
+                        description: event.target.value,
                       }));
                       setPoolFeedback(null);
                     }}
@@ -1379,7 +1865,7 @@ export default function DashboardPage() {
                     onChange={(event) => {
                       setPoolForm((previous) => ({
                         ...previous,
-                        stream: event.target.value
+                        stream: event.target.value,
                       }));
                       setPoolFeedback(null);
                     }}
@@ -1400,7 +1886,7 @@ export default function DashboardPage() {
                     onChange={(event) => {
                       setPoolForm((previous) => ({
                         ...previous,
-                        consumerGroup: event.target.value
+                        consumerGroup: event.target.value,
                       }));
                       setPoolFeedback(null);
                     }}
@@ -1423,14 +1909,17 @@ export default function DashboardPage() {
                     onChange={(event) => {
                       setPoolForm((previous) => ({
                         ...previous,
-                        heartbeatIntervalSeconds: event.target.value
+                        heartbeatIntervalSeconds: event.target.value,
                       }));
                       setPoolFeedback(null);
                     }}
                   />
                 </div>
                 <div className={styles.controlGroup}>
-                  <label className={styles.controlLabel} htmlFor="pool-stale-after">
+                  <label
+                    className={styles.controlLabel}
+                    htmlFor="pool-stale-after"
+                  >
                     Stale after (s)
                   </label>
                   <input
@@ -1442,14 +1931,17 @@ export default function DashboardPage() {
                     onChange={(event) => {
                       setPoolForm((previous) => ({
                         ...previous,
-                        staleAfterSeconds: event.target.value
+                        staleAfterSeconds: event.target.value,
                       }));
                       setPoolFeedback(null);
                     }}
                   />
                 </div>
                 <div className={styles.controlGroup}>
-                  <label className={styles.controlLabel} htmlFor="pool-max-jobs">
+                  <label
+                    className={styles.controlLabel}
+                    htmlFor="pool-max-jobs"
+                  >
                     Max concurrent jobs
                   </label>
                   <input
@@ -1461,7 +1953,7 @@ export default function DashboardPage() {
                     onChange={(event) => {
                       setPoolForm((previous) => ({
                         ...previous,
-                        maxConcurrentJobs: event.target.value
+                        maxConcurrentJobs: event.target.value,
                       }));
                       setPoolFeedback(null);
                     }}
@@ -1475,7 +1967,7 @@ export default function DashboardPage() {
                     styles.formMessage,
                     poolFeedback.kind === "success"
                       ? styles.formMessageSuccess
-                      : styles.formMessageError
+                      : styles.formMessageError,
                   ].join(" ")}
                 >
                   <span>{poolFeedback.message}</span>
