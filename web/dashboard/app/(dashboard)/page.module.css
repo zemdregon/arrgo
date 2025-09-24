@@ -1,44 +1,40 @@
-.main {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 3rem 1.5rem 4rem;
+.page {
   display: flex;
   flex-direction: column;
   gap: 2.5rem;
-}
-
-.hero {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.eyebrow {
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.4em;
-  font-size: 0.75rem;
-  color: #38bdf8;
-}
-
-.title {
-  margin: 0;
-  font-size: clamp(2.2rem, 5vw, 3.4rem);
-  font-weight: 700;
-  color: #f8fafc;
-}
-
-.subtitle {
-  margin: 0;
-  font-size: 1.05rem;
-  color: #94a3b8;
-  max-width: 52ch;
 }
 
 .grid {
   display: grid;
   gap: 1.75rem;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.refreshButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.18);
+  color: #f8fafc;
+  padding: 0.55rem 1.4rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.refreshButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.refreshButton:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(56, 189, 248, 0.28);
 }
 
 .metricsRow {
@@ -548,10 +544,6 @@
 }
 
 @media (max-width: 720px) {
-  .main {
-    padding: 2.5rem 1.25rem 3rem;
-  }
-
   .grid {
     grid-template-columns: 1fr;
   }

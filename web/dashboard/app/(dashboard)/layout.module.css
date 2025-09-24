@@ -1,0 +1,59 @@
+.headerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding: 0 var(--space-xl);
+  min-height: 4.5rem;
+}
+
+.brandGroup {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brand {
+  font-size: 1.05rem;
+  color: var(--color-primary-strong);
+}
+
+.product {
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+}
+
+.environmentGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.environmentLabel {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.environmentValue {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+@media (max-width: 960px) {
+  .headerBar {
+    padding: 0 var(--space-lg);
+  }
+
+  .environmentGroup {
+    display: none;
+  }
+}

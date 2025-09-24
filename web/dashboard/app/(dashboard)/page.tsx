@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { DataPanel } from "../components/DataPanel";
-import { StatusPill } from "../components/StatusPill";
-import { useApiData } from "../hooks/useApiData";
+import { DataPanel } from "../../components/DataPanel";
+import { StatusPill } from "../../components/StatusPill";
+import { PageHeader } from "../../components/layout/PageHeader";
+import { useApiData } from "../../hooks/useApiData";
 import {
   fetchEntities,
   fetchJobs,
@@ -20,7 +21,7 @@ import {
   updateWorkerPool,
   WorkerPoolConfig,
   WorkerSummary,
-} from "../lib/api";
+} from "../../lib/api";
 import styles from "./page.module.css";
 
 type Tone = "neutral" | "success" | "warning" | "danger";
@@ -343,6 +344,11 @@ export default function DashboardPage() {
   } | null>(null);
   const [grabInFlight, setGrabInFlight] = useState<string | null>(null);
 
+  const { refresh: refreshLibrary } = library;
+  const { refresh: refreshJobs } = jobs;
+  const { refresh: refreshWorkers } = workers;
+  const { refresh: refreshPools } = pools;
+
   const libraryStats = useMemo(
     () => buildLibraryStats(library.data),
     [library.data],
@@ -356,6 +362,15 @@ export default function DashboardPage() {
     () => buildQueueAnalytics(jobs.data),
     [jobs.data],
   );
+  const aggregateLoading =
+    library.loading || jobs.loading || workers.loading || pools.loading;
+
+  const handleRefreshAll = useCallback(() => {
+    refreshLibrary();
+    refreshJobs();
+    refreshWorkers();
+    refreshPools();
+  }, [refreshJobs, refreshLibrary, refreshPools, refreshWorkers]);
   const libraryEntityOptions = useMemo(
     () =>
       (library.data ?? [])
@@ -861,15 +876,22 @@ export default function DashboardPage() {
       .join(" · ") || "Selected filters";
 
   return (
-    <main className={styles.main}>
-      <header className={styles.hero}>
-        <p className={styles.eyebrow}>arrgo</p>
-        <h1 className={styles.title}>Cluster overview</h1>
-        <p className={styles.subtitle}>
-          Stay on top of library health, orchestration jobs, and worker
-          availability across your arrgo deployment.
-        </p>
-      </header>
+    <div className={styles.page}>
+      <PageHeader
+        eyebrow="arrgo"
+        title="Cluster overview"
+        description="Stay on top of library health, orchestration jobs, and worker availability across your arrgo deployment."
+        actions={
+          <button
+            className={styles.refreshButton}
+            disabled={aggregateLoading}
+            onClick={handleRefreshAll}
+            type="button"
+          >
+            {aggregateLoading ? "Refreshing…" : "Refresh data"}
+          </button>
+        }
+      />
       <div className={styles.grid}>
         <DataPanel
           title="Library health"
@@ -2096,6 +2118,6 @@ export default function DashboardPage() {
           </div>
         </div>
       ) : null}
-    </main>
+    </div>
   );
 }
