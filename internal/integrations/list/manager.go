@@ -11,21 +11,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/timeutil"
 	"github.com/arrgo/arrgo/sdk/listingester"
 )
 
-// Clock abstracts time retrieval for deterministic testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now().UTC() }
-
 // Config controls Manager construction.
 type Config struct {
-	Clock     Clock
+	Clock     timeutil.Clock
 	Logger    *slog.Logger
 	HealthTTL time.Duration
 }
@@ -76,7 +68,7 @@ type Manager struct {
 	providers []*registeredProvider
 	byName    map[string]*registeredProvider
 	history   map[string]*subscriptionState
-	clock     Clock
+	clock     timeutil.Clock
 	logger    *slog.Logger
 	healthTTL time.Duration
 }
@@ -101,7 +93,7 @@ type subscriptionState struct {
 func NewManager(cfg Config) *Manager {
 	clock := cfg.Clock
 	if clock == nil {
-		clock = systemClock{}
+		clock = timeutil.SystemClock{}
 	}
 	logger := cfg.Logger
 	if logger == nil {

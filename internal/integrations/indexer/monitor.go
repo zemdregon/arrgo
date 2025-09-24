@@ -9,6 +9,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/arrgo/arrgo/internal/timeutil"
 )
 
 // Outcome captures the result of an indexer request.
@@ -22,15 +24,6 @@ const (
 	// OutcomeTimeout represents a request that timed out or otherwise never completed.
 	OutcomeTimeout Outcome = "timeout"
 )
-
-// Clock abstracts time retrieval for deterministic testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now().UTC() }
 
 // Observation captures a single interaction with an indexer.
 type Observation struct {
@@ -65,7 +58,7 @@ type Config struct {
 	DegradedScore                    float64
 	FailoverFloorScore               float64
 	MinObservationsForRecommendation int
-	Clock                            Clock
+	Clock                            timeutil.Clock
 	Logger                           *slog.Logger
 	Discoverers                      []Discoverer
 }
@@ -91,7 +84,7 @@ const (
 type Monitor struct {
 	cfg    Config
 	logger *slog.Logger
-	clock  Clock
+	clock  timeutil.Clock
 
 	mu          sync.RWMutex
 	indexers    map[string]*indexerState
@@ -130,7 +123,7 @@ func NewMonitor(cfg Config) *Monitor {
 
 	clock := cfg.Clock
 	if clock == nil {
-		clock = systemClock{}
+		clock = timeutil.SystemClock{}
 	}
 	logger := cfg.Logger
 	if logger == nil {

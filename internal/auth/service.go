@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/timeutil"
 	"github.com/google/uuid"
 )
 
@@ -83,15 +84,6 @@ func (p Principal) Role() Role {
 	return p.role
 }
 
-// Clock abstracts time retrieval for deterministic testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now().UTC() }
-
 // IDGenerator produces identifiers for new API keys.
 type IDGenerator func() string
 
@@ -101,14 +93,14 @@ type SecretGenerator func() (string, error)
 // Config drives Service construction.
 type Config struct {
 	Roles           []Role
-	Clock           Clock
+	Clock           timeutil.Clock
 	IDGenerator     IDGenerator
 	SecretGenerator SecretGenerator
 }
 
 // Service coordinates role management and API key issuance.
 type Service struct {
-	clock   Clock
+	clock   timeutil.Clock
 	idGen   IDGenerator
 	secret  SecretGenerator
 	mu      sync.RWMutex
@@ -184,7 +176,7 @@ func NewService(cfg Config) (*Service, error) {
 	}
 
 	if svc.clock == nil {
-		svc.clock = systemClock{}
+		svc.clock = timeutil.SystemClock{}
 	}
 	if svc.idGen == nil {
 		svc.idGen = func() string { return uuid.NewString() }
