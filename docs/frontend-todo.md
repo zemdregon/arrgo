@@ -1,6 +1,6 @@
 # Frontend Implementation TODO
 
-> **Last updated:** 2025-03-08
+> **Last updated:** 2025-09-24
 > **Scope:** Next.js dashboard that replaces legacy Overseerr-style workflows and surfaces arrgo automation controls.
 
 ## Objectives
@@ -12,7 +12,7 @@
 
 ### Core Application Foundation
 - [x] Establish Next.js app router structure, TypeScript strict mode, and shared layout primitives.
-- [ ] Implement global design system (theme tokens, typography, color, spacing) with light/dark mode support.
+- [x] Implement global design system (theme tokens, typography, color, spacing) with light/dark mode support.
 - [ ] Configure authentication guards, API key selection, and RBAC-aware route protection.
 - [ ] Build REST/gRPC client adapters with SWR/React Query hooks and request tracing instrumentation.
 - [ ] Set up error boundaries, toast/alert primitives, and structured logging for client-side diagnostics.

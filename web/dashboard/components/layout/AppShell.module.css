@@ -1,8 +1,9 @@
+
 .root {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
-  background: radial-gradient(circle at top, #0f172a 0%, #020617 60%);
+  background: var(--gradient-canvas);
   color: var(--color-text-primary);
 }
 
@@ -11,8 +12,8 @@
   flex-direction: column;
   gap: var(--space-xl);
   padding: var(--space-2xl) var(--space-lg);
-  background: rgba(15, 23, 42, 0.88);
-  border-right: 1px solid var(--border-strong);
+  background: var(--surface-elevated);
+  border-right: 1px solid var(--color-border-strong);
   backdrop-filter: blur(12px);
 }
 
@@ -26,8 +27,8 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  background: rgba(2, 6, 23, 0.8);
-  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-overlay);
+  border-bottom: 1px solid var(--color-border-subtle);
   backdrop-filter: blur(14px);
 }
 
@@ -70,7 +71,7 @@
     padding: var(--space-md) var(--space-lg);
     gap: var(--space-md);
     border-right: none;
-    border-bottom: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--color-border-subtle);
   }
 
   .main {

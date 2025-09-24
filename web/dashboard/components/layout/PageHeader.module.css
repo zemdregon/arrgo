@@ -18,14 +18,14 @@
   text-transform: uppercase;
   letter-spacing: 0.4em;
   font-size: 0.75rem;
-  color: var(--color-primary);
+  color: var(--color-accent);
 }
 
 .title {
   margin: 0;
   font-size: clamp(2.2rem, 5vw, 3.4rem);
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--color-text-primary);
 }
 
 .description {

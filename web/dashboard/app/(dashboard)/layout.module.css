@@ -18,12 +18,18 @@
 
 .brand {
   font-size: 1.05rem;
-  color: var(--color-primary-strong);
+  color: var(--color-accent-strong);
 }
 
 .product {
   font-size: 0.95rem;
   color: var(--color-text-muted);
+}
+
+.controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
 }
 
 .environmentGroup {
@@ -32,8 +38,8 @@
   gap: var(--space-sm);
   padding: 0.35rem 0.75rem;
   border-radius: var(--radius-full);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
+  background: var(--surface-panel);
+  border: 1px solid var(--color-border-subtle);
   color: var(--color-text-muted);
   font-size: 0.85rem;
 }
