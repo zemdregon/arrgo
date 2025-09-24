@@ -73,9 +73,9 @@ Until the initial release is available, track the following tasks.
 - ✅ Stand up automated performance and regression suites for large media libraries, covering scheduler fan-out and queue drain behavior. See [`docs/performance-regression.md`](docs/performance-regression.md).
 - ✅ Expand the web dashboard with queue analytics, job drill-downs, and worker pool configuration editing. See [`web/dashboard`](web/dashboard) and [`docs/dashboard-operations.md`](docs/dashboard-operations.md).
 - ✅ Implement external list ingestion with pluggable modules for Trakt, IMDb, and Last.fm so new list providers can be added without core changes. See [`internal/integrations/list`](internal/integrations/list) and [`docs/list-ingestion.md`](docs/list-ingestion.md).
+- ✅ Build release profile/custom format scoring with preferred group/codec filters, blocklists, and backwards-compatible support for importing Sonarr/Radarr custom format definitions to match the advanced grab rules in the existing *arr applications. See [`internal/automation/releaseprofile`](internal/automation/releaseprofile) and [`docs/release-profile-scoring.md`](docs/release-profile-scoring.md).
 
 ### Up Next
-- 🚧 Build release profile/custom format scoring with preferred group/codec filters, blocklists, and backwards-compatible support for importing Sonarr/Radarr custom format definitions to match the advanced grab rules in the existing *arr applications.
 - 🚧 Add interactive/manual search workflows in the dashboard and APIs for reviewing indexer results and force-grabbing specific releases when automation falls short.
 - 🚧 Deliver configurable file renaming and folder organization templates for episodes, movies, and music libraries with history-aware rename jobs.
 - 🚧 Expose rich metadata override tools (episode/season cutovers, album editions, track numbering) so operators can correct catalog data without waiting on upstream providers.

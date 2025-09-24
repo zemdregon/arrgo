@@ -34,7 +34,7 @@ These guidelines help existing Sonarr, Radarr, and Lidarr users move their media
   - Sonarr series → arrgo series entities.
   - Radarr movies → arrgo film entities.
   - Lidarr artists/albums/tracks → arrgo artist, album, and track entities.
-- **Quality and profiles:** Translate Sonarr/Radarr/Lidarr quality profiles into arrgo policy profiles. Preserve cutoff thresholds, preferred codecs, and language filters.
+- **Quality and profiles:** Translate Sonarr/Radarr/Lidarr quality profiles into arrgo policy profiles. Preserve cutoff thresholds, preferred codecs, and language filters. [`internal/automation/releaseprofile`](../internal/automation/releaseprofile) includes import helpers that convert Servarr custom formats and quality profiles directly into arrgo release profiles; see [`docs/release-profile-scoring.md`](release-profile-scoring.md).
 - **Root folders and tags:** Align media root paths and tag-based automation rules with arrgo’s library configuration so imports land in the correct locations.
 - **Automation rules:** Migrate release restrictions, delay profiles, and connect webhook/notification rules to arrgo equivalents.
 
