@@ -60,6 +60,7 @@ Until the initial release is available, track the following tasks.
 - ✅ Build a GitHub Actions workflow that publishes arrgo container images to GHCR for distribution.
 - ✅ Document the local development bootstrap process for contributors. See [`docs/development-setup.md`](docs/development-setup.md).
 - ✅ Implement the metadata ingestion pipeline with Redis-backed caching. See [`internal/metadata`](internal/metadata) and [`docs/metadata-ingestion.md`](docs/metadata-ingestion.md).
+- ✅ Expose rich metadata override tools (episode/season cutovers, album editions, track numbering) so operators can correct catalog data without waiting on upstream providers. See [`internal/library/metadata_overrides.go`](internal/library/metadata_overrides.go), [`internal/api/httpapi/server.go`](internal/api/httpapi/server.go), and [`docs/metadata-overrides.md`](docs/metadata-overrides.md).
 - ✅ Expose the first iteration of the REST/gRPC APIs for library management and job orchestration. See [`docs/api-first-iteration.md`](docs/api-first-iteration.md).
 - ✅ Build CI pipelines for linting and automated testing. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 - ✅ Draft migration guidelines for users coming from existing Sonarr/Radarr/Lidarr setups. See [`docs/migration-guidelines.md`](docs/migration-guidelines.md).
@@ -78,7 +79,7 @@ Until the initial release is available, track the following tasks.
 - ✅ Deliver configurable file renaming and folder organization templates for episodes, movies, and music libraries with history-aware rename jobs. See [`docs/file-renaming-templates.md`](docs/file-renaming-templates.md) and [`internal/library/renamer.go`](internal/library/renamer.go).
 
 ### Up Next
-- 🚧 Expose rich metadata override tools (episode/season cutovers, album editions, track numbering) so operators can correct catalog data without waiting on upstream providers.
+- 🚧 Additional milestones will be documented as they are scheduled.
 
 ### Docker Compose development stack
 

@@ -187,6 +187,131 @@ func TestManualSearchEndpoints(t *testing.T) {
 	}
 }
 
+func TestMetadataOverrideEndpoints(t *testing.T) {
+	now := time.Unix(1700002000, 0)
+	svc := mustLibraryService(t, library.Config{Entities: []library.Entity{{ID: "series-1", EntityType: "series"}}, Clock: stubClock{now: now}})
+	authSvc := mustAuthService(t)
+	readToken := mustAPIKey(t, authSvc, "observer")
+	writeToken := mustAPIKey(t, authSvc, "admin")
+	srv := NewServer(svc, nil, authSvc)
+
+	basePath := "/api/v1/library/overrides/series-1"
+
+	t.Run("initial fetch", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, basePath, nil)
+		req.Header.Set("Authorization", "Bearer "+readToken)
+		resp := httptest.NewRecorder()
+
+		srv.handleMetadataOverrides(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", resp.Code)
+		}
+
+		var payload struct {
+			Overrides *library.MetadataOverrides `json:"overrides"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if payload.Overrides != nil {
+			t.Fatalf("expected no overrides yet, got %+v", payload.Overrides)
+		}
+	})
+
+	requestBody := struct {
+		EpisodeCutovers      []library.EpisodeCutoverOverride `json:"episode_cutovers"`
+		AlbumEditions        []library.AlbumEditionOverride   `json:"album_editions"`
+		TrackNumberOverrides []library.TrackNumberOverride    `json:"track_number_overrides"`
+	}{
+		EpisodeCutovers:      []library.EpisodeCutoverOverride{{EpisodeID: "ep-special", SeasonNumber: 0, EpisodeNumber: 1, Title: "Special"}},
+		AlbumEditions:        []library.AlbumEditionOverride{{EditionID: "deluxe", Name: "Deluxe"}},
+		TrackNumberOverrides: []library.TrackNumberOverride{{TrackID: "track-a", DiscNumber: 1, TrackNumber: 1}},
+	}
+	rawBody, _ := json.Marshal(requestBody)
+
+	t.Run("update overrides", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPut, basePath, bytes.NewReader(rawBody))
+		req.Header.Set("Authorization", "Bearer "+writeToken)
+		resp := httptest.NewRecorder()
+
+		srv.handleMetadataOverrides(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", resp.Code)
+		}
+
+		var payload struct {
+			Overrides library.MetadataOverrides `json:"overrides"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("failed to decode payload: %v", err)
+		}
+		if len(payload.Overrides.EpisodeCutovers) != 1 {
+			t.Fatalf("expected one episode override, got %+v", payload.Overrides.EpisodeCutovers)
+		}
+		if !payload.Overrides.UpdatedAt.Equal(now) {
+			t.Fatalf("expected UpdatedAt %v, got %v", now, payload.Overrides.UpdatedAt)
+		}
+	})
+
+	t.Run("fetch after update", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, basePath, nil)
+		req.Header.Set("Authorization", "Bearer "+readToken)
+		resp := httptest.NewRecorder()
+
+		srv.handleMetadataOverrides(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", resp.Code)
+		}
+
+		var payload struct {
+			Overrides library.MetadataOverrides `json:"overrides"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("failed to decode payload: %v", err)
+		}
+		if len(payload.Overrides.TrackNumberOverrides) != 1 {
+			t.Fatalf("expected one track override, got %+v", payload.Overrides.TrackNumberOverrides)
+		}
+	})
+
+	t.Run("delete overrides", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodDelete, basePath, nil)
+		req.Header.Set("Authorization", "Bearer "+writeToken)
+		resp := httptest.NewRecorder()
+
+		srv.handleMetadataOverrides(resp, req)
+
+		if resp.Code != http.StatusNoContent {
+			t.Fatalf("expected status 204, got %d", resp.Code)
+		}
+	})
+
+	t.Run("fetch after delete", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, basePath, nil)
+		req.Header.Set("Authorization", "Bearer "+readToken)
+		resp := httptest.NewRecorder()
+
+		srv.handleMetadataOverrides(resp, req)
+
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", resp.Code)
+		}
+
+		var payload struct {
+			Overrides *library.MetadataOverrides `json:"overrides"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("failed to decode payload: %v", err)
+		}
+		if payload.Overrides != nil {
+			t.Fatalf("expected overrides to be cleared, got %+v", payload.Overrides)
+		}
+	})
+}
+
 func TestWorkerRegistrationEndpoint(t *testing.T) {
 	libSvc := mustLibraryService(t, library.Config{})
 	workerSvc := mustWorkerService(t)

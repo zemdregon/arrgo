@@ -37,6 +37,7 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("/api/v1/jobs", s.instrument("/api/v1/jobs", http.HandlerFunc(s.handleJobs)))
 	mux.Handle("/api/v1/indexer/search", s.instrument("/api/v1/indexer/search", http.HandlerFunc(s.handleIndexerSearch)))
 	mux.Handle("/api/v1/indexer/releases/grab", s.instrument("/api/v1/indexer/releases/grab", http.HandlerFunc(s.handleIndexerGrab)))
+	mux.Handle("/api/v1/library/overrides/", s.instrument("/api/v1/library/overrides/{entity}", http.HandlerFunc(s.handleMetadataOverrides)))
 	if s.workerService != nil {
 		mux.Handle("/api/v1/workers", s.instrument("/api/v1/workers", http.HandlerFunc(s.handleListWorkers)))
 		mux.Handle("/api/v1/workers/register", s.instrument("/api/v1/workers/register", http.HandlerFunc(s.handleRegisterWorker)))
@@ -214,6 +215,83 @@ func (s *Server) handleIndexerGrab(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]any{"release": release})
+}
+
+func (s *Server) handleMetadataOverrides(w http.ResponseWriter, r *http.Request) {
+	entityID := strings.TrimPrefix(r.URL.Path, "/api/v1/library/overrides/")
+	entityID = strings.Trim(entityID, "/")
+	if entityID == "" || strings.Contains(entityID, "/") {
+		respondError(w, http.StatusNotFound, "metadata overrides resource not found")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		if _, ok := s.requirePermission(w, r, auth.PermissionLibraryRead); !ok {
+			return
+		}
+		overrides, found, err := s.service.GetMetadataOverrides(r.Context(), entityID)
+		if err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, library.ErrMetadataOverrideEntityRequired):
+				status = http.StatusBadRequest
+			case errors.Is(err, library.ErrUnknownEntity):
+				status = http.StatusNotFound
+			}
+			respondError(w, status, err.Error())
+			return
+		}
+		if !found {
+			respondJSON(w, http.StatusOK, map[string]any{"overrides": nil})
+			return
+		}
+		respondJSON(w, http.StatusOK, map[string]any{"overrides": overrides})
+	case http.MethodPut:
+		if _, ok := s.requirePermission(w, r, auth.PermissionLibraryWrite); !ok {
+			return
+		}
+		var payload library.MetadataOverrides
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		overrides, err := s.service.SetMetadataOverrides(r.Context(), entityID, payload)
+		if err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, library.ErrMetadataOverrideEntityRequired),
+				errors.Is(err, library.ErrMetadataOverrideInvalidEpisode),
+				errors.Is(err, library.ErrMetadataOverrideInvalidEdition),
+				errors.Is(err, library.ErrMetadataOverrideInvalidTrack),
+				errors.Is(err, library.ErrMetadataOverrideInvalidTrackNum):
+				status = http.StatusBadRequest
+			case errors.Is(err, library.ErrUnknownEntity):
+				status = http.StatusNotFound
+			}
+			respondError(w, status, err.Error())
+			return
+		}
+		respondJSON(w, http.StatusOK, map[string]any{"overrides": overrides})
+	case http.MethodDelete:
+		if _, ok := s.requirePermission(w, r, auth.PermissionLibraryWrite); !ok {
+			return
+		}
+		if err := s.service.ClearMetadataOverrides(r.Context(), entityID); err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, library.ErrMetadataOverrideEntityRequired):
+				status = http.StatusBadRequest
+			case errors.Is(err, library.ErrUnknownEntity):
+				status = http.StatusNotFound
+			}
+			respondError(w, status, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		methodNotAllowed(w, http.MethodGet, http.MethodPut, http.MethodDelete)
+	}
 }
 
 func (s *Server) handleListWorkers(w http.ResponseWriter, r *http.Request) {
