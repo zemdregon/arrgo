@@ -142,3 +142,21 @@ app.kubernetes.io/component: worker
 {{ include "arrgo.selectorLabels" . }}
 app.kubernetes.io/component: worker
 {{- end -}}
+
+{{- define "arrgo.dashboard.fullname" -}}
+{{ printf "%s-dashboard" (include "arrgo.fullname" .) }}
+{{- end -}}
+
+{{- define "arrgo.dashboard.serviceName" -}}
+{{ include "arrgo.dashboard.fullname" . }}
+{{- end -}}
+
+{{- define "arrgo.dashboard.labels" -}}
+{{ include "arrgo.labels" . }}
+app.kubernetes.io/component: dashboard
+{{- end -}}
+
+{{- define "arrgo.dashboard.selectorLabels" -}}
+{{ include "arrgo.selectorLabels" . }}
+app.kubernetes.io/component: dashboard
+{{- end -}}

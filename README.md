@@ -122,18 +122,20 @@ The following documents provide deep dives into the subsystems listed above:
 1. Follow the [development setup guide](docs/development-setup.md) to install Go
    1.24+, Node.js, and Docker Compose.
 2. Launch the local Docker Compose topology to provision Redis, PostgreSQL,
-   OpenSearch, the master service, and workers.
+   OpenSearch, the master service, workers, and the dashboard UI.
 3. Explore the REST API documented in
-   [`docs/api-first-iteration.md`](docs/api-first-iteration.md) or run the
-   Next.js dashboard from [`web/dashboard`](web/dashboard) to inspect library
-   entities and queues.
+   [`docs/api-first-iteration.md`](docs/api-first-iteration.md) or browse the
+   dashboard at <http://localhost:3000> (served by Compose) to inspect library
+   entities and queues. The dashboard can also be run directly from
+   [`web/dashboard`](web/dashboard) for local iteration.
 4. Review [`docs/project-status.md`](docs/project-status.md) for current
    deliverables, owners, and outstanding risks before contributing changes.
 
 ## Deployment Pathways
 - **Local development:** Docker Compose manifests under
   [`deploy/compose`](deploy/compose) bootstrap the full stack with sensible
-  defaults. Scale worker containers to simulate larger deployments.
+  defaults, including the Next.js dashboard. Scale worker containers to simulate
+  larger deployments.
 - **Kubernetes:** The Helm chart in [`deploy/helm/arrgo`](deploy/helm/arrgo)
   deploys master/worker components, configures secrets, and integrates with
   ingress. Terraform modules in [`deploy/terraform`](deploy/terraform) automate

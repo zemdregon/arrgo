@@ -1,10 +1,10 @@
 # arrgo Helm Chart
 
-This chart deploys the arrgo control plane (`master`) and scalable worker pool on
-a Kubernetes cluster. It is designed to plug into production-grade backing
-services such as managed PostgreSQL, Redis, and OpenSearch deployments while
-providing sane defaults for security contexts, autoscaling, and observability
-integration.
+This chart deploys the arrgo control plane (`master`), scalable worker pool, and
+Next.js dashboard on a Kubernetes cluster. It is designed to plug into
+production-grade backing services such as managed PostgreSQL, Redis, and
+OpenSearch deployments while providing sane defaults for security contexts,
+autoscaling, and observability integration.
 
 ## Prerequisites
 
@@ -45,6 +45,10 @@ secret creation and point the chart at an existing secret.
 | `master.ingress.enabled` | Create an Ingress resource for the master API. | `false` |
 | `worker.replicaCount` | Baseline worker replica count when autoscaling is disabled. | `3` |
 | `worker.autoscaling.enabled` | Enable HorizontalPodAutoscaler for workers. | `true` |
+| `dashboard.enabled` | Deploy the Next.js dashboard alongside the control plane. | `true` |
+| `dashboard.image.repository` | Dashboard container image repository. | `ghcr.io/example-org/arrgo-dashboard` |
+| `dashboard.service.type` | Kubernetes service type for the dashboard UI. | `ClusterIP` |
+| `dashboard.ingress.enabled` | Create an Ingress resource for the dashboard UI. | `false` |
 
 Refer to [`values.yaml`](./values.yaml) for the complete set of tunable options.
 
@@ -60,6 +64,9 @@ keys:
 - `ARRGO_REDIS_ADDR`
 - `ARRGO_OPENSEARCH_URL`
 - `ARRGO_MASTER_URL`
+
+The dashboard uses `ARRGO_MASTER_URL` to determine the base API endpoint
+displayed in the web UI.
 
 The Terraform module in [`deploy/terraform`](../terraform) demonstrates how to
 codify secret creation and Helm installation in a single workflow.

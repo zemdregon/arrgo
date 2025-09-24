@@ -34,7 +34,9 @@ From the `deploy/compose` directory:
 docker compose up --build
 ```
 
-The command provisions PostgreSQL, Redis, OpenSearch, and arrgo master/worker containers with sensible defaults. To simulate a larger cluster, scale workers:
+The command provisions PostgreSQL, Redis, OpenSearch, arrgo master/worker
+containers, and the dashboard UI with sensible defaults. Access the dashboard at
+<http://localhost:3000>. To simulate a larger cluster, scale workers:
 
 ```bash
 docker compose up --build --scale arrgo-worker=3
@@ -61,6 +63,10 @@ The read-only cluster dashboard lives in [`web/dashboard`](../web/dashboard) and
 4. Run linting with `npm run lint` and build with `npm run build`. Use `npm start` to serve the production build locally.
 
 The dashboard fetches data from the REST API exposed by the Go services (`/api/v1/library/entities`, `/api/v1/jobs`, `/api/v1/workers`). Each panel uses reusable components so additional views can piggyback on the existing layout and status badges.
+
+> **Tip:** The Docker Compose dashboard service automatically sets
+> `NEXT_PUBLIC_ARRGO_API_URL` to the internal master service URL so the UI works
+> out of the box.
 
 ## Observability During Development
 - Access container logs with `docker compose logs -f <service>`.

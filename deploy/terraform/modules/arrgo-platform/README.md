@@ -1,8 +1,9 @@
 # arrgo Terraform Module
 
-This module installs the arrgo Helm chart and, optionally, creates the target
-Kubernetes namespace. It is intended to be composed with infrastructure modules
-that provision managed PostgreSQL, Redis, and OpenSearch services.
+This module installs the arrgo Helm chart (control plane, workers, and
+dashboard) and, optionally, creates the target Kubernetes namespace. It is
+intended to be composed with infrastructure modules that provision managed
+PostgreSQL, Redis, and OpenSearch services.
 
 ## Usage
 
@@ -26,6 +27,12 @@ module "arrgo" {
       logLevel      = var.log_level
     }
     master = {
+      service = {
+        type = "LoadBalancer"
+      }
+    }
+    dashboard = {
+      enabled = true
       service = {
         type = "LoadBalancer"
       }
