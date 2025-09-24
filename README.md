@@ -48,6 +48,7 @@ Each component is provisioned as a dedicated Docker container. Infrastructure-as
 Until the initial release is available, track the following tasks.
 
 ### Completed
+- ✅ Implement cross-region media replication workflows with S3-compatible object storage targets and policy-driven retention. See [`docs/media-replication.md`](docs/media-replication.md).
 - ✅ Integrate prioritized download client failover with health-aware routing. See [`docs/download-client-failover.md`](docs/download-client-failover.md).
 - ✅ Publish the download client plugin SDK and contract tests so third-party adapters can target arrgo releases. See [`sdk/downloadclient`](sdk/downloadclient) and [`docs/download-plugin-sdk.md`](docs/download-plugin-sdk.md).
 - ✅ Implement role-based access controls with per-application API key generation, labeling, and rotation workflows. See [`docs/access-control.md`](docs/access-control.md).
@@ -72,7 +73,6 @@ Until the initial release is available, track the following tasks.
 - ✅ Expand the web dashboard with queue analytics, job drill-downs, and worker pool configuration editing. See [`web/dashboard`](web/dashboard) and [`docs/dashboard-operations.md`](docs/dashboard-operations.md).
 
 ### Up Next
-- 🚧 Implement cross-region media replication workflows with S3-compatible object storage targets and policy-driven retention.
 - 🚧 Add automated indexer health scoring and discovery to help operators tune failover thresholds without manual intervention.
 - 🚧 Implement external list ingestion (e.g., Trakt, IMDb, Last.fm) with a pluggable module system—mirroring notification and downloader agents—so new providers can be added without core changes while still matching Sonarr/Radarr/Lidarr list sync behavior.
 - 🚧 Build release profile/custom format scoring with preferred group/codec filters, blocklists, and backwards-compatible support for importing Sonarr/Radarr custom format definitions to match the advanced grab rules in the existing *arr applications.
