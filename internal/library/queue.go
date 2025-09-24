@@ -160,6 +160,17 @@ func (q *OrchestrationQueue) Ack(ctx context.Context, streamID string) error {
 	return nil
 }
 
+// Delete removes a job from the stream without acknowledging it.
+func (q *OrchestrationQueue) Delete(ctx context.Context, streamID string) error {
+	if streamID == "" {
+		return fmt.Errorf("library: stream id is required")
+	}
+	if err := q.client.XDel(ctx, q.stream, streamID).Err(); err != nil {
+		return fmt.Errorf("library: delete job %q: %w", streamID, err)
+	}
+	return nil
+}
+
 // Retry re-queues a job for another execution attempt.
 func (q *OrchestrationQueue) Retry(ctx context.Context, streamID string, job Job) (string, error) {
 	newID, err := q.enqueue(ctx, job, true)

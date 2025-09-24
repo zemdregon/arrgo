@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -114,7 +115,11 @@ func (s *Service) SetMetadataOverrides(ctx context.Context, entityID string, pay
 		return
 	}
 
-	normalized.UpdatedAt = s.clock.Now()
+	normalized.UpdatedAt = s.clock.Now().UTC()
+	if repoErr := s.repository.UpsertMetadataOverrides(ctx, trimmedID, normalized); repoErr != nil {
+		err = fmt.Errorf("library: persist metadata overrides: %w", repoErr)
+		return
+	}
 	s.metadataOverrides[trimmedID] = normalized
 
 	span.SetAttributes(
@@ -150,6 +155,11 @@ func (s *Service) ClearMetadataOverrides(ctx context.Context, entityID string) (
 
 	if !s.entityExistsLocked(trimmedID) {
 		err = ErrUnknownEntity
+		return
+	}
+
+	if repoErr := s.repository.DeleteMetadataOverrides(ctx, trimmedID); repoErr != nil {
+		err = fmt.Errorf("library: delete metadata overrides: %w", repoErr)
 		return
 	}
 
