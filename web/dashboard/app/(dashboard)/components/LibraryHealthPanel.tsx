@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { DataPanel } from "../../../components/DataPanel";
 import type { RestApiClient, LibraryEntity } from "../../../lib/api";
 import {
@@ -27,6 +34,7 @@ interface LibraryHealthPanelProps {
   restClient: RestApiClient;
   canWriteLibrary: boolean;
   onJobsRefetch: () => void;
+  focusedEntityId?: string;
 }
 
 export function LibraryHealthPanel({
@@ -37,6 +45,7 @@ export function LibraryHealthPanel({
   restClient,
   canWriteLibrary,
   onJobsRefetch,
+  focusedEntityId,
 }: LibraryHealthPanelProps) {
   const [libraryTypeFilter, setLibraryTypeFilter] = useState("all");
   const [jobTypeSelection, setJobTypeSelection] = useState(
@@ -68,6 +77,7 @@ export function LibraryHealthPanel({
     [data],
   );
   const libraryStats = useMemo(() => buildLibraryStats(data), [data]);
+  const lastFocusedEntityRef = useRef<string | undefined>();
 
   useEffect(() => {
     if (
@@ -91,6 +101,24 @@ export function LibraryHealthPanel({
     }
     setJobTargetSelection(libraryEntityOptions[0].value);
   }, [jobTargetSelection, libraryEntityOptions]);
+
+  useEffect(() => {
+    if (!focusedEntityId) {
+      lastFocusedEntityRef.current = undefined;
+      return;
+    }
+    if (lastFocusedEntityRef.current === focusedEntityId) {
+      return;
+    }
+    const match = libraryEntityOptions.find(
+      (option) => option.value === focusedEntityId,
+    );
+    if (!match) {
+      return;
+    }
+    lastFocusedEntityRef.current = focusedEntityId;
+    setJobTargetSelection(focusedEntityId);
+  }, [focusedEntityId, libraryEntityOptions]);
 
   const visibleLibrary = useMemo(() => {
     const entities = data ?? [];
@@ -398,14 +426,23 @@ export function LibraryHealthPanel({
               })}
             </div>
             <ul className={styles.entityList}>
-              {visibleLibrary.slice(0, 5).map((entity) => (
-                <li key={entity.id} className={styles.entityItem}>
+              {visibleLibrary.slice(0, 5).map((entity) => {
+                const isFocused = entity.id === focusedEntityId;
+                return (
+                  <li
+                    key={entity.id}
+                    className={styles.entityItem}
+                    data-entity-id={entity.id}
+                    data-focus={isFocused ? "true" : undefined}
+                    tabIndex={isFocused ? -1 : undefined}
+                  >
                   <span className={styles.entityTitle}>
                     {entity.title || entity.id}
                   </span>
                   <span className={styles.entityType}>{entity.entityType}</span>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           </>
         ) : (

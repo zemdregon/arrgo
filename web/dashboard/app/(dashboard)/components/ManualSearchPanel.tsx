@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { DataPanel } from "../../../components/DataPanel";
 import { StatusPill } from "../../../components/StatusPill";
 import type {
@@ -23,12 +30,14 @@ interface ManualSearchPanelProps {
   data?: LibraryEntity[];
   restClient: RestApiClient;
   canWriteLibrary: boolean;
+  focusedEntityId?: string;
 }
 
 export function ManualSearchPanel({
   data,
   restClient,
   canWriteLibrary,
+  focusedEntityId,
 }: ManualSearchPanelProps) {
   const libraryEntityOptions = useMemo(
     () => createEntityOptions(data),
@@ -67,6 +76,26 @@ export function ManualSearchPanel({
     }
     setManualEntitySelection(libraryEntityOptions[0].value);
   }, [libraryEntityOptions, manualEntitySelection]);
+
+  const lastFocusedEntityRef = useRef<string | undefined>();
+
+  useEffect(() => {
+    if (!focusedEntityId) {
+      lastFocusedEntityRef.current = undefined;
+      return;
+    }
+    if (lastFocusedEntityRef.current === focusedEntityId) {
+      return;
+    }
+    const match = libraryEntityOptions.find(
+      (option) => option.value === focusedEntityId,
+    );
+    if (!match) {
+      return;
+    }
+    lastFocusedEntityRef.current = focusedEntityId;
+    setManualEntitySelection(focusedEntityId);
+  }, [focusedEntityId, libraryEntityOptions]);
 
   const loadManualSearch = useCallback(() => {
     setGrabInFlight(null);
