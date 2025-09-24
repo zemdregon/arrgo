@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { DataPanel } from "../../components/DataPanel";
 import { StatusPill } from "../../components/StatusPill";
 import { PageHeader } from "../../components/layout/PageHeader";
@@ -293,7 +294,9 @@ function formatRelativeTime(value?: string): string {
 export default function DashboardPage() {
   const { current } = useEnvironment();
   const { status: authStatus, hasPermission } = useAuth();
+  const searchParams = useSearchParams();
   const apiBaseUrl = current.apiUrl;
+  const focusEntityId = searchParams.get("focusEntity");
 
   const isAuthenticated = authStatus === "authenticated";
   const canReadLibrary = isAuthenticated && hasPermission("library:read");
@@ -702,6 +705,29 @@ export default function DashboardPage() {
       (entity) => normalize(entity.entityType) === libraryTypeFilter,
     );
   }, [libraryData, libraryTypeFilter]);
+
+  useEffect(() => {
+    if (!focusEntityId || libraryLoading || !(libraryData?.length ?? 0)) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const escapeSelector = (value: string) => {
+      if (window.CSS && typeof window.CSS.escape === "function") {
+        return window.CSS.escape(value);
+      }
+      return value.replace(/"/g, '\\"').replace(/\\/g, "\\\\");
+    };
+    const selector = `[data-entity-id="${escapeSelector(focusEntityId)}"]`;
+    const element = document.querySelector<HTMLElement>(selector);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (typeof element.focus === "function") {
+        element.focus({ preventScroll: true });
+      }
+    }
+  }, [focusEntityId, libraryData, libraryLoading]);
 
   const visibleJobs = useMemo(() => {
     const items = jobsData ?? [];
@@ -1263,16 +1289,25 @@ export default function DashboardPage() {
                   })}
                 </div>
                 <ul className={styles.entityList}>
-                  {visibleLibrary.slice(0, 5).map((entity) => (
-                    <li key={entity.id} className={styles.entityItem}>
-                      <span className={styles.entityTitle}>
-                        {entity.title || entity.id}
-                      </span>
-                      <span className={styles.entityType}>
-                        {entity.entityType}
-                      </span>
-                    </li>
-                  ))}
+                  {visibleLibrary.slice(0, 5).map((entity) => {
+                    const isFocused = focusEntityId === entity.id;
+                    return (
+                      <li
+                        key={entity.id}
+                        className={styles.entityItem}
+                        data-focus={isFocused ? "true" : undefined}
+                        data-entity-id={entity.id}
+                        tabIndex={isFocused ? -1 : undefined}
+                      >
+                        <span className={styles.entityTitle}>
+                          {entity.title || entity.id}
+                        </span>
+                        <span className={styles.entityType}>
+                          {entity.entityType}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </>
             ) : (
