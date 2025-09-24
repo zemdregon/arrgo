@@ -58,6 +58,48 @@ export interface WorkerSummary {
   activeJobs: number;
 }
 
+export type QueueHealthStatus = "healthy" | "warning" | "critical";
+
+export interface QueueStreamLagMetric {
+  stream: string;
+  consumerGroup: string;
+  lagSeconds?: number;
+  lagMessages?: number;
+  oldestPendingAgeSeconds?: number;
+  lastProducedAt?: string;
+  lastConsumedAt?: string;
+  status: QueueHealthStatus;
+}
+
+export interface QueueRetryMetric {
+  jobType: string;
+  retryCount: number;
+  recentFailureRate?: number;
+  maxAttempts?: number;
+  oldestRetryAgeSeconds?: number;
+  lastRetryAt?: string;
+  status: QueueHealthStatus;
+}
+
+export interface QueueSlaIndicator {
+  queue: string;
+  targetSeconds?: number;
+  p95Seconds?: number;
+  p99Seconds?: number;
+  successRate?: number;
+  breachesToday?: number;
+  status: QueueHealthStatus;
+  updatedAt?: string;
+}
+
+export interface QueueAnalyticsOverview {
+  updatedAt?: string;
+  observedWindowSeconds?: number;
+  streamLag: QueueStreamLagMetric[];
+  retries: QueueRetryMetric[];
+  sla: QueueSlaIndicator[];
+}
+
 export interface ManualSearchRelease {
   id: string;
   searchID: string;
@@ -83,6 +125,53 @@ export interface ManualSearchResult {
   query: string;
   executedAt?: string;
   results: ManualSearchRelease[];
+}
+
+export interface ReadingList {
+  id: string;
+  name: string;
+  source: string;
+  curator?: string;
+  entryCount: number;
+  completedCount: number;
+  lastSyncedAt?: string;
+  tags: string[];
+}
+
+export interface MetadataSourceSummary {
+  provider: string;
+  identifier?: string;
+  edition?: string;
+  language?: string;
+  publishedAt?: string;
+  runtimeMinutes?: number;
+  quality?: string;
+  format?: string;
+}
+
+export interface MetadataComparison {
+  id: string;
+  title: string;
+  author?: string;
+  ebook?: MetadataSourceSummary | null;
+  audiobook?: MetadataSourceSummary | null;
+  confidence: number;
+  mismatchedFields: string[];
+  lastEvaluatedAt?: string;
+}
+
+export interface DownloadHistoryEntry {
+  id: string;
+  entityID?: string;
+  title: string;
+  format: string;
+  status: string;
+  sizeBytes?: number;
+  sourceList?: string;
+  client?: string;
+  downloadedAt?: string;
+  completedAt?: string;
+  failureReason?: string;
 }
 
 export interface TriggerJobInput {
@@ -178,6 +267,50 @@ interface RawWorkerPool {
   max_concurrent_jobs?: number;
 }
 
+interface RawQueueStreamLagMetric {
+  stream: string;
+  consumer_group: string;
+  lag_seconds?: number;
+  lag_messages?: number;
+  oldest_pending_age_seconds?: number;
+  last_produced_at?: string;
+  last_consumed_at?: string;
+  status?: string;
+}
+
+interface RawQueueRetryMetric {
+  job_type: string;
+  retry_count?: number;
+  recent_failure_rate?: number;
+  max_attempts?: number;
+  oldest_retry_age_seconds?: number;
+  last_retry_at?: string;
+  status?: string;
+}
+
+interface RawQueueSlaIndicator {
+  queue: string;
+  target_seconds?: number;
+  p95_seconds?: number;
+  p99_seconds?: number;
+  success_rate?: number;
+  breaches_today?: number;
+  status?: string;
+  updated_at?: string;
+}
+
+interface RawQueueAnalyticsOverview {
+  updated_at?: string;
+  observed_window_seconds?: number;
+  stream_lag?: RawQueueStreamLagMetric[];
+  retry_metrics?: RawQueueRetryMetric[];
+  sla?: RawQueueSlaIndicator[];
+}
+
+interface RawQueueAnalyticsResponse {
+  analytics: RawQueueAnalyticsOverview;
+}
+
 interface RawManualSearchRelease {
   ID: string;
   SearchID: string;
@@ -203,6 +336,53 @@ interface RawManualSearchResult {
   Query: string;
   ExecutedAt?: string;
   Results: RawManualSearchRelease[];
+}
+
+interface RawReadingList {
+  id: string;
+  name: string;
+  source: string;
+  curator?: string;
+  entry_count?: number;
+  completed_count?: number;
+  last_synced_at?: string;
+  tags?: Array<string | null | undefined>;
+}
+
+interface RawMetadataSourceSummary {
+  provider: string;
+  identifier?: string;
+  edition?: string;
+  language?: string;
+  published_at?: string;
+  runtime_minutes?: number;
+  quality?: string;
+  format?: string;
+}
+
+interface RawMetadataComparison {
+  id: string;
+  title: string;
+  author?: string;
+  ebook?: RawMetadataSourceSummary | null;
+  audiobook?: RawMetadataSourceSummary | null;
+  confidence?: number;
+  mismatched_fields?: Array<string | null | undefined>;
+  last_evaluated_at?: string;
+}
+
+interface RawDownloadHistoryEntry {
+  id: string;
+  entity_id?: string;
+  title: string;
+  format: string;
+  status: string;
+  size_bytes?: number;
+  source_list?: string;
+  client?: string;
+  downloaded_at?: string;
+  completed_at?: string;
+  failure_reason?: string;
 }
 
 interface RawPrincipal {
@@ -324,6 +504,82 @@ function normalizeManualSearchResult(
   };
 }
 
+function normalizeStringArray(
+  values?: Array<string | null | undefined>,
+): string[] {
+  return (values ?? [])
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+}
+
+function normalizeReadingList(list: RawReadingList): ReadingList {
+  return {
+    id: list.id,
+    name: list.name,
+    source: list.source,
+    curator: list.curator?.trim() || undefined,
+    entryCount: list.entry_count ?? 0,
+    completedCount: list.completed_count ?? 0,
+    lastSyncedAt: normalizeTimestamp(list.last_synced_at),
+    tags: normalizeStringArray(list.tags),
+  };
+}
+
+function normalizeMetadataSource(
+  source?: RawMetadataSourceSummary | null,
+): MetadataSourceSummary | null {
+  if (!source) {
+    return null;
+  }
+  return {
+    provider: source.provider,
+    identifier: source.identifier?.trim() || undefined,
+    edition: source.edition?.trim() || undefined,
+    language: source.language?.trim() || undefined,
+    publishedAt: normalizeTimestamp(source.published_at),
+    runtimeMinutes: source.runtime_minutes ?? undefined,
+    quality: source.quality?.trim() || undefined,
+    format: source.format?.trim() || undefined,
+  };
+}
+
+function normalizeMetadataComparison(
+  comparison: RawMetadataComparison,
+): MetadataComparison {
+  const confidence = comparison.confidence ?? 0;
+  const normalizedConfidence = Number.isFinite(confidence)
+    ? Math.min(Math.max(confidence, 0), 1)
+    : 0;
+  return {
+    id: comparison.id,
+    title: comparison.title,
+    author: comparison.author?.trim() || undefined,
+    ebook: normalizeMetadataSource(comparison.ebook),
+    audiobook: normalizeMetadataSource(comparison.audiobook),
+    confidence: normalizedConfidence,
+    mismatchedFields: normalizeStringArray(comparison.mismatched_fields),
+    lastEvaluatedAt: normalizeTimestamp(comparison.last_evaluated_at),
+  };
+}
+
+function normalizeDownloadHistoryEntry(
+  entry: RawDownloadHistoryEntry,
+): DownloadHistoryEntry {
+  return {
+    id: entry.id,
+    entityID: entry.entity_id?.trim() || undefined,
+    title: entry.title,
+    format: entry.format,
+    status: entry.status,
+    sizeBytes: entry.size_bytes ?? undefined,
+    sourceList: entry.source_list?.trim() || undefined,
+    client: entry.client?.trim() || undefined,
+    downloadedAt: normalizeTimestamp(entry.downloaded_at),
+    completedAt: normalizeTimestamp(entry.completed_at),
+    failureReason: entry.failure_reason?.trim() || undefined,
+  };
+}
+
 function normalizePrincipal(payload: RawPrincipal): Principal {
   const key = payload.key ?? {
     id: "",
@@ -355,6 +611,109 @@ function normalizePrincipal(payload: RawPrincipal): Principal {
     permissions: (payload.permissions ?? [])
       .map((permission) => permission.trim())
       .filter(Boolean),
+  };
+}
+
+function normalizeQueueStatus(status?: string): QueueHealthStatus {
+  switch (status?.toLowerCase()) {
+    case "healthy":
+    case "ok":
+    case "normal":
+      return "healthy";
+    case "warning":
+    case "degraded":
+    case "elevated":
+      return "warning";
+    case "critical":
+    case "danger":
+    case "failed":
+      return "critical";
+    default:
+      return "warning";
+  }
+}
+
+function sanitizePositiveNumber(value?: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value <= 0) {
+    return 0;
+  }
+  return value;
+}
+
+function sanitizeRate(value?: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value <= 0) {
+    return 0;
+  }
+  if (value >= 1) {
+    return 1;
+  }
+  return value;
+}
+
+function normalizeQueueStreamLag(
+  metric: RawQueueStreamLagMetric,
+): QueueStreamLagMetric {
+  return {
+    stream: metric.stream,
+    consumerGroup: metric.consumer_group,
+    lagSeconds: sanitizePositiveNumber(metric.lag_seconds),
+    lagMessages: sanitizePositiveNumber(metric.lag_messages),
+    oldestPendingAgeSeconds: sanitizePositiveNumber(
+      metric.oldest_pending_age_seconds,
+    ),
+    lastProducedAt: normalizeTimestamp(metric.last_produced_at),
+    lastConsumedAt: normalizeTimestamp(metric.last_consumed_at),
+    status: normalizeQueueStatus(metric.status),
+  };
+}
+
+function normalizeQueueRetryMetric(metric: RawQueueRetryMetric): QueueRetryMetric {
+  return {
+    jobType: metric.job_type,
+    retryCount: sanitizePositiveNumber(metric.retry_count) ?? 0,
+    recentFailureRate: sanitizeRate(metric.recent_failure_rate),
+    maxAttempts: sanitizePositiveNumber(metric.max_attempts),
+    oldestRetryAgeSeconds: sanitizePositiveNumber(
+      metric.oldest_retry_age_seconds,
+    ),
+    lastRetryAt: normalizeTimestamp(metric.last_retry_at),
+    status: normalizeQueueStatus(metric.status),
+  };
+}
+
+function normalizeQueueSlaIndicator(
+  indicator: RawQueueSlaIndicator,
+): QueueSlaIndicator {
+  return {
+    queue: indicator.queue,
+    targetSeconds: sanitizePositiveNumber(indicator.target_seconds),
+    p95Seconds: sanitizePositiveNumber(indicator.p95_seconds),
+    p99Seconds: sanitizePositiveNumber(indicator.p99_seconds),
+    successRate: sanitizeRate(indicator.success_rate),
+    breachesToday: sanitizePositiveNumber(indicator.breaches_today),
+    status: normalizeQueueStatus(indicator.status),
+    updatedAt: normalizeTimestamp(indicator.updated_at),
+  };
+}
+
+function normalizeQueueAnalytics(
+  analytics?: RawQueueAnalyticsOverview,
+): QueueAnalyticsOverview {
+  const safeAnalytics = analytics ?? {};
+  return {
+    updatedAt: normalizeTimestamp(safeAnalytics.updated_at),
+    observedWindowSeconds: sanitizePositiveNumber(
+      safeAnalytics.observed_window_seconds,
+    ),
+    streamLag: (safeAnalytics.stream_lag ?? []).map(normalizeQueueStreamLag),
+    retries: (safeAnalytics.retry_metrics ?? []).map(normalizeQueueRetryMetric),
+    sla: (safeAnalytics.sla ?? []).map(normalizeQueueSlaIndicator),
   };
 }
 
@@ -424,6 +783,17 @@ export class RestApiClient {
       },
     );
     return payload.workers.map(mapWorkerSummary);
+  }
+
+  async fetchQueueAnalytics(): Promise<QueueAnalyticsOverview> {
+    const payload = await this.http.get<RawQueueAnalyticsResponse>(
+      "/api/v1/queue/analytics",
+      {
+        traceName: "REST GET /api/v1/queue/analytics",
+        traceAttributes: { resource: "queue.analytics" },
+      },
+    );
+    return normalizeQueueAnalytics(payload.analytics);
   }
 
   async triggerJob(input: TriggerJobInput): Promise<JobSummary> {
@@ -558,6 +928,39 @@ export class RestApiClient {
     );
     return normalizePrincipal(payload.principal);
   }
+
+  async fetchReadingLists(): Promise<ReadingList[]> {
+    const payload = await this.http.get<{ lists: RawReadingList[] }>(
+      "/api/v1/library/reading-lists",
+      {
+        traceName: "REST GET /api/v1/library/reading-lists",
+        traceAttributes: { resource: "library.reading_lists" },
+      },
+    );
+    return (payload.lists ?? []).map(normalizeReadingList);
+  }
+
+  async fetchMetadataComparisons(): Promise<MetadataComparison[]> {
+    const payload = await this.http.get<{ comparisons: RawMetadataComparison[] }>(
+      "/api/v1/library/metadata/comparisons",
+      {
+        traceName: "REST GET /api/v1/library/metadata/comparisons",
+        traceAttributes: { resource: "library.metadata_comparisons" },
+      },
+    );
+    return (payload.comparisons ?? []).map(normalizeMetadataComparison);
+  }
+
+  async fetchDownloadHistory(): Promise<DownloadHistoryEntry[]> {
+    const payload = await this.http.get<{ history: RawDownloadHistoryEntry[] }>(
+      "/api/v1/library/download-history",
+      {
+        traceName: "REST GET /api/v1/library/download-history",
+        traceAttributes: { resource: "library.download_history" },
+      },
+    );
+    return (payload.history ?? []).map(normalizeDownloadHistoryEntry);
+  }
 }
 
 const defaultRestClient = new RestApiClient();
@@ -576,6 +979,12 @@ export function fetchJobs(baseUrl?: string): Promise<JobSummary[]> {
 
 export function fetchWorkers(baseUrl?: string): Promise<WorkerSummary[]> {
   return defaultRestClient.withBaseUrl(baseUrl).fetchWorkers();
+}
+
+export function fetchQueueAnalytics(
+  baseUrl?: string,
+): Promise<QueueAnalyticsOverview> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchQueueAnalytics();
 }
 
 export function triggerJob(
@@ -624,6 +1033,22 @@ export function grabManualRelease(
 
 export function fetchPrincipal(baseUrl?: string): Promise<Principal> {
   return defaultRestClient.withBaseUrl(baseUrl).fetchPrincipal();
+}
+
+export function fetchReadingLists(baseUrl?: string): Promise<ReadingList[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchReadingLists();
+}
+
+export function fetchMetadataComparisons(
+  baseUrl?: string,
+): Promise<MetadataComparison[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchMetadataComparisons();
+}
+
+export function fetchDownloadHistory(
+  baseUrl?: string,
+): Promise<DownloadHistoryEntry[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchDownloadHistory();
 }
 
 export interface GrpcLibraryClientOptions extends RestApiClientOptions {}

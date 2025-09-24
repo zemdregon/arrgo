@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/arrgo/arrgo/internal/timeutil"
 )
 
 type fakeClock struct {
@@ -42,10 +44,10 @@ type storedObject struct {
 type memoryStorage struct {
 	mu      sync.RWMutex
 	objects map[string]map[string]storedObject
-	clock   Clock
+	clock   timeutil.Clock
 }
 
-func newMemoryStorage(clock Clock) *memoryStorage {
+func newMemoryStorage(clock timeutil.Clock) *memoryStorage {
 	return &memoryStorage{objects: make(map[string]map[string]storedObject), clock: clock}
 }
 
@@ -335,7 +337,7 @@ func TestRegisterWorkflowValidation(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 
-	err = svc.RegisterWorkflow(Workflow{Name: "", Targets: []Target{{Name: "x", Client: newMemoryStorage(systemClock{})}}})
+	err = svc.RegisterWorkflow(Workflow{Name: "", Targets: []Target{{Name: "x", Client: newMemoryStorage(timeutil.SystemClock{})}}})
 	if !errors.Is(err, ErrInvalidWorkflow) {
 		t.Fatalf("expected ErrInvalidWorkflow, got %v", err)
 	}

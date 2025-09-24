@@ -36,6 +36,13 @@
   flex-shrink: 0;
 }
 
+.commandMenu {
+  flex: 1 1 18rem;
+  flex-shrink: 1;
+  max-width: 28rem;
+  min-width: 14rem;
+}
+
 .apiKeySelector {
   max-width: 16rem;
 }
@@ -65,5 +72,11 @@
   .headerControls {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .commandMenu {
+    order: -1;
+    width: 100%;
+    max-width: none;
   }
 }

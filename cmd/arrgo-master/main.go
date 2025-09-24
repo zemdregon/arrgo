@@ -22,6 +22,7 @@ import (
 	"github.com/arrgo/arrgo/internal/api/librarypb"
 	"github.com/arrgo/arrgo/internal/api/workerpb"
 	"github.com/arrgo/arrgo/internal/auth"
+	"github.com/arrgo/arrgo/internal/buildinfo"
 	"github.com/arrgo/arrgo/internal/library"
 	"github.com/arrgo/arrgo/internal/worker"
 	"github.com/google/uuid"
@@ -65,7 +66,13 @@ func run(ctx context.Context, cfg masterConfig, logger *slog.Logger) error {
 	baseCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	logger.Info("starting arrgo master", "http_addr", cfg.HTTPAddr, "grpc_addr", cfg.GRPCAddr, "disable_auth", cfg.DisableAuth)
+	logger.Info("starting arrgo master",
+		append([]any{
+			"http_addr", cfg.HTTPAddr,
+			"grpc_addr", cfg.GRPCAddr,
+			"disable_auth", cfg.DisableAuth,
+		}, buildinfo.Fields()...)...,
+	)
 
 	redisClient, err := connectRedis(baseCtx, cfg, logger)
 	if err != nil {

@@ -4,9 +4,9 @@
 > **Status:** Implemented (REST and gRPC servers are wired into `internal/api/httpapi` and `internal/api/grpcapi`)
 
 The initial API surface exposes lightweight REST and gRPC interfaces for library
-management and orchestration. The implementations use an in-memory catalog so
-the endpoints can be exercised before the PostgreSQL backing store lands, while
-Redis Streams now handle orchestration job fan-out and worker coordination.
+management and orchestration. Catalog entities, jobs, and overrides are
+persisted in PostgreSQL, while Redis Streams handle orchestration job fan-out
+and worker coordination.
 
 ## Implementation Notes
 - REST routing is provided by the HTTP server in
@@ -30,8 +30,8 @@ Base path: `/api/v1`
 ### Library endpoints
 
 #### `GET /api/v1/library/entities`
-- **Description:** List catalog entities. Results default to a seeded in-memory catalog
-  until PostgreSQL persistence is wired in.
+- **Description:** List catalog entities persisted in PostgreSQL. The example
+  payload below reflects a single series row stored in the database.
 - **Query Parameters:**
   - `type` (optional) — filter by entity type (`series`, `movie`, `artist`, etc.).
 - **Response:**

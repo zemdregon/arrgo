@@ -19,21 +19,21 @@
 
 ### Navigation & Layout
 - [x] Create persistent shell with navigation, environment context switcher, and worker status indicator.
-- [ ] Implement responsive grid/layout rules for widescreen dashboards and compact tablet views.
-- [ ] Add global search and quick action palette for navigating entities and triggering automation workflows.
+- [x] Implement responsive grid/layout rules for widescreen dashboards and compact tablet views.
+- [x] Add global search and quick action palette for navigating entities and triggering automation workflows.
 
 ### Library & Automation Views
 - [x] Library overview with filterable status cards (pending imports, quality upgrades, failures).
 - [ ] Detail pages for shows, movies, albums, and books that expose metadata, history, and manual job triggers.
-- [ ] Queue analytics dashboard with stream lag, retry counts, and SLA indicators.
+- [x] Queue analytics dashboard with stream lag, retry counts, and SLA indicators.
 - [ ] Policy management editor for release profiles, retention rules, and media-specific overrides.
-- [ ] Readarr replacement UI: reading lists, audiobook/ebook metadata comparisons, and download history timelines.
+- [x] Readarr replacement UI: reading lists, audiobook/ebook metadata comparisons, and download history timelines.
 
 ### Request Management (Overseerr Replacement)
-- [ ] Public/private request form with media search, availability indicators, and quota display.
-- [ ] Approval workflow view with bulk actions, automation previews, and status history.
-- [ ] Notification settings for request outcomes (email, webhook, push integrations).
-- [ ] SLA metrics for request turnaround, backlog aging, and policy violations.
+- [x] Public/private request form with media search, availability indicators, and quota display.
+- [x] Approval workflow view with bulk actions, automation previews, and status history.
+- [x] Notification settings for request outcomes (email, webhook, push integrations).
+- [x] SLA metrics for request turnaround, backlog aging, and policy violations.
 
 ### Worker & Infrastructure Operations
 - [ ] Worker pool list with health indicators, capability tags, and heartbeat timelines.
