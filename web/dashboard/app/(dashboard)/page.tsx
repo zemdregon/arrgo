@@ -5,6 +5,7 @@ import { DataPanel } from "../../components/DataPanel";
 import { StatusPill } from "../../components/StatusPill";
 import { PageHeader } from "../../components/layout/PageHeader";
 import { useEnvironment } from "../../components/environment/EnvironmentContext";
+import { useAuth } from "../../components/auth/AuthContext";
 import { useApiData } from "../../hooks/useApiData";
 import {
   fetchEntities,
@@ -297,7 +298,14 @@ function formatRelativeTime(value?: string): string {
 
 export default function DashboardPage() {
   const { current } = useEnvironment();
+  const { status: authStatus, hasPermission } = useAuth();
   const apiBaseUrl = current.apiUrl;
+
+  const isAuthenticated = authStatus === "authenticated";
+  const canReadLibrary = isAuthenticated && hasPermission("library:read");
+  const canReadWorkers = isAuthenticated && hasPermission("worker:read");
+  const canWriteLibrary = isAuthenticated && hasPermission("library:write");
+  const canManageWorkers = isAuthenticated && hasPermission("worker:manage");
 
   const loadLibrary = useCallback(() => fetchEntities(apiBaseUrl), [apiBaseUrl]);
   const loadJobs = useCallback(() => fetchJobs(apiBaseUrl), [apiBaseUrl]);
@@ -307,10 +315,14 @@ export default function DashboardPage() {
     [apiBaseUrl],
   );
 
-  const library = useApiData(loadLibrary, [apiBaseUrl]);
-  const jobs = useApiData(loadJobs, [apiBaseUrl]);
-  const workers = useApiData(loadWorkers, [apiBaseUrl]);
-  const pools = useApiData(loadPools, [apiBaseUrl]);
+  const library = useApiData(loadLibrary, [apiBaseUrl], {
+    enabled: canReadLibrary,
+  });
+  const jobs = useApiData(loadJobs, [apiBaseUrl], { enabled: canReadLibrary });
+  const workers = useApiData(loadWorkers, [apiBaseUrl], {
+    enabled: canReadWorkers,
+  });
+  const pools = useApiData(loadPools, [apiBaseUrl], { enabled: canReadWorkers });
 
   const [libraryTypeFilter, setLibraryTypeFilter] = useState("all");
   const [jobStateFilter, setJobStateFilter] = useState("all");
@@ -633,13 +645,18 @@ export default function DashboardPage() {
   }, [workers.data, workerPoolFilter, workerStatusFilter]);
 
   const jobSubmitDisabled =
-    !libraryEntityOptions.length || !jobTargetSelection || jobSubmitting;
+    !canWriteLibrary ||
+    !libraryEntityOptions.length ||
+    !jobTargetSelection ||
+    jobSubmitting;
   const manualSearchSubmitDisabled =
     manualSearchLoading ||
     !manualEntitySelection ||
-    !libraryEntityOptions.length;
+    !libraryEntityOptions.length ||
+    !canWriteLibrary;
   const manualSearchResults = manualSearchResult?.results ?? [];
   const manualSearchExecutedAt = manualSearchResult?.executedAt;
+  const poolSubmitDisabled = poolSubmitting || !canManageWorkers;
 
   const formatShowingSummary = (
     visibleCount: number,
@@ -700,6 +717,13 @@ export default function DashboardPage() {
 
   const handleTriggerJob = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canWriteLibrary) {
+      setJobFeedback({
+        kind: "error",
+        message: "You do not have permission to queue jobs.",
+      });
+      return;
+    }
     if (!jobTargetSelection) {
       setJobFeedback({
         kind: "error",
@@ -752,6 +776,13 @@ export default function DashboardPage() {
     event: FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault();
+    if (!canWriteLibrary) {
+      setManualSearchFeedback({
+        kind: "error",
+        message: "You do not have permission to run manual searches.",
+      });
+      return;
+    }
     if (!manualEntitySelection) {
       setManualSearchFeedback({
         kind: "error",
@@ -790,6 +821,13 @@ export default function DashboardPage() {
     if (!manualEntitySelection) {
       return;
     }
+    if (!canWriteLibrary) {
+      setManualSearchFeedback({
+        kind: "error",
+        message: "You do not have permission to grab releases.",
+      });
+      return;
+    }
     setManualSearchFeedback(null);
     setGrabInFlight(release.id);
     try {
@@ -824,6 +862,13 @@ export default function DashboardPage() {
 
   const handlePoolSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canManageWorkers) {
+      setPoolFeedback({
+        kind: "error",
+        message: "You do not have permission to update worker pools.",
+      });
+      return;
+    }
     if (!poolSelection) {
       setPoolFeedback({
         kind: "error",
@@ -1053,6 +1098,11 @@ export default function DashboardPage() {
                     </button>
                   </form>
                 ) : null}
+                {!canWriteLibrary ? (
+                  <p className={styles.permissionNotice}>
+                    Requires <code>library:write</code> permission to queue jobs.
+                  </p>
+                ) : null}
               </>
             ) : null
           }
@@ -1227,6 +1277,12 @@ export default function DashboardPage() {
                 >
                   {manualSearchLoading ? "Searching…" : "Search indexers"}
                 </button>
+                {!canWriteLibrary ? (
+                  <p className={styles.permissionNotice}>
+                    Requires <code>library:write</code> permission to run manual
+                    searches.
+                  </p>
+                ) : null}
               </form>
               {manualSearchFeedback ? (
                 <div
@@ -1364,19 +1420,25 @@ export default function DashboardPage() {
                                         : "Queued"}
                                     </span>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      className={styles.secondaryButton}
-                                      onClick={() => handleManualGrab(release)}
-                                      disabled={
-                                        grabInFlight === release.id ||
-                                        manualSearchLoading
-                                      }
-                                    >
-                                      {grabInFlight === release.id
-                                        ? "Grabbing…"
-                                        : "Grab"}
-                                    </button>
+                                  <button
+                                    type="button"
+                                    className={styles.secondaryButton}
+                                    onClick={() => handleManualGrab(release)}
+                                    disabled={
+                                      grabInFlight === release.id ||
+                                      manualSearchLoading ||
+                                      !canWriteLibrary
+                                    }
+                                    title={
+                                      !canWriteLibrary
+                                        ? "Requires library:write permission"
+                                        : undefined
+                                    }
+                                  >
+                                    {grabInFlight === release.id
+                                      ? "Grabbing…"
+                                      : "Grab"}
+                                  </button>
                                   )}
                                 </td>
                               </tr>
@@ -2029,10 +2091,16 @@ export default function DashboardPage() {
               <button
                 type="submit"
                 className={styles.primaryButton}
-                disabled={poolSubmitting}
+                disabled={poolSubmitDisabled}
               >
                 Save configuration
               </button>
+              {!canManageWorkers ? (
+                <p className={styles.permissionNotice}>
+                  Requires <code>worker:manage</code> permission to edit worker
+                  pools.
+                </p>
+              ) : null}
             </form>
           ) : (
             <p className={styles.emptyState}>

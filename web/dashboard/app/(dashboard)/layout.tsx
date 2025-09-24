@@ -4,6 +4,8 @@ import { SidebarNavigation } from "../../components/layout/SidebarNavigation";
 import { EnvironmentSwitcher } from "../../components/environment/EnvironmentSwitcher";
 import { WorkerStatusIndicator } from "../../components/workers/WorkerStatusIndicator";
 import { ThemeToggle } from "../../components/theme/ThemeToggle";
+import { ApiKeySelector } from "../../components/auth/ApiKeySelector";
+import { AuthGuard } from "../../components/auth/AuthGuard";
 import styles from "./layout.module.css";
 
 const NAVIGATION_ITEMS = [
@@ -37,13 +39,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
           <div className={styles.headerControls}>
             <WorkerStatusIndicator />
+            <ApiKeySelector className={styles.apiKeySelector} />
             <EnvironmentSwitcher />
             <ThemeToggle className={styles.themeToggle} />
           </div>
         </div>
       }
     >
-      {children}
+      <AuthGuard requiredPermissions={["library:read", "worker:read"]}>
+        {children}
+      </AuthGuard>
     </AppShell>
   );
 }

@@ -1,5 +1,16 @@
 const FALLBACK_BASE_URL = "http://localhost:8080";
 
+type TokenProvider = () => string | undefined;
+
+const defaultTokenProvider: TokenProvider = () =>
+  process.env.NEXT_PUBLIC_ARRGO_API_TOKEN?.trim() || undefined;
+
+let resolveApiToken: TokenProvider = defaultTokenProvider;
+
+export function setApiTokenProvider(provider?: TokenProvider) {
+  resolveApiToken = provider ?? defaultTokenProvider;
+}
+
 export interface LibraryEntity {
   id: string;
   entityType: string;
@@ -85,6 +96,28 @@ export interface UpdateWorkerPoolInput {
   maxConcurrentJobs?: number;
 }
 
+export interface PrincipalRole {
+  name: string;
+  description?: string;
+  permissions: string[];
+}
+
+export interface Principal {
+  key: {
+    id: string;
+    label: string;
+    role: string;
+    version: number;
+    active: boolean;
+    createdAt?: string;
+    lastRotatedAt?: string;
+    lastUsedAt?: string;
+    revokedAt?: string;
+  };
+  role: PrincipalRole;
+  permissions: string[];
+}
+
 interface RawEntity {
   ID: string;
   EntityType: string;
@@ -154,6 +187,26 @@ interface RawManualSearchResult {
   Results: RawManualSearchRelease[];
 }
 
+interface RawPrincipal {
+  key: {
+    id: string;
+    label: string;
+    role: string;
+    version: number;
+    active: boolean;
+    created_at?: string;
+    last_rotated_at?: string;
+    last_used_at?: string;
+    revoked_at?: string;
+  };
+  role: {
+    name: string;
+    description?: string;
+    permissions?: string[];
+  };
+  permissions?: string[];
+}
+
 function getBaseUrl(): string {
   const base = process.env.NEXT_PUBLIC_ARRGO_API_URL ?? FALLBACK_BASE_URL;
   return base.replace(/\/$/, "");
@@ -180,7 +233,7 @@ async function requestJSON<T>(
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
   }
-  const token = process.env.NEXT_PUBLIC_ARRGO_API_TOKEN?.trim();
+  const token = resolveApiToken()?.trim();
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
   }
@@ -428,6 +481,38 @@ function normalizeManualSearchResult(
   };
 }
 
+function normalizePrincipal(payload: RawPrincipal): Principal {
+  const key = payload.key ?? {
+    id: "",
+    label: "",
+    role: "",
+    version: 0,
+    active: false,
+  };
+  const role = payload.role ?? { name: "", permissions: [] };
+  return {
+    key: {
+      id: key.id,
+      label: key.label,
+      role: key.role,
+      version: key.version ?? 0,
+      active: Boolean(key.active),
+      createdAt: normalizeTimestamp(key.created_at),
+      lastRotatedAt: normalizeTimestamp(key.last_rotated_at),
+      lastUsedAt: normalizeTimestamp(key.last_used_at),
+      revokedAt: normalizeTimestamp(key.revoked_at),
+    },
+    role: {
+      name: role.name,
+      description: role.description?.trim() || undefined,
+      permissions: (role.permissions ?? []).map((perm) => perm.trim()).filter(Boolean),
+    },
+    permissions: (payload.permissions ?? [])
+      .map((perm) => perm.trim())
+      .filter(Boolean),
+  };
+}
+
 export async function fetchManualSearch(
   entityID: string,
   baseUrl?: string,
@@ -437,6 +522,14 @@ export async function fetchManualSearch(
     baseUrl,
   );
   return payload.search ? normalizeManualSearchResult(payload.search) : null;
+}
+
+export async function fetchPrincipal(baseUrl?: string): Promise<Principal> {
+  const payload = await fetchJSON<{ principal: RawPrincipal }>(
+    "/api/v1/auth/principal",
+    baseUrl,
+  );
+  return normalizePrincipal(payload.principal);
 }
 
 export async function runManualSearch(
