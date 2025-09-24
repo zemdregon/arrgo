@@ -3,10 +3,12 @@ package library
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -98,6 +100,31 @@ ON CONFLICT (id) DO UPDATE SET
 		return fmt.Errorf("library: upsert entity %q: %w", id, err)
 	}
 	return nil
+}
+
+// GetEntity returns a single entity row.
+func (r *PostgresRepository) GetEntity(ctx context.Context, id string) (Entity, bool, error) {
+	trimmedID := strings.TrimSpace(id)
+	if trimmedID == "" {
+		return Entity{}, false, nil
+	}
+
+	const stmt = `
+SELECT id, entity_type, canonical_title, synopsis
+FROM catalog_entities
+WHERE id = $1;
+`
+	row := r.pool.QueryRow(ctx, stmt, trimmedID)
+
+	var entity Entity
+	if err := row.Scan(&entity.ID, &entity.EntityType, &entity.Title, &entity.Synopsis); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Entity{}, false, nil
+		}
+		return Entity{}, false, fmt.Errorf("library: get entity %q: %w", trimmedID, err)
+	}
+
+	return entity, true, nil
 }
 
 // ListEntities returns all entities ordered by title.
@@ -280,6 +307,34 @@ func (r *PostgresRepository) DeleteMetadataOverrides(ctx context.Context, entity
 		return fmt.Errorf("library: delete metadata overrides for %q: %w", id, err)
 	}
 	return nil
+}
+
+// GetMetadataOverrides fetches overrides for a single entity.
+func (r *PostgresRepository) GetMetadataOverrides(ctx context.Context, entityID string) (MetadataOverrides, bool, error) {
+	id := strings.TrimSpace(entityID)
+	if id == "" {
+		return MetadataOverrides{}, false, nil
+	}
+
+	const stmt = `SELECT payload, updated_at FROM library_metadata_overrides WHERE entity_id = $1;`
+	row := r.pool.QueryRow(ctx, stmt, id)
+
+	var (
+		payload   []byte
+		updatedAt time.Time
+		override  MetadataOverrides
+	)
+	if err := row.Scan(&payload, &updatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return MetadataOverrides{}, false, nil
+		}
+		return MetadataOverrides{}, false, fmt.Errorf("library: get metadata overrides for %q: %w", id, err)
+	}
+	if err := json.Unmarshal(payload, &override); err != nil {
+		return MetadataOverrides{}, false, fmt.Errorf("library: decode metadata override: %w", err)
+	}
+	override.UpdatedAt = updatedAt.UTC()
+	return override, true, nil
 }
 
 // ListMetadataOverrides returns all override payloads.

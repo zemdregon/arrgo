@@ -1,0 +1,229 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xl);
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.lastUpdated {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.refreshButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border: 1px solid var(--color-accent-border);
+  background: var(--color-accent-muted);
+  color: var(--color-accent-strong);
+  padding: 0.55rem 1.4rem;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: transform var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+.refreshButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.refreshButton:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-accent);
+}
+
+.panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.metricsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.metricCard {
+  flex: 1 1 160px;
+  background: var(--surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.metricValue {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.metricLabel {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.secondaryGrid {
+  display: grid;
+  gap: var(--space-xl);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 560px;
+}
+
+.table th,
+.table td {
+  padding: var(--space-xs) var(--space-sm);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.table th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+
+.table td {
+  font-size: 0.9rem;
+  vertical-align: top;
+}
+
+.emptyState {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.smallText {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.monospace {
+  font-family:
+    "JetBrains Mono",
+    "SFMono-Regular",
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace;
+}
+
+.slaGrid {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.slaCard {
+  background: var(--surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.slaHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.slaTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.slaMetrics {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.slaMetric {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.slaMetricLabel {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.slaMetricValue {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.slaFooter {
+  margin-top: var(--space-xs);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+@media (min-width: 1440px) {
+  .page {
+    gap: var(--space-3xl);
+  }
+
+  .panels {
+    gap: var(--space-2xl);
+  }
+
+  .metricsRow {
+    gap: var(--space-lg);
+  }
+
+  .metricCard {
+    flex: 1 1 200px;
+  }
+
+  .secondaryGrid {
+    gap: var(--space-2xl);
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  }
+
+  .slaGrid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+}

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/timeutil"
 	downloadclient "github.com/arrgo/arrgo/sdk/downloadclient"
 )
 
@@ -19,18 +20,9 @@ type Request = downloadclient.Request
 // Client models an individual download client integration that can accept work.
 type Client = downloadclient.Client
 
-// Clock abstracts time retrieval for deterministic testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now().UTC() }
-
 // RouterConfig controls Router construction.
 type RouterConfig struct {
-	Clock     Clock
+	Clock     timeutil.Clock
 	Logger    *slog.Logger
 	HealthTTL time.Duration
 }
@@ -56,7 +48,7 @@ type Router struct {
 	mu        sync.RWMutex
 	clients   []*registeredClient
 	byName    map[string]*registeredClient
-	clock     Clock
+	clock     timeutil.Clock
 	logger    *slog.Logger
 	healthTTL time.Duration
 }
@@ -73,7 +65,7 @@ type registeredClient struct {
 func NewRouter(cfg RouterConfig) *Router {
 	clock := cfg.Clock
 	if clock == nil {
-		clock = systemClock{}
+		clock = timeutil.SystemClock{}
 	}
 	logger := cfg.Logger
 	if logger == nil {

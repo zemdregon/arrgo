@@ -28,7 +28,7 @@ The core objectives that drive every milestone are:
 ## Platform Snapshot
 | Capability | Current Status |
 | --- | --- |
-| **Language & runtime** | Go 1.24 services with generated REST and gRPC surfaces. |
+| **Language & runtime** | Go 1.23 services with generated REST and gRPC surfaces. |
 | **Data stores** | PostgreSQL (authoritative catalog), Redis (caching + queues), optional OpenSearch/Elasticsearch for search. |
 | **Automation** | Redis Streams orchestration queue, cron-backed scheduler, worker pools with heartbeats and failover. |
 | **Metadata** | Multi-provider ingestion pipeline with caching, backoff, and override tooling. |
@@ -122,7 +122,7 @@ The following documents provide deep dives into the subsystems listed above:
 
 ## Getting Started
 1. Follow the [development setup guide](docs/development-setup.md) to install Go
-   1.24+, Node.js, and Docker Compose.
+   1.23+, Node.js, and Docker Compose.
 2. Launch the local Docker Compose topology to provision Redis, PostgreSQL,
    OpenSearch, the master service, workers, and the dashboard UI.
 3. Explore the REST API documented in
@@ -150,6 +150,18 @@ The following documents provide deep dives into the subsystems listed above:
 - **Container images:** GitHub Actions publish images to GHCR on every main
   branch push and release tag. See `.github/workflows` for workflows and reuse
   them in downstream automation.
+
+### Container Image Layout
+- The root [`Dockerfile`](Dockerfile) builds both the `arrgo-master` and
+  `arrgo-worker` binaries in a single multi-stage pipeline and injects build
+  metadata (version, commit, and build timestamp) via `-ldflags`. The resulting
+  Alpine-based image uses `deploy/docker/entrypoint.sh` to select the service
+  role at runtime via the `ARRGO_ROLE` environment variable (default `master`).
+- Build arguments `VERSION`, `COMMIT`, and `BUILD_DATE` may be supplied when
+  constructing the image so downstream registries and deployment tooling can
+  surface provenance without additional metadata plumbing.
+- Compose, Helm, and Terraform assets all target this image, ensuring local
+  development stacks and production rollouts execute the same binaries.
 
 ## Roadmap
 The roadmap is maintained collaboratively between the README, the dedicated
@@ -208,6 +220,20 @@ When preparing a change:
    behavior changes.
 4. Provide actionable commit messages and PR descriptions that reference
    affected subsystems and include test evidence.
+
+## Legal Disclaimer
+This repository occasionally references integrations, research tooling, or
+automation patterns that could, in theory, be adapted for copyright-infringing
+workflows. Those materials are published exclusively to enable legitimate
+interoperability research, academic study, and testing of lawful media
+workloads. They are not an endorsement of piracy or other unlawful behavior.
+
+You are solely responsible for understanding and complying with the
+intellectual property, telecommunications, and data protection laws that apply
+where you operate. Before using any code or documentation from this project,
+consult qualified counsel or the relevant authorities to confirm that your
+intended use is legal in your jurisdiction. The maintainers disclaim any
+liability for misuse.
 
 ## License
 This project is licensed under the [Apache License 2.0](LICENSE).

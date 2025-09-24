@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/timeutil"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
@@ -105,15 +106,6 @@ type TriggerJobInput struct {
 	IdempotencyKey string
 }
 
-// Clock abstracts time retrieval for deterministic testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now().UTC() }
-
 // IDGenerator produces stable identifiers for new jobs.
 type IDGenerator func() string
 
@@ -122,7 +114,7 @@ type Config struct {
 	Repository        Repository
 	Entities          []Entity
 	Jobs              []Job
-	Clock             Clock
+	Clock             timeutil.Clock
 	IDGenerator       IDGenerator
 	RedisClient       *redis.Client
 	StreamName        string
@@ -151,46 +143,38 @@ var (
 
 // Service exposes read/write helpers that back both REST and gRPC front-ends.
 type Service struct {
-	mu                sync.RWMutex
-	repository        Repository
-	entities          []Entity
-	entitiesByID      map[string]Entity
-	jobs              []Job
-	jobIndex          map[string]int
-	clock             Clock
-	idGen             IDGenerator
-	queue             *OrchestrationQueue
-	logger            *slog.Logger
-	auditSink         AuditSink
-	tracer            trace.Tracer
-	manualSearches    map[string]ManualSearchResult
-	manualReleases    map[string]ManualSearchRelease
-	renameTemplates   RenameTemplates
-	renameHistory     map[string][]RenameJobRecord
-	renameState       map[string]map[string]renameState
-	libraryFiles      map[string][]LibraryFile
-	libraryFileIdx    map[string]map[string]int
-	metadataOverrides map[string]MetadataOverrides
+	mu              sync.RWMutex
+	repository      Repository
+	clock           timeutil.Clock
+	idGen           IDGenerator
+	queue           *OrchestrationQueue
+	logger          *slog.Logger
+	auditSink       AuditSink
+	tracer          trace.Tracer
+	manualSearches  map[string]ManualSearchResult
+	manualReleases  map[string]ManualSearchRelease
+	renameTemplates RenameTemplates
+	renameHistory   map[string][]RenameJobRecord
+	renameState     map[string]map[string]renameState
+	libraryFiles    map[string][]LibraryFile
+	libraryFileIdx  map[string]map[string]int
 }
 
 // NewService constructs a library orchestration service with optional seed data.
 func NewService(cfg Config) (*Service, error) {
 	svc := &Service{
-		jobIndex:          make(map[string]int),
-		clock:             cfg.Clock,
-		idGen:             cfg.IDGenerator,
-		logger:            cfg.Logger,
-		auditSink:         cfg.AuditSink,
-		entitiesByID:      make(map[string]Entity),
-		renameHistory:     make(map[string][]RenameJobRecord),
-		renameState:       make(map[string]map[string]renameState),
-		libraryFiles:      make(map[string][]LibraryFile),
-		libraryFileIdx:    make(map[string]map[string]int),
-		metadataOverrides: make(map[string]MetadataOverrides),
+		clock:          cfg.Clock,
+		idGen:          cfg.IDGenerator,
+		logger:         cfg.Logger,
+		auditSink:      cfg.AuditSink,
+		renameHistory:  make(map[string][]RenameJobRecord),
+		renameState:    make(map[string]map[string]renameState),
+		libraryFiles:   make(map[string][]LibraryFile),
+		libraryFileIdx: make(map[string]map[string]int),
 	}
 
 	if svc.clock == nil {
-		svc.clock = systemClock{}
+		svc.clock = timeutil.SystemClock{}
 	}
 	if svc.idGen == nil {
 		svc.idGen = func() string { return uuid.NewString() }
@@ -250,10 +234,6 @@ func NewService(cfg Config) (*Service, error) {
 		}
 	}
 
-	if err := svc.reloadRepositoryState(seedCtx); err != nil {
-		return nil, err
-	}
-
 	if cfg.RedisClient != nil {
 		queue, err := NewOrchestrationQueue(OrchestrationQueueConfig{
 			Client:         cfg.RedisClient,
@@ -272,43 +252,6 @@ func NewService(cfg Config) (*Service, error) {
 	}
 
 	return svc, nil
-}
-
-func (s *Service) reloadRepositoryState(ctx context.Context) error {
-	entities, err := s.repository.ListEntities(ctx)
-	if err != nil {
-		return fmt.Errorf("library: load entities: %w", err)
-	}
-	sorted := append([]Entity(nil), entities...)
-	sort.Slice(sorted, func(i, j int) bool {
-		return strings.ToLower(sorted[i].Title) < strings.ToLower(sorted[j].Title)
-	})
-	s.entities = sorted
-	s.entitiesByID = make(map[string]Entity, len(sorted))
-	for _, entity := range sorted {
-		s.entitiesByID[entity.ID] = entity
-	}
-
-	jobs, err := s.repository.ListJobs(ctx)
-	if err != nil {
-		return fmt.Errorf("library: load jobs: %w", err)
-	}
-	s.jobs = append([]Job(nil), jobs...)
-	s.jobIndex = make(map[string]int, len(s.jobs))
-	for idx := range s.jobs {
-		s.jobIndex[s.jobs[idx].ID] = idx
-	}
-
-	overrides, err := s.repository.ListMetadataOverrides(ctx)
-	if err != nil {
-		return fmt.Errorf("library: load metadata overrides: %w", err)
-	}
-	s.metadataOverrides = make(map[string]MetadataOverrides, len(overrides))
-	for entityID, override := range overrides {
-		s.metadataOverrides[entityID] = cloneMetadataOverrides(override)
-	}
-
-	return nil
 }
 
 func (s *Service) startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
@@ -345,14 +288,6 @@ func (s *Service) ListEntities(ctx context.Context, filter ListEntitiesFilter) (
 		return strings.ToLower(sorted[i].Title) < strings.ToLower(sorted[j].Title)
 	})
 
-	s.mu.Lock()
-	s.entities = append([]Entity(nil), sorted...)
-	s.entitiesByID = make(map[string]Entity, len(sorted))
-	for _, entity := range sorted {
-		s.entitiesByID[entity.ID] = entity
-	}
-	s.mu.Unlock()
-
 	wantsType := strings.TrimSpace(strings.ToLower(filter.EntityType))
 	results := make([]Entity, 0, len(sorted))
 	for _, entity := range sorted {
@@ -369,10 +304,11 @@ func (s *Service) ListJobs(ctx context.Context) (jobs []Job, err error) {
 	ctx, span := s.startSpan(ctx, "library.Service.ListJobs")
 	defer endSpan(span, &err)
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	jobs = append([]Job(nil), s.jobs...)
+	records, err := s.repository.ListJobs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("library: list jobs: %w", err)
+	}
+	jobs = append([]Job(nil), records...)
 	sort.SliceStable(jobs, func(i, j int) bool {
 		return jobs[i].SubmittedAt.After(jobs[j].SubmittedAt)
 	})
@@ -395,14 +331,18 @@ func (s *Service) RunManualSearch(ctx context.Context, entityID, query string) (
 		return
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	entity, ok := s.entitiesByID[trimmedID]
-	if !ok {
+	entity, found, lookupErr := s.lookupEntity(ctx, trimmedID)
+	if lookupErr != nil {
+		err = lookupErr
+		return
+	}
+	if !found {
 		err = ErrUnknownEntity
 		return
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	executedAt := s.clock.Now()
 	searchID := uuid.NewString()
@@ -449,13 +389,18 @@ func (s *Service) LatestManualSearch(ctx context.Context, entityID string) (resu
 		return
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if !s.entityExistsLocked(trimmedID) {
+	exists, lookupErr := s.entityExists(ctx, trimmedID)
+	if lookupErr != nil {
+		err = lookupErr
+		return
+	}
+	if !exists {
 		err = ErrUnknownEntity
 		return
 	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	search, ok := s.manualSearches[trimmedID]
 	if !ok {
@@ -488,13 +433,18 @@ func (s *Service) ForceGrabRelease(ctx context.Context, entityID, releaseID stri
 		return
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.entityExistsLocked(trimmedEntityID) {
+	exists, lookupErr := s.entityExists(ctx, trimmedEntityID)
+	if lookupErr != nil {
+		err = lookupErr
+		return
+	}
+	if !exists {
 		err = ErrUnknownEntity
 		return
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	existing, ok := s.manualReleases[trimmedReleaseID]
 	if !ok || existing.EntityID != trimmedEntityID {
@@ -545,9 +495,11 @@ func (s *Service) TriggerJob(ctx context.Context, input TriggerJobInput) (job Jo
 		return
 	}
 
-	s.mu.RLock()
-	exists := s.entityExistsLocked(targetID)
-	s.mu.RUnlock()
+	exists, lookupErr := s.entityExists(ctx, targetID)
+	if lookupErr != nil {
+		err = lookupErr
+		return
+	}
 	if !exists {
 		err = ErrUnknownEntity
 		return
@@ -578,10 +530,6 @@ func (s *Service) TriggerJob(ctx context.Context, input TriggerJobInput) (job Jo
 		return
 	}
 
-	s.mu.Lock()
-	s.jobs = append(s.jobs, job)
-	s.jobIndex[job.ID] = len(s.jobs) - 1
-	s.mu.Unlock()
 	span.SetAttributes(
 		attribute.String("library.job_id", job.ID),
 		attribute.String("library.stream_id", streamID),
@@ -611,25 +559,15 @@ func (s *Service) ClaimJobs(ctx context.Context, consumer string, count int, blo
 	}
 
 	updates := make([]Job, 0, len(claimed))
-
-	s.mu.Lock()
 	for i := range claimed {
 		attemptTime := s.clock.Now()
 		job := claimed[i].Job
 		job.State = JobStateRunning
 		job.LastAttemptAt = attemptTime
+		job.StreamID = claimed[i].StreamID
 		claimed[i].Job = job
-
-		if updated, ok := s.updateJobLocked(job.ID, func(j *Job) {
-			j.State = JobStateRunning
-			j.Attempt = job.Attempt
-			j.StreamID = claimed[i].StreamID
-			j.LastAttemptAt = attemptTime
-		}); ok {
-			updates = append(updates, updated)
-		}
+		updates = append(updates, job)
 	}
-	s.mu.Unlock()
 
 	for _, updated := range updates {
 		if repoErr := s.repository.UpdateJob(ctx, updated); repoErr != nil {
@@ -666,18 +604,18 @@ func (s *Service) AckJob(ctx context.Context, job ClaimedJob) (err error) {
 
 	completedAt := s.clock.Now()
 
-	s.mu.Lock()
-	updated, ok := s.updateJobLocked(job.Job.ID, func(j *Job) {
-		j.State = JobStateDone
-		j.StreamID = ""
-		j.CompletedAt = completedAt
-	})
-	entityType := s.entityTypeLocked(job.Job.TargetID)
-	s.mu.Unlock()
-	if ok {
-		if repoErr := s.repository.UpdateJob(ctx, updated); repoErr != nil {
-			return fmt.Errorf("library: persist job update: %w", repoErr)
-		}
+	updated := job.Job
+	updated.State = JobStateDone
+	updated.StreamID = ""
+	updated.CompletedAt = completedAt
+	if repoErr := s.repository.UpdateJob(ctx, updated); repoErr != nil {
+		return fmt.Errorf("library: persist job update: %w", repoErr)
+	}
+
+	entityType, typeErr := s.entityType(ctx, job.Job.TargetID)
+	if typeErr != nil {
+		s.logger.Warn("library: failed to load entity for audit", "jobID", job.Job.ID, "targetID", job.Job.TargetID, "error", typeErr)
+		entityType = ""
 	}
 
 	span.SetAttributes(attribute.String("library.entity_type", entityType))
@@ -721,22 +659,11 @@ func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (updated Job, er
 		return
 	}
 
-	s.mu.Lock()
-	updatedJob, ok := s.updateJobLocked(job.Job.ID, func(j *Job) {
-		j.State = JobStateQueued
-		j.StreamID = streamID
-	})
-	s.mu.Unlock()
-
-	if ok {
-		updated = updatedJob
-		if repoErr := s.repository.UpdateJob(ctx, updatedJob); repoErr != nil {
-			return Job{}, fmt.Errorf("library: persist job update: %w", repoErr)
-		}
-	} else {
-		updated = job.Job
-		updated.State = JobStateQueued
-		updated.StreamID = streamID
+	updated = job.Job
+	updated.State = JobStateQueued
+	updated.StreamID = streamID
+	if repoErr := s.repository.UpdateJob(ctx, updated); repoErr != nil {
+		return Job{}, fmt.Errorf("library: persist job update: %w", repoErr)
 	}
 
 	span.SetAttributes(
@@ -746,11 +673,6 @@ func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (updated Job, er
 	s.logger.Info("library job retried", "jobID", updated.ID, "previousStreamID", job.StreamID, "streamID", streamID, "attempt", job.Job.Attempt+1)
 
 	return updated, nil
-}
-
-func (s *Service) entityExistsLocked(id string) bool {
-	_, ok := s.entitiesByID[id]
-	return ok
 }
 
 func (s *Service) buildManualSearchReleases(entity Entity, searchID, query string, now time.Time) []ManualSearchRelease {
@@ -849,20 +771,33 @@ func cloneManualSearchResult(result ManualSearchResult) ManualSearchResult {
 	return copyResult
 }
 
-func (s *Service) updateJobLocked(id string, fn func(*Job)) (Job, bool) {
-	idx, ok := s.jobIndex[id]
-	if !ok {
-		return Job{}, false
+func (s *Service) lookupEntity(ctx context.Context, id string) (Entity, bool, error) {
+	trimmedID := strings.TrimSpace(id)
+	if trimmedID == "" {
+		return Entity{}, false, nil
 	}
-	job := s.jobs[idx]
-	fn(&job)
-	s.jobs[idx] = job
-	return job, true
+	entity, found, err := s.repository.GetEntity(ctx, trimmedID)
+	if err != nil {
+		return Entity{}, false, fmt.Errorf("library: load entity %q: %w", trimmedID, err)
+	}
+	return entity, found, nil
 }
 
-func (s *Service) entityTypeLocked(id string) string {
-	if entity, ok := s.entitiesByID[id]; ok {
-		return entity.EntityType
+func (s *Service) entityExists(ctx context.Context, id string) (bool, error) {
+	_, found, err := s.lookupEntity(ctx, id)
+	if err != nil {
+		return false, err
 	}
-	return ""
+	return found, nil
+}
+
+func (s *Service) entityType(ctx context.Context, id string) (string, error) {
+	entity, found, err := s.lookupEntity(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", nil
+	}
+	return entity.EntityType, nil
 }

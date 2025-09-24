@@ -10,18 +10,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/arrgo/arrgo/internal/timeutil"
 )
 
 const versionTimestampFormat = "20060102T150405.000000000Z07"
-
-// Clock abstracts time retrieval for deterministic testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now().UTC() }
 
 // ObjectStorageClient captures the S3-compatible primitives required for replication.
 type ObjectStorageClient interface {
@@ -80,7 +73,7 @@ type Workflow struct {
 // Config controls Service construction.
 type Config struct {
 	Logger    *slog.Logger
-	Clock     Clock
+	Clock     timeutil.Clock
 	Workflows []Workflow
 }
 
@@ -100,14 +93,14 @@ type Service struct {
 	mu        sync.RWMutex
 	workflows map[string]*Workflow
 	logger    *slog.Logger
-	clock     Clock
+	clock     timeutil.Clock
 }
 
 // NewService constructs a replication service with optional pre-registered workflows.
 func NewService(cfg Config) (*Service, error) {
 	clock := cfg.Clock
 	if clock == nil {
-		clock = systemClock{}
+		clock = timeutil.SystemClock{}
 	}
 	logger := cfg.Logger
 	if logger == nil {
