@@ -18,7 +18,7 @@
 - [ ] Set up error boundaries, toast/alert primitives, and structured logging for client-side diagnostics.
 
 ### Navigation & Layout
-- [ ] Create persistent shell with navigation, environment context switcher, and worker status indicator.
+- [x] Create persistent shell with navigation, environment context switcher, and worker status indicator.
 - [ ] Implement responsive grid/layout rules for widescreen dashboards and compact tablet views.
 - [ ] Add global search and quick action palette for navigating entities and triggering automation workflows.
 
