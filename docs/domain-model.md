@@ -1,5 +1,8 @@
 # Unified Media Domain Model
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Finalized for alpha (tables and relations documented for upcoming Postgres migrations)
+
 ## Purpose
 This document finalizes the foundational entity model that arrgo uses to unify
 television, movie, and music catalog management. It establishes the canonical
@@ -209,3 +212,19 @@ CatalogEntity (Artist/Album/Track)   *---* Person via Credit tables
   works when importing from multiple sources.
 - Future enhancements (e.g., books, podcasts) can introduce new `entity_type`
   values while reusing `MediaRelease` and `LibraryItem` patterns.
+
+## Operational Considerations
+- Define foreign key indexes for every relationship outlined above to maintain
+  query performance as the catalog scales.
+- Materialize views for common dashboard queries (e.g., upcoming releases,
+  missing episodes) to keep the API responsive during heavy automation cycles.
+- Use PostgreSQL row-level security policies with RBAC roles if future
+  multi-tenant support requires segregated catalog access.
+
+## Future Extensions
+- Introduce `LibraryCollection` metadata for shared automation properties (e.g.,
+  assign quality/retention templates to a group of entities in one step).
+- Add support for episodic podcasts and audiobooks by expanding the `entity_type`
+  enum and reusing the `MediaRelease`/`LibraryItem` model.
+- Model user-generated ratings and playback progress to integrate with external
+  media servers or recommendation systems.

@@ -1,5 +1,8 @@
 # File Renaming & Folder Organization Templates
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented (rename engine available via REST API and dashboard jobs)
+
 ## Overview
 arrgo now ships with a unified renaming engine that keeps television, movie,
 and music libraries consistently organized. Operators can configure independent

@@ -1,5 +1,8 @@
 # Release Profile and Custom Format Scoring
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented (automation package shipped with Servarr importers)
+
 arrgo now ships a dedicated automation package that mirrors the release
 profile/custom format ecosystem from the traditional *arr applications. The
 `internal/automation/releaseprofile` package provides:
@@ -124,6 +127,14 @@ languages, indexer flags, size). Additional attributes can be set through the
 class. Importers use the same mechanism to surface Servarr-specific fields so
 legacy definitions continue to operate.
 
+## Observability & Operations
+- Emit metrics for score distributions, blocked releases, and automation
+  decisions so operators can tune thresholds based on real data.
+- Log release evaluations with the winning score and contributing preferences to
+  aid debugging when automation accepts or rejects a candidate unexpectedly.
+- Surface scoring summaries in the dashboard (e.g., top reasons for rejections)
+  to build trust in the automation pipeline.
+
 ## Next Steps
 
 - Wire the release profile scoring package into the download selection logic
@@ -132,3 +143,5 @@ legacy definitions continue to operate.
   without editing JSON or writing Go code.
 - Extend the importer to translate Radarr quality profiles when the movie
   automation flow is implemented.
+- Introduce simulation tooling that runs historical releases through new
+  profiles so operators can validate scoring strategies before rollout.

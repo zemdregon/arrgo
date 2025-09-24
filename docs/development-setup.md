@@ -1,5 +1,8 @@
 # arrgo Development Setup
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Up to date for alpha development environments
+
 This guide helps contributors quickly bootstrap a local arrgo environment for experimentation and feature work.
 
 ## Prerequisites
@@ -44,6 +47,11 @@ The stack uses named volumes so data survives container restarts. Use `docker co
 - Execute `go test ./...` before pushing changes.
 - Consider installing `golangci-lint` for advanced linting once configured for the repository.
 
+### Recommended Extras
+- Install [`air`](https://github.com/cosmtrek/air) or a similar live-reload tool for rapid service iteration.
+- Use [`direnv`](https://direnv.net/) to manage environment variables when switching between deployments.
+- Configure [`buf`](https://buf.build/) locally if you plan to work on protobufs; the repository includes `buf.yaml` scaffolding.
+
 ## Web Dashboard Development
 The read-only cluster dashboard lives in [`web/dashboard`](../web/dashboard) and is implemented with Next.js and React.
 
@@ -63,6 +71,14 @@ The dashboard fetches data from the REST API exposed by the Go services (`/api/v
 - If ports collide with existing services, adjust them in `deploy/compose/*.yml` or override via `.env`.
 - Ensure Docker has sufficient CPU and memory assigned (at least 4 CPUs / 6 GB RAM recommended).
 - Remove stale volumes if migrations or schema changes fail: `docker volume prune`.
+
+## Contribution Checklist
+Before opening a pull request:
+
+1. Run `go test ./...` and any relevant front-end checks (`npm run lint`, `npm run test`).
+2. Update documentation in `docs/` when behavior changes or new features are introduced.
+3. Verify Docker Compose launches successfully after your modifications.
+4. Capture architectural decisions as ADRs if they introduce new dependencies or protocols.
 
 ## Next Steps
 With the environment running, begin iterating on arrgo services, write tests, and document findings in Architecture Decision Records (ADRs) when design decisions change the platform trajectory.

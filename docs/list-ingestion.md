@@ -1,5 +1,8 @@
 # External List Ingestion
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented with provider SDK and contract tests
+
 arrgo synchronizes external watchlists, custom collections, and listening history through a
 pluggable list ingestion framework. The goal is to mirror Sonarr/Radarr/Lidarr behaviour so
 operators can import Trakt, IMDb, and Last.fm feeds without bespoke automation while keeping
@@ -113,3 +116,20 @@ To add a new provider:
 
 The list ingestion framework keeps the manager agnostic of upstream APIs, allowing arrgo to grow
 its ecosystem without disrupting existing deployments.
+
+## Observability & Operations
+- Prometheus metrics record sync duration, number of items processed, and health
+  probe outcomes per provider. Alert if a provider fails consecutively beyond a
+  configurable threshold.
+- Structured events annotate which subscriptions changed and include provider
+  payload metadata for downstream automation.
+- Dashboard widgets expose last sync timestamps, delta sizes, and upcoming
+  schedule windows so operators can validate ingestion cadence at a glance.
+
+## Future Enhancements
+- Introduce declarative subscription configuration stored in Postgres so
+  operators can manage lists via the API instead of code changes.
+- Support bi-directional sync for providers that allow arrgo to push updates
+  back (e.g., marking watched items).
+- Add secret management helpers for OAuth-based providers to streamline
+  onboarding through the dashboard.

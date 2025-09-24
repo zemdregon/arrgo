@@ -1,5 +1,8 @@
 # Observability Baseline
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Baseline instrumentation in place; packaging dashboards ongoing
+
 This document captures the initial observability plan for arrgo. It defines the
 metrics, traces, and logs that every service must emit as well as the baseline
 dashboards and alerting hooks expected in the alpha release. The goal is to
@@ -138,7 +141,9 @@ Alerting rules should balance responsiveness with noise reduction.
 
 ## Next Steps
 
-- Automate validation of observability instrumentation via CI linting.
+- Automate validation of observability instrumentation via CI linting and
+  enforce metric naming conventions during review.
 - Provide example Grafana JSON dashboards and Alertmanager configuration files
-  under `docs/` or `deploy/` directories.
-- Extend observability coverage to the UI once it lands.
+  under `docs/` or `deploy/` directories, plus import scripts for quick setup.
+- Extend observability coverage to the UI once it lands and surface trace IDs in
+  dashboard interactions for end-to-end correlation.

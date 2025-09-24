@@ -1,5 +1,8 @@
 # Download Client Failover and Health-Aware Routing
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented with contract tests in `sdk/downloadclient/contract`
+
 arrgo now routes download requests through a prioritized failover stack so that torrents, Usenet jobs, and future transport plug-ins continue processing even when an individual client becomes unavailable. The integration lives in [`internal/integrations/download`](../internal/integrations/download) and exposes a router capable of inspecting capabilities, verifying health, and dispatching work to the highest-priority healthy client.
 
 ## Router Overview
@@ -57,4 +60,19 @@ Adapters should wrap transient failures with `downloadclient.ErrClientUnavailabl
 
 ## Observability
 
-The router logs client registrations, health probe failures, and successful dispatches. Integrations should enrich errors returned from `CheckHealth` and `Enqueue` with contextual metadata (e.g., remote host, HTTP status, RPC code) to aid troubleshooting. Future work will add Prometheus metrics around dispatch latency, failover frequency, and health probe outcomes.
+- **Structured logs** capture client registrations, probe failures, failover
+  decisions, and dispatch outcomes. Include remote host, HTTP status, and any
+  adapter-specific error codes to speed triage.
+- **Prometheus metrics** track dispatch latency (`download_router_dispatch_seconds`),
+  per-client success rates, and failover counts. Alerts should trigger when
+  primary clients remain unhealthy beyond the configured TTL window.
+- **Tracing** wraps dispatch attempts so traces show which client ultimately
+  accepted the job and how long each probe took.
+
+## Future Enhancements
+- Add adaptive retry budgets that adjust failover aggressiveness based on recent
+  client success rates.
+- Surface router state through the dashboard with per-client health history and
+  upcoming maintenance windows.
+- Support weighted routing (beyond priority-only) so workloads can be split
+  proportionally across multiple healthy clients.

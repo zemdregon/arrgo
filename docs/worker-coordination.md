@@ -1,5 +1,8 @@
 # Worker Coordination
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented (registration, heartbeat, and metrics live in `internal/worker`)
+
 The worker coordination subsystem keeps track of every worker node in the cluster,
 exposes a registration handshake, records periodic heartbeats, and continuously updates
 metrics so operators can quickly identify stale or disconnected nodes. The master service
@@ -130,3 +133,19 @@ and exposes a `Reconcile` helper for scheduled evaluations.
 - Default staleness threshold: **45 seconds** (three missed heartbeats).
 - Workers marked stale remain persisted with `status="stale"` until they send a new heartbeat,
   at which point the status transitions back to `healthy`.
+
+## Observability & Operations
+- Dashboards display worker counts, stale states, and heartbeat age percentiles
+  per pool to highlight hotspots quickly.
+- Structured logs capture registration/heartbeat events with pool, version, and
+  capability metadata for auditing.
+- Alert when stale worker counts exceed thresholds or when registrations drop
+  unexpectedly, signaling connectivity issues or scaling problems.
+
+## Future Enhancements
+- Add graceful shutdown hooks so workers can deregister and drain queues before
+  maintenance.
+- Persist per-worker capability metadata in Postgres for richer scheduling
+  decisions (e.g., GPU availability, supported codecs).
+- Integrate with service discovery systems (Consul, Kubernetes) to advertise
+  worker endpoints dynamically.

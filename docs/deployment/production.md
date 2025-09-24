@@ -1,5 +1,8 @@
 # Production Deployment Guide
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Deployment assets published (Helm chart and Terraform module available)
+
 This guide describes how to deploy arrgo into a production Kubernetes cluster
 using the new Helm chart and Terraform module introduced in this repository.
 
@@ -75,3 +78,19 @@ these keys:
   Kubernetes secret resource used by the chart.
 - Update monitoring dashboards and alerts to track master/worker availability
   and queue depth once arrgo emits metrics.
+
+## Observability & Operations
+- Ship Prometheus/Grafana and the OpenTelemetry Collector alongside the arrgo
+  chart to ensure metrics and traces are captured from day one.
+- Configure readiness/liveness probes in the Helm values to match your
+  environment and integrate with platform-specific health checks.
+- Record deployment metadata (chart version, Terraform commit) in annotations so
+  rollbacks and audits have full context.
+
+## Future Enhancements
+- Provide opinionated Terraform stacks for popular clouds (AWS, GCP, Azure) with
+  managed data services wired in by default.
+- Publish Helm values profiles for high-availability masters and auto-scaling
+  worker pools.
+- Automate blue/green or canary rollouts via Argo CD or Flux examples once the
+  release cadence stabilizes.

@@ -1,9 +1,22 @@
 # arrgo API - First Iteration
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented (REST and gRPC servers are wired into `internal/api/httpapi` and `internal/api/grpcapi`)
+
 The initial API surface exposes lightweight REST and gRPC interfaces for library
 management and orchestration. The implementations use an in-memory catalog so
 the endpoints can be exercised before the PostgreSQL backing store lands, while
 Redis Streams now handle orchestration job fan-out and worker coordination.
+
+## Implementation Notes
+- REST routing is provided by the HTTP server in
+  `internal/api/httpapi/server.go` with middleware handling RBAC, metrics, and
+  logging.
+- gRPC services are defined in [`api/proto/arrgo`](../api/proto/arrgo) and served
+  via `internal/api/grpcapi/server.go`. Both surfaces call the same domain
+  services so behavior remains consistent.
+- OpenAPI/Buf generation is planned for a future milestone; for now, this
+  document serves as the authoritative contract reference.
 
 ## REST Endpoints
 
@@ -176,6 +189,15 @@ Base path: `/api/v1`
 - `GET /debug/pprof/*` provides profiling handlers (`profile`, `heap`, etc.) for local and
   production diagnostics.
 
+## Error Handling & Versioning
+- REST handlers follow HTTP semantics with JSON error envelopes that include a
+  machine-readable `code` field and human-friendly `message`.
+- gRPC status codes map directly from domain errors. Invalid input raises
+  `INVALID_ARGUMENT`, unknown resources return `NOT_FOUND`, and disabled
+  subsystems report `UNAVAILABLE`.
+- Versioning follows the `/api/v1` prefix and `arrgo.api.v1` protobuf package.
+  Backward-incompatible changes require a new version namespace.
+
 ## gRPC Services
 
 Package: `arrgo.api.v1`
@@ -198,3 +220,11 @@ The gRPC server shares the same in-memory service logic as the REST handlers so 
 remains consistent across protocols. Errors map to standard gRPC status codes: invalid
 arguments return `INVALID_ARGUMENT`, missing resources return `NOT_FOUND`, and disabled
 subsystems yield `UNAVAILABLE`.
+
+## Future Enhancements
+- Replace the in-memory repositories with Postgres-backed stores and expose
+  pagination, filtering, and sorting options that leverage SQL indexes.
+- Publish OpenAPI and protobuf documentation sites (e.g., via Stoplight or Buf
+  Docs) so integrators can self-serve schema references.
+- Introduce long-running operation resources for multi-step workflows (e.g.,
+  manual search overrides) once asynchronous orchestration flows expand.

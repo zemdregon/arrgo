@@ -1,5 +1,8 @@
 # Metadata Ingestion Pipeline
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented with Redis-backed caching and provider fan-out
+
 The metadata ingestion pipeline coordinates upstream providers, aggregates
 records into the unified arrgo domain model, and persists normalized results in
 Redis for fast reuse. It powers the first step in onboarding media entities into
@@ -68,3 +71,20 @@ Unit tests (`internal/metadata/pipeline_test.go`) cover the following behavior:
 
 These tests run with stub implementations of both providers and the cache to
 avoid external dependencies while validating the orchestration logic.
+
+## Observability & Operations
+- Emit Prometheus metrics for cache hit ratio, provider latency, and error
+  counts. Alert when a provider experiences sustained failures or when cache hit
+  rates drop unexpectedly.
+- Annotate traces with provider names, response sizes, and priority decisions to
+  aid debugging when metadata conflicts occur.
+- Log provenance details (provider, field, winning value) whenever aggregation
+  resolves conflicting attributes.
+
+## Future Enhancements
+- Persist normalized metadata in Postgres to support auditing and reduce cache
+  warm-up times after restarts.
+- Introduce schema validation to guard against upstream changes before they
+  cascade through the pipeline.
+- Support provider-specific throttling strategies that adapt to quota limits and
+  burst allowances automatically.

@@ -1,5 +1,8 @@
 # Migration Guidelines from Sonarr/Radarr/Lidarr to arrgo
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Draft complete; execution playbooks ready for alpha migrations
+
 These guidelines help existing Sonarr, Radarr, and Lidarr users move their media automation workflows onto arrgo. They assume you manage one or more *arr deployments today and are ready to consolidate catalog automation, download orchestration, and monitoring into a single arrgo cluster.
 
 ## Audience and Prerequisites
@@ -69,6 +72,22 @@ These guidelines help existing Sonarr, Radarr, and Lidarr users move their media
 ## Support Channels
 - Open arrgo GitHub issues for bugs or migration blockers discovered during the process.
 - Share success stories or lessons learned in community forums to help shape future tooling, importers, and automation enhancements.
+
+## Observability & Validation Tips
+- Mirror automation events to both arrgo and the legacy stack during dry runs to
+  compare behaviour before cutting over.
+- Track metrics such as import duration, queue depth, and metadata lookup
+  latency before and after migration to quantify improvements and catch
+  regressions.
+- Use the dashboard's manual job controls to spot-check tricky titles and
+  confirm overrides or quality policies migrated successfully.
+
+## Future Enhancements
+- Automate configuration translation (quality profiles, custom formats, root
+  folders) via import tools to reduce manual mapping.
+- Provide migration wizards in the dashboard with progress tracking and
+  remediation guidance.
+- Publish Terraform/Ansible playbooks for blue/green migrations across clusters.
 
 ## Appendix: Quick Reference Checklist
 - [ ] Backups exported for each *arr service
