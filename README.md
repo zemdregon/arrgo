@@ -28,7 +28,7 @@ The core objectives that drive every milestone are:
 ## Platform Snapshot
 | Capability | Current Status |
 | --- | --- |
-| **Language & runtime** | Go 1.24 services with generated REST and gRPC surfaces. |
+| **Language & runtime** | Go 1.23 services with generated REST and gRPC surfaces. |
 | **Data stores** | PostgreSQL (authoritative catalog), Redis (caching + queues), optional OpenSearch/Elasticsearch for search. |
 | **Automation** | Redis Streams orchestration queue, cron-backed scheduler, worker pools with heartbeats and failover. |
 | **Metadata** | Multi-provider ingestion pipeline with caching, backoff, and override tooling. |
@@ -122,7 +122,7 @@ The following documents provide deep dives into the subsystems listed above:
 
 ## Getting Started
 1. Follow the [development setup guide](docs/development-setup.md) to install Go
-   1.24+, Node.js, and Docker Compose.
+   1.23+, Node.js, and Docker Compose.
 2. Launch the local Docker Compose topology to provision Redis, PostgreSQL,
    OpenSearch, the master service, workers, and the dashboard UI.
 3. Explore the REST API documented in
