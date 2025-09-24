@@ -9,8 +9,11 @@ import { useRestClient } from "../../hooks/useRestClient";
 import { useRestQuery } from "../../hooks/useRestQuery";
 import { useGrpcQuery } from "../../hooks/useGrpcQuery";
 import type {
+  DownloadHistoryEntry,
   JobSummary,
   LibraryEntity,
+  MetadataComparison,
+  ReadingList,
   WorkerPoolConfig,
   WorkerSummary,
 } from "../../lib/api";
@@ -19,6 +22,7 @@ import { ManualSearchPanel } from "./components/ManualSearchPanel";
 import { JobQueuePanel } from "./components/JobQueuePanel";
 import { WorkersPanel } from "./components/WorkersPanel";
 import { WorkerPoolPanel } from "./components/WorkerPoolPanel";
+import { ReadarrExperiencePanel } from "./components/ReadarrExperiencePanel";
 import styles from "./page.module.css";
 
 export default function DashboardPage() {
@@ -51,6 +55,18 @@ export default function DashboardPage() {
     () => ["workers", "pools", apiBaseUrl] as const,
     [apiBaseUrl],
   );
+  const readingListsQueryKey = useMemo(
+    () => ["library", "reading-lists", apiBaseUrl] as const,
+    [apiBaseUrl],
+  );
+  const metadataComparisonsQueryKey = useMemo(
+    () => ["library", "metadata-comparisons", apiBaseUrl] as const,
+    [apiBaseUrl],
+  );
+  const downloadHistoryQueryKey = useMemo(
+    () => ["library", "download-history", apiBaseUrl] as const,
+    [apiBaseUrl],
+  );
 
   const libraryQuery = useRestQuery<LibraryEntity[]>(
     libraryQueryKey,
@@ -79,6 +95,27 @@ export default function DashboardPage() {
     (client) => client.fetchWorkerPools(),
     {
       enabled: canReadWorkers,
+    },
+  );
+  const readingListsQuery = useRestQuery<ReadingList[]>(
+    readingListsQueryKey,
+    (client) => client.fetchReadingLists(),
+    {
+      enabled: canReadLibrary,
+    },
+  );
+  const metadataComparisonsQuery = useRestQuery<MetadataComparison[]>(
+    metadataComparisonsQueryKey,
+    (client) => client.fetchMetadataComparisons(),
+    {
+      enabled: canReadLibrary,
+    },
+  );
+  const downloadHistoryQuery = useRestQuery<DownloadHistoryEntry[]>(
+    downloadHistoryQueryKey,
+    (client) => client.fetchDownloadHistory(),
+    {
+      enabled: canReadLibrary,
     },
   );
 
@@ -145,15 +182,79 @@ export default function DashboardPage() {
     void refetchPools();
   }, [refetchPools]);
 
+  const {
+    data: readingListsData,
+    isPending: readingListsPending,
+    error: readingListsErrorObj,
+    refetch: refetchReadingLists,
+  } = readingListsQuery;
+  const readingListsError = readingListsErrorObj?.message;
+  const readingListsLoading = readingListsPending && !readingListsData;
+  const refreshReadingLists = useCallback(() => {
+    void refetchReadingLists();
+  }, [refetchReadingLists]);
+
+  const {
+    data: metadataComparisonsData,
+    isPending: metadataComparisonsPending,
+    error: metadataComparisonsErrorObj,
+    refetch: refetchMetadataComparisons,
+  } = metadataComparisonsQuery;
+  const metadataComparisonsError = metadataComparisonsErrorObj?.message;
+  const metadataComparisonsLoading =
+    metadataComparisonsPending && !metadataComparisonsData;
+  const refreshMetadataComparisons = useCallback(() => {
+    void refetchMetadataComparisons();
+  }, [refetchMetadataComparisons]);
+
+  const {
+    data: downloadHistoryData,
+    isPending: downloadHistoryPending,
+    error: downloadHistoryErrorObj,
+    refetch: refetchDownloadHistory,
+  } = downloadHistoryQuery;
+  const downloadHistoryError = downloadHistoryErrorObj?.message;
+  const downloadHistoryLoading = downloadHistoryPending && !downloadHistoryData;
+  const refreshDownloadHistory = useCallback(() => {
+    void refetchDownloadHistory();
+  }, [refetchDownloadHistory]);
+
+  const readarrLoading =
+    readingListsLoading ||
+    metadataComparisonsLoading ||
+    downloadHistoryLoading;
+  const readarrError =
+    readingListsError ?? metadataComparisonsError ?? downloadHistoryError;
+  const refreshReadarr = useCallback(() => {
+    refreshReadingLists();
+    refreshMetadataComparisons();
+    refreshDownloadHistory();
+  }, [
+    refreshDownloadHistory,
+    refreshMetadataComparisons,
+    refreshReadingLists,
+  ]);
+
   const aggregateLoading =
-    libraryLoading || jobsLoading || workersLoading || poolsLoading;
+    libraryLoading ||
+    jobsLoading ||
+    workersLoading ||
+    poolsLoading ||
+    readarrLoading;
 
   const handleRefreshAll = useCallback(() => {
     refreshLibrary();
     refreshJobs();
     refreshWorkers();
     refreshPools();
-  }, [refreshJobs, refreshLibrary, refreshPools, refreshWorkers]);
+    refreshReadarr();
+  }, [
+    refreshJobs,
+    refreshLibrary,
+    refreshPools,
+    refreshReadarr,
+    refreshWorkers,
+  ]);
 
   return (
     <div className={styles.page}>
@@ -186,6 +287,14 @@ export default function DashboardPage() {
           data={libraryData}
           restClient={restClient}
           canWriteLibrary={canWriteLibrary}
+        />
+        <ReadarrExperiencePanel
+          readingLists={readingListsData}
+          metadataComparisons={metadataComparisonsData}
+          downloadHistory={downloadHistoryData}
+          loading={readarrLoading}
+          error={readarrError}
+          onRetry={refreshReadarr}
         />
         <JobQueuePanel
           data={jobsData}

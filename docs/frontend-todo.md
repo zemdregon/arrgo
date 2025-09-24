@@ -27,7 +27,7 @@
 - [ ] Detail pages for shows, movies, albums, and books that expose metadata, history, and manual job triggers.
 - [ ] Queue analytics dashboard with stream lag, retry counts, and SLA indicators.
 - [ ] Policy management editor for release profiles, retention rules, and media-specific overrides.
-- [ ] Readarr replacement UI: reading lists, audiobook/ebook metadata comparisons, and download history timelines.
+- [x] Readarr replacement UI: reading lists, audiobook/ebook metadata comparisons, and download history timelines.
 
 ### Request Management (Overseerr Replacement)
 - [ ] Public/private request form with media search, availability indicators, and quota display.
