@@ -257,7 +257,6 @@ func NewService(cfg Config) (*Service, error) {
 	return svc, nil
 }
 
-
 func (s *Service) startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
 	options := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindInternal)}
 	if len(attrs) > 0 {
