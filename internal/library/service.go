@@ -22,10 +22,13 @@ import (
 
 // Entity represents a top-level media record available to the automation stack.
 type Entity struct {
-	ID         string
-	EntityType string
-	Title      string
-	Synopsis   string
+	ID              string
+	EntityType      string
+	Title           string
+	Synopsis        string
+	PendingImports  int
+	QualityUpgrades int
+	Failures        int
 }
 
 // Job models an orchestration action scheduled against the library.
@@ -254,6 +257,7 @@ func NewService(cfg Config) (*Service, error) {
 	return svc, nil
 }
 
+
 func (s *Service) startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
 	options := []trace.SpanStartOption{trace.WithSpanKind(trace.SpanKindInternal)}
 	if len(attrs) > 0 {
@@ -288,15 +292,105 @@ func (s *Service) ListEntities(ctx context.Context, filter ListEntitiesFilter) (
 		return strings.ToLower(sorted[i].Title) < strings.ToLower(sorted[j].Title)
 	})
 
+	jobs, err := s.repository.ListJobs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("library: list jobs: %w", err)
+	}
+	statusByEntity := summarizeEntityStatuses(jobs)
+	enriched := applyEntityStatuses(sorted, statusByEntity)
+
 	wantsType := strings.TrimSpace(strings.ToLower(filter.EntityType))
-	results := make([]Entity, 0, len(sorted))
-	for _, entity := range sorted {
+	results := make([]Entity, 0, len(enriched))
+	for _, entity := range enriched {
 		if wantsType != "" && strings.ToLower(entity.EntityType) != wantsType {
 			continue
 		}
 		results = append(results, entity)
 	}
 	return append([]Entity(nil), results...), nil
+}
+
+type entityStatusTotals struct {
+	PendingImports  int
+	QualityUpgrades int
+	Failures        int
+}
+
+var canonicalCompletedState = strings.ToLower(JobStateDone)
+
+func summarizeEntityStatuses(jobs []Job) map[string]entityStatusTotals {
+	summary := make(map[string]entityStatusTotals)
+	for _, job := range jobs {
+		entityID := strings.TrimSpace(job.TargetID)
+		if entityID == "" {
+			continue
+		}
+
+		totals := summary[entityID]
+		state := normalizeJobState(job.State)
+		if isFailureState(state) {
+			totals.Failures++
+			summary[entityID] = totals
+			continue
+		}
+
+		if state == canonicalCompletedState {
+			summary[entityID] = totals
+			continue
+		}
+
+		jobType := normalizeJobType(job.JobType)
+		switch {
+		case jobType == "import":
+			totals.PendingImports++
+		case jobType == "refresh", jobType == "scan", strings.Contains(jobType, "upgrade"), strings.Contains(jobType, "quality"):
+			totals.QualityUpgrades++
+		}
+		summary[entityID] = totals
+	}
+	return summary
+}
+
+func applyEntityStatuses(entities []Entity, status map[string]entityStatusTotals) []Entity {
+	enriched := make([]Entity, len(entities))
+	for i, entity := range entities {
+		totals := status[strings.TrimSpace(entity.ID)]
+		entity.PendingImports = totals.PendingImports
+		entity.QualityUpgrades = totals.QualityUpgrades
+		entity.Failures = totals.Failures
+		enriched[i] = entity
+	}
+	return enriched
+}
+
+func normalizeJobType(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	return strings.ToLower(trimmed)
+}
+
+func normalizeJobState(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	return strings.ToLower(trimmed)
+}
+
+func isFailureState(state string) bool {
+	if state == "" {
+		return false
+	}
+	switch state {
+	case "failed", "failure", "errored", "error", "cancelled", "canceled", "aborted", "deadlettered", "timeout", "timed_out", "timed-out":
+		return true
+	}
+	if strings.Contains(state, "fail") || strings.Contains(state, "error") || strings.Contains(state, "cancel") {
+		return true
+	}
+	return false
 }
 
 // ListJobs returns job summaries ordered by submission time (newest first).

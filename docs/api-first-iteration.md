@@ -42,11 +42,18 @@ Base path: `/api/v1`
         "ID": "series-1",
         "EntityType": "series",
         "Title": "The Expanse",
-        "Synopsis": "..."
+        "Synopsis": "...",
+        "PendingImports": 2,
+        "QualityUpgrades": 1,
+        "Failures": 0
       }
     ]
   }
   ```
+  Entities include aggregated orchestration counters that surface ingestion
+  health in the dashboard. `PendingImports` captures queued import jobs,
+  `QualityUpgrades` highlights refresh/upgrade work outstanding, and `Failures`
+  tallies jobs that require operator intervention.
 
 #### `GET /api/v1/jobs`
 - **Description:** List orchestration jobs ordered by submission time (newest first).

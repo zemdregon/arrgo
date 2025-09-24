@@ -9,6 +9,9 @@ message LibraryEntity {
   string entity_type = 2;
   string title = 3;
   string synopsis = 4;
+  int32 pending_imports = 5;
+  int32 quality_upgrades = 6;
+  int32 failures = 7;
 }
 
 message ListLibraryEntitiesRequest {

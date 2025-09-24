@@ -2,7 +2,7 @@ import type {
   JobSummary,
   LibraryEntity,
   WorkerSummary,
-} from "../../../lib/api";
+} from "../../lib/api";
 
 export type SelectOption = {
   value: string;
@@ -20,6 +20,11 @@ export type BreakdownEntry = [string, number];
 export type LibraryStats = {
   total: number;
   breakdown: BreakdownEntry[];
+  statusTotals: {
+    pendingImports: number;
+    qualityUpgrades: number;
+    failures: number;
+  };
 };
 
 export type JobStats = {
@@ -98,15 +103,29 @@ export function createEntityOptions(
 export function buildLibraryStats(data?: LibraryEntity[]): LibraryStats {
   const entities = data ?? [];
   const counts = new Map<string, number>();
+  let pendingImports = 0;
+  let qualityUpgrades = 0;
+  let failures = 0;
+
   for (const entity of entities) {
     const key = entity.entityType || "unknown";
     counts.set(key, (counts.get(key) ?? 0) + 1);
+
+    pendingImports += entity.pendingImports ?? 0;
+    qualityUpgrades += entity.qualityUpgrades ?? 0;
+    failures += entity.failures ?? 0;
   }
+
   return {
     total: entities.length,
     breakdown: Array.from(counts.entries()).sort((a, b) =>
       a[0].localeCompare(b[0]),
     ),
+    statusTotals: {
+      pendingImports,
+      qualityUpgrades,
+      failures,
+    },
   };
 }
 

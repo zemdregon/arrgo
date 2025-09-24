@@ -23,22 +23,11 @@
 - [x] Add global search and quick action palette for navigating entities and triggering automation workflows.
 
 ### Library & Automation Views
-- [ ] Library overview with filterable status cards (pending imports, quality upgrades, failures).
-<<<<<<< HEAD
-- [x] Detail pages for shows, movies, albums, and books that expose metadata, history, and manual job triggers.
-- [x] Queue analytics dashboard with stream lag, retry counts, and SLA indicators.
-=======
+- [x] Library overview with filterable status cards (pending imports, quality upgrades, failures).
 - [ ] Detail pages for shows, movies, albums, and books that expose metadata, history, and manual job triggers.
-<<<<<<< HEAD
 - [x] Queue analytics dashboard with stream lag, retry counts, and SLA indicators.
-- [x] Policy management editor for release profiles, retention rules, and media-specific overrides.
-- [x] Readarr replacement UI: reading lists, audiobook/ebook metadata comparisons, and download history timelines.
-=======
-- [x] Queue analytics dashboard with stream lag, retry counts, and SLA indicators.
->>>>>>> origin/main
 - [ ] Policy management editor for release profiles, retention rules, and media-specific overrides.
 - [x] Readarr replacement UI: reading lists, audiobook/ebook metadata comparisons, and download history timelines.
->>>>>>> origin/main
 
 ### Request Management (Overseerr Replacement)
 - [x] Public/private request form with media search, availability indicators, and quota display.

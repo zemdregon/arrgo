@@ -36,10 +36,13 @@ func (s *Server) ListLibraryEntities(ctx context.Context, req *librarypb.ListLib
 	out := make([]*librarypb.LibraryEntity, 0, len(entities))
 	for _, entity := range entities {
 		out = append(out, &librarypb.LibraryEntity{
-			Id:         entity.ID,
-			EntityType: entity.EntityType,
-			Title:      entity.Title,
-			Synopsis:   entity.Synopsis,
+			Id:              entity.ID,
+			EntityType:      entity.EntityType,
+			Title:           entity.Title,
+			Synopsis:        entity.Synopsis,
+			PendingImports:  int32(entity.PendingImports),
+			QualityUpgrades: int32(entity.QualityUpgrades),
+			Failures:        int32(entity.Failures),
 		})
 	}
 
