@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/timeutil"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -23,7 +24,7 @@ type PipelineConfig struct {
 	Providers        []Provider
 	DefaultTTL       time.Duration
 	Logger           *slog.Logger
-	Clock            Clock
+	Clock            timeutil.Clock
 	MaxAttempts      int
 	BaseBackoff      time.Duration
 	MaxBackoff       time.Duration
@@ -39,7 +40,7 @@ type Pipeline struct {
 	providers        []Provider
 	defaultTTL       time.Duration
 	logger           *slog.Logger
-	clock            Clock
+	clock            timeutil.Clock
 	maxAttempts      int
 	baseBackoff      time.Duration
 	maxBackoff       time.Duration
@@ -57,15 +58,6 @@ type providerOutcome struct {
 	duration time.Duration
 	attempts int
 }
-
-// Clock abstracts time retrieval for deterministic testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now().UTC() }
 
 // NewPipeline constructs a metadata ingestion pipeline.
 func NewPipeline(cfg PipelineConfig) (*Pipeline, error) {
@@ -95,7 +87,7 @@ func NewPipeline(cfg PipelineConfig) (*Pipeline, error) {
 		p.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	if p.clock == nil {
-		p.clock = systemClock{}
+		p.clock = timeutil.SystemClock{}
 	}
 	if p.maxAttempts <= 0 {
 		p.maxAttempts = 3

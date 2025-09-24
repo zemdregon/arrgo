@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/timeutil"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
@@ -105,15 +106,6 @@ type TriggerJobInput struct {
 	IdempotencyKey string
 }
 
-// Clock abstracts time retrieval for deterministic testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now().UTC() }
-
 // IDGenerator produces stable identifiers for new jobs.
 type IDGenerator func() string
 
@@ -122,7 +114,7 @@ type Config struct {
 	Repository        Repository
 	Entities          []Entity
 	Jobs              []Job
-	Clock             Clock
+	Clock             timeutil.Clock
 	IDGenerator       IDGenerator
 	RedisClient       *redis.Client
 	StreamName        string
@@ -157,7 +149,7 @@ type Service struct {
 	entitiesByID      map[string]Entity
 	jobs              []Job
 	jobIndex          map[string]int
-	clock             Clock
+	clock             timeutil.Clock
 	idGen             IDGenerator
 	queue             *OrchestrationQueue
 	logger            *slog.Logger
@@ -190,7 +182,7 @@ func NewService(cfg Config) (*Service, error) {
 	}
 
 	if svc.clock == nil {
-		svc.clock = systemClock{}
+		svc.clock = timeutil.SystemClock{}
 	}
 	if svc.idGen == nil {
 		svc.idGen = func() string { return uuid.NewString() }

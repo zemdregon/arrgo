@@ -31,7 +31,7 @@ is unique.
 
 ### Example: Registering a Workflow
 ```go
-clock := systemClock{}
+clock := timeutil.SystemClock{}
 storageA := newS3Client(...) // wraps AWS S3, MinIO, etc.
 storageB := newS3Client(...)
 

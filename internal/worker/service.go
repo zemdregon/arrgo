@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/timeutil"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -24,15 +25,6 @@ const (
 	defaultConsumerGroup     = "arrgo-library-workers"
 )
 
-// Clock abstracts time retrieval for deterministic testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now().UTC() }
-
 // IDGenerator produces stable identifiers for new workers.
 type IDGenerator func() string
 
@@ -42,7 +34,7 @@ type Config struct {
 	Cache             Cache
 	Metrics           *Metrics
 	Logger            *slog.Logger
-	Clock             Clock
+	Clock             timeutil.Clock
 	IDGenerator       IDGenerator
 	HeartbeatInterval time.Duration
 	StaleAfter        time.Duration
@@ -57,7 +49,7 @@ type Service struct {
 	cache   Cache
 	metrics *Metrics
 	logger  *slog.Logger
-	clock   Clock
+	clock   timeutil.Clock
 	idGen   IDGenerator
 
 	heartbeatInterval time.Duration
@@ -82,7 +74,7 @@ func NewService(cfg Config) (*Service, error) {
 
 	clock := cfg.Clock
 	if clock == nil {
-		clock = systemClock{}
+		clock = timeutil.SystemClock{}
 	}
 	idGen := cfg.IDGenerator
 	if idGen == nil {
