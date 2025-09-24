@@ -39,6 +39,25 @@ export interface TriggerJobInput {
   idempotencyKey?: string;
 }
 
+export interface WorkerPoolConfig {
+  pool: string;
+  description?: string;
+  stream: string;
+  consumerGroup: string;
+  heartbeatIntervalSeconds: number;
+  staleAfterSeconds: number;
+  maxConcurrentJobs?: number;
+}
+
+export interface UpdateWorkerPoolInput {
+  description?: string;
+  stream?: string;
+  consumerGroup?: string;
+  heartbeatIntervalSeconds?: number;
+  staleAfterSeconds?: number;
+  maxConcurrentJobs?: number;
+}
+
 interface RawEntity {
   ID: string;
   EntityType: string;
@@ -69,6 +88,16 @@ interface RawWorker {
   registered_at?: string;
   last_heartbeat_at?: string;
   active_jobs: number;
+}
+
+interface RawWorkerPool {
+  pool: string;
+  description?: string;
+  stream: string;
+  consumer_group: string;
+  heartbeat_interval_seconds: number;
+  stale_after_seconds: number;
+  max_concurrent_jobs?: number;
 }
 
 function getBaseUrl(): string {
@@ -145,6 +174,15 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+async function putJSON<T>(path: string, body: unknown): Promise<T> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  return requestJSON<T>(path, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify(body ?? {})
+  });
+}
+
 export async function fetchEntities(): Promise<LibraryEntity[]> {
   const payload = await fetchJSON<{ entities: RawEntity[] }>(
     "/api/v1/library/entities"
@@ -215,5 +253,58 @@ export async function triggerJob(input: TriggerJobInput): Promise<JobSummary> {
     attempt: job.Attempt ?? 0,
     lastAttemptAt: normalizeTimestamp(job.LastAttemptAt),
     completedAt: normalizeTimestamp(job.CompletedAt)
+  };
+}
+
+export async function fetchWorkerPools(): Promise<WorkerPoolConfig[]> {
+  const payload = await fetchJSON<{ pools: RawWorkerPool[] }>("/api/v1/worker-pools");
+  return payload.pools.map((pool) => ({
+    pool: pool.pool,
+    description: pool.description?.trim() || undefined,
+    stream: pool.stream,
+    consumerGroup: pool.consumer_group,
+    heartbeatIntervalSeconds: pool.heartbeat_interval_seconds ?? 0,
+    staleAfterSeconds: pool.stale_after_seconds ?? 0,
+    maxConcurrentJobs: pool.max_concurrent_jobs ?? undefined
+  }));
+}
+
+export async function updateWorkerPool(
+  pool: string,
+  input: UpdateWorkerPoolInput
+): Promise<WorkerPoolConfig> {
+  const body: Record<string, unknown> = {};
+  if (input.description !== undefined) {
+    body.description = input.description;
+  }
+  if (input.stream !== undefined) {
+    body.stream = input.stream;
+  }
+  if (input.consumerGroup !== undefined) {
+    body.consumer_group = input.consumerGroup;
+  }
+  if (input.heartbeatIntervalSeconds !== undefined) {
+    body.heartbeat_interval_seconds = input.heartbeatIntervalSeconds;
+  }
+  if (input.staleAfterSeconds !== undefined) {
+    body.stale_after_seconds = input.staleAfterSeconds;
+  }
+  if (input.maxConcurrentJobs !== undefined) {
+    body.max_concurrent_jobs = input.maxConcurrentJobs;
+  }
+
+  const response = await putJSON<{ pool: RawWorkerPool }>(
+    `/api/v1/worker-pools/${encodeURIComponent(pool)}`,
+    body
+  );
+  const cfg = response.pool;
+  return {
+    pool: cfg.pool,
+    description: cfg.description?.trim() || undefined,
+    stream: cfg.stream,
+    consumerGroup: cfg.consumer_group,
+    heartbeatIntervalSeconds: cfg.heartbeat_interval_seconds ?? 0,
+    staleAfterSeconds: cfg.stale_after_seconds ?? 0,
+    maxConcurrentJobs: cfg.max_concurrent_jobs ?? undefined
   };
 }

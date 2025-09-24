@@ -69,9 +69,9 @@ Until the initial release is available, track the following tasks.
 - ✅ Expand the dashboard with interactive controls for queueing library jobs now that the write APIs are available. See [`web/dashboard`](web/dashboard).
 - ✅ Publish Helm charts and Terraform modules for production-grade deployments. See [`deploy/helm/arrgo`](deploy/helm/arrgo), [`deploy/terraform`](deploy/terraform), and [`docs/deployment/production.md`](docs/deployment/production.md).
 - ✅ Stand up automated performance and regression suites for large media libraries, covering scheduler fan-out and queue drain behavior. See [`docs/performance-regression.md`](docs/performance-regression.md).
+- ✅ Expand the web dashboard with queue analytics, job drill-downs, and worker pool configuration editing. See [`web/dashboard`](web/dashboard) and [`docs/dashboard-operations.md`](docs/dashboard-operations.md).
 
 ### Up Next
-- 🚧 Expand the web dashboard with queue analytics, job drill-downs, and configuration editing for master/worker pools.
 - 🚧 Implement cross-region media replication workflows with S3-compatible object storage targets and policy-driven retention.
 - 🚧 Add automated indexer health scoring and discovery to help operators tune failover thresholds without manual intervention.
 

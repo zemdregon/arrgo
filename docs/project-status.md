@@ -25,7 +25,8 @@
 - The gRPC server mirrors library and worker APIs with appropriate status mappings, enabling clients to adopt either protocol without behavioral drift.【F:internal/api/grpcapi/server.go†L15-L178】
 
 ### Dashboard experience
-- A Next.js dashboard pulls library entities, jobs, and worker metadata via typed fetch helpers, summarizing totals, breakdowns, and latest activity with reusable panels, retry-aware data hooks, and interactive job queue controls for library actions.【F:web/dashboard/app/page.tsx†L1-L362】【F:web/dashboard/lib/api.ts†L1-L214】【F:web/dashboard/hooks/useApiData.ts†L1-L31】
+- A Next.js dashboard pulls library entities, jobs, and worker metadata via typed fetch helpers, summarizing totals, breakdowns, and latest activity with reusable panels, retry-aware data hooks, interactive job queue controls, queue analytics, and job drill-down drawers.【F:web/dashboard/app/page.tsx†L1-L420】【F:web/dashboard/lib/api.ts†L1-L260】【F:web/dashboard/hooks/useApiData.ts†L1-L31】
+- Worker pool configuration is editable from the dashboard, with forms backed by new REST endpoints that persist heartbeat cadence, queue assignments, and concurrency limits.【F:web/dashboard/app/page.tsx†L420-L640】【F:internal/api/httpapi/server.go†L18-L280】【F:internal/worker/service.go†L1-L430】【F:docs/dashboard-operations.md†L1-L27】
 
 ### Automated verification
 - Unit tests cover library validation, idempotency, queue claim/ack, retries, and audit emission, giving confidence that orchestration primitives behave as expected.【F:internal/library/service_test.go†L57-L214】

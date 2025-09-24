@@ -7,10 +7,13 @@ import { useApiData } from "../hooks/useApiData";
 import {
   fetchEntities,
   fetchJobs,
+  fetchWorkerPools,
   fetchWorkers,
   JobSummary,
   LibraryEntity,
   triggerJob,
+  updateWorkerPool,
+  WorkerPoolConfig,
   WorkerSummary
 } from "../lib/api";
 import styles from "./page.module.css";
@@ -82,6 +85,14 @@ type WorkerStats = {
   healthy: number;
   stale: number;
   pools: BreakdownEntry[];
+};
+
+type QueueAnalytics = {
+  total: number;
+  byType: BreakdownEntry[];
+  byState: BreakdownEntry[];
+  averageAttempts: number;
+  latestSubmittedAt?: string;
 };
 
 type SelectOption = {
@@ -187,10 +198,71 @@ function buildWorkerStats(data?: WorkerSummary[]): WorkerStats {
   };
 }
 
+function buildQueueAnalytics(data?: JobSummary[]): QueueAnalytics {
+  const jobs = data ?? [];
+  const typeCounts = new Map<string, number>();
+  const stateCounts = new Map<string, number>();
+  let totalAttempts = 0;
+  let latestSubmission: string | undefined;
+
+  for (const job of jobs) {
+    const typeKey = job.jobType || "unknown";
+    typeCounts.set(typeKey, (typeCounts.get(typeKey) ?? 0) + 1);
+
+    const stateKey = job.state || "unknown";
+    stateCounts.set(stateKey, (stateCounts.get(stateKey) ?? 0) + 1);
+
+    totalAttempts += job.attempt ?? 0;
+
+    if (job.submittedAt) {
+      if (!latestSubmission || job.submittedAt > latestSubmission) {
+        latestSubmission = job.submittedAt;
+      }
+    }
+  }
+
+  return {
+    total: jobs.length,
+    byType: Array.from(typeCounts.entries()).sort((a, b) => a[0].localeCompare(b[0])),
+    byState: Array.from(stateCounts.entries()).sort((a, b) => a[0].localeCompare(b[0])),
+    averageAttempts: jobs.length ? totalAttempts / jobs.length : 0,
+    latestSubmittedAt: latestSubmission
+  };
+}
+
+function formatRelativeTime(value?: string): string {
+  if (!value) {
+    return "—";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const diff = Date.now() - date.getTime();
+  if (diff < 0) {
+    return formatTimestamp(value);
+  }
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) {
+    return `${hours}h ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 export default function DashboardPage() {
   const library = useApiData(fetchEntities);
   const jobs = useApiData(fetchJobs);
   const workers = useApiData(fetchWorkers);
+  const pools = useApiData(fetchWorkerPools);
 
   const [libraryTypeFilter, setLibraryTypeFilter] = useState("all");
   const [jobStateFilter, setJobStateFilter] = useState("all");
@@ -206,6 +278,20 @@ export default function DashboardPage() {
   const [jobFeedback, setJobFeedback] = useState<
     { kind: "success" | "error"; message: string } | null
   >(null);
+  const [selectedJob, setSelectedJob] = useState<JobSummary | null>(null);
+  const [poolSelection, setPoolSelection] = useState("");
+  const [poolForm, setPoolForm] = useState({
+    description: "",
+    stream: "",
+    consumerGroup: "",
+    heartbeatIntervalSeconds: "",
+    staleAfterSeconds: "",
+    maxConcurrentJobs: ""
+  });
+  const [poolSubmitting, setPoolSubmitting] = useState(false);
+  const [poolFeedback, setPoolFeedback] = useState<
+    { kind: "success" | "error"; message: string } | null
+  >(null);
 
   const libraryStats = useMemo(() => buildLibraryStats(library.data), [
     library.data
@@ -213,6 +299,9 @@ export default function DashboardPage() {
   const jobStats = useMemo(() => buildJobStats(jobs.data), [jobs.data]);
   const workerStats = useMemo(() => buildWorkerStats(workers.data), [
     workers.data
+  ]);
+  const queueAnalytics = useMemo(() => buildQueueAnalytics(jobs.data), [
+    jobs.data
   ]);
   const libraryEntityOptions = useMemo(
     () =>
@@ -262,6 +351,26 @@ export default function DashboardPage() {
       ),
     [workers.data]
   );
+  const poolOptions = useMemo(
+    () =>
+      (pools.data ?? []).map<SelectOption>((pool) => ({
+        value: pool.pool,
+        label: pool.description
+          ? pool.pool + " · " + pool.description
+          : pool.pool
+      })),
+    [pools.data]
+  );
+  const selectedPoolConfig = useMemo<WorkerPoolConfig | null>(() => {
+    if (!pools.data) {
+      return null;
+    }
+    return pools.data.find((cfg) => cfg.pool === poolSelection) ?? null;
+  }, [pools.data, poolSelection]);
+  const selectedPoolWorkerCount = useMemo(() => {
+    const match = workerStats.pools.find(([pool]) => pool === poolSelection);
+    return match ? match[1] : 0;
+  }, [workerStats.pools, poolSelection]);
 
   useEffect(() => {
     if (
@@ -313,6 +422,53 @@ export default function DashboardPage() {
     setJobTargetSelection(libraryEntityOptions[0].value);
   }, [jobTargetSelection, libraryEntityOptions]);
 
+  useEffect(() => {
+    if (!pools.data || pools.data.length === 0) {
+      if (poolSelection !== "") {
+        setPoolSelection("");
+      }
+      return;
+    }
+    if (poolSelection && pools.data.some((cfg) => cfg.pool === poolSelection)) {
+      return;
+    }
+    setPoolSelection(pools.data[0].pool);
+  }, [pools.data, poolSelection]);
+
+  useEffect(() => {
+    if (!selectedPoolConfig) {
+      setPoolForm({
+        description: "",
+        stream: "",
+        consumerGroup: "",
+        heartbeatIntervalSeconds: "",
+        staleAfterSeconds: "",
+        maxConcurrentJobs: ""
+      });
+      return;
+    }
+    setPoolForm({
+      description: selectedPoolConfig.description ?? "",
+      stream: selectedPoolConfig.stream,
+      consumerGroup: selectedPoolConfig.consumerGroup,
+      heartbeatIntervalSeconds: String(
+        selectedPoolConfig.heartbeatIntervalSeconds || 0
+      ),
+      staleAfterSeconds: String(selectedPoolConfig.staleAfterSeconds || 0),
+      maxConcurrentJobs:
+        selectedPoolConfig.maxConcurrentJobs !== undefined
+          ? String(selectedPoolConfig.maxConcurrentJobs)
+          : ""
+    });
+    setPoolFeedback(null);
+  }, [selectedPoolConfig]);
+
+  useEffect(() => {
+    if (selectedJob && !jobs.data?.some((job) => job.id === selectedJob.id)) {
+      setSelectedJob(null);
+    }
+  }, [jobs.data, selectedJob]);
+
   const visibleLibrary = useMemo(() => {
     const entities = library.data ?? [];
     if (libraryTypeFilter === "all") {
@@ -353,23 +509,62 @@ export default function DashboardPage() {
   const jobSubmitDisabled =
     !libraryEntityOptions.length || !jobTargetSelection || jobSubmitting;
 
+  const formatShowingSummary = (
+    visibleCount: number,
+    limit: number,
+    noun: string,
+    totalCount: number
+  ): string => {
+    return (
+      "Showing " +
+      Math.min(visibleCount, limit) +
+      " of " +
+      visibleCount +
+      " " +
+      noun +
+      " (" +
+      totalCount +
+      " total)"
+    );
+  };
   const libraryFooter = libraryStats.total
-    ? `Showing ${Math.min(visibleLibrary.length, 5)} of ${visibleLibrary.length} ${
-        libraryTypeFilter === "all" ? "entities" : "matches"
-      } (${libraryStats.total} total)`
+    ? formatShowingSummary(
+        visibleLibrary.length,
+        5,
+        libraryTypeFilter === "all" ? "entities" : "matches",
+        libraryStats.total
+      )
     : undefined;
   const jobFooter = jobStats.total
-    ? `Showing ${Math.min(visibleJobs.length, 8)} of ${visibleJobs.length} ${
-        jobStateFilter === "all" ? "jobs" : "matches"
-      } (${jobStats.total} total)`
+    ? formatShowingSummary(
+        visibleJobs.length,
+        8,
+        jobStateFilter === "all" ? "jobs" : "matches",
+        jobStats.total
+      )
     : undefined;
   const workerFooter = workerStats.total
-    ? `Showing ${Math.min(visibleWorkers.length, 8)} of ${visibleWorkers.length} ${
+    ? formatShowingSummary(
+        visibleWorkers.length,
+        8,
         workerPoolFilter === "all" && workerStatusFilter === "all"
           ? "workers"
-          : "matches"
-      } (${workerStats.total} total)`
+          : "matches",
+        workerStats.total
+      )
     : undefined;
+
+  const parseOptionalNumber = (value: string): number | undefined => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      return undefined;
+    }
+    return parsed;
+  };
 
   const handleTriggerJob = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -387,7 +582,7 @@ export default function DashboardPage() {
       (option) => option.value === jobTargetValue
     );
     const jobTargetDescription = jobTargetOption
-      ? `${jobTargetOption.label} · ${jobTargetOption.entityType}`
+      ? jobTargetOption.label + " · " + jobTargetOption.entityType
       : jobTargetValue;
     const jobTypeLabel =
       JOB_TYPE_OPTIONS.find((option) => option.value === jobTypeValue)?.label ??
@@ -404,7 +599,12 @@ export default function DashboardPage() {
       });
       setJobFeedback({
         kind: "success",
-        message: `Queued ${jobTypeLabel} job for ${jobTargetDescription}.`
+        message:
+          "Queued " +
+          jobTypeLabel +
+          " job for " +
+          jobTargetDescription +
+          "."
       });
       setJobPayloadURI("");
       setJobIdempotencyKey("");
@@ -414,6 +614,53 @@ export default function DashboardPage() {
       setJobFeedback({ kind: "error", message });
     } finally {
       setJobSubmitting(false);
+    }
+  };
+
+  const handlePoolSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!poolSelection) {
+      setPoolFeedback({
+        kind: "error",
+        message: "Select a worker pool to update before saving changes."
+      });
+      return;
+    }
+    if (!poolForm.stream.trim() || !poolForm.consumerGroup.trim()) {
+      setPoolFeedback({
+        kind: "error",
+        message: "Stream and consumer group values are required."
+      });
+      return;
+    }
+
+    const heartbeatInterval = parseOptionalNumber(
+      poolForm.heartbeatIntervalSeconds
+    );
+    const staleAfter = parseOptionalNumber(poolForm.staleAfterSeconds);
+    const maxConcurrentJobs = parseOptionalNumber(poolForm.maxConcurrentJobs);
+
+    setPoolSubmitting(true);
+    setPoolFeedback(null);
+    try {
+      await updateWorkerPool(poolSelection, {
+        description: poolForm.description,
+        stream: poolForm.stream,
+        consumerGroup: poolForm.consumerGroup,
+        heartbeatIntervalSeconds: heartbeatInterval,
+        staleAfterSeconds: staleAfter,
+        maxConcurrentJobs
+      });
+      setPoolFeedback({
+        kind: "success",
+        message: "Updated " + poolSelection + " pool configuration."
+      });
+      pools.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setPoolFeedback({ kind: "error", message });
+    } finally {
+      setPoolSubmitting(false);
     }
   };
 
@@ -488,7 +735,7 @@ export default function DashboardPage() {
                 </div>
                 {libraryEntityOptions.length ? (
                   <form
-                    className={`${styles.panelControls} ${styles.inlineForm}`}
+                    className={[styles.panelControls, styles.inlineForm].join(" ")}
                     onSubmit={handleTriggerJob}
                   >
                     <div className={styles.controlGroup}>
@@ -529,7 +776,7 @@ export default function DashboardPage() {
                       >
                         {libraryEntityOptions.map((option) => (
                           <option key={option.value} value={option.value}>
-                            {`${option.label} · ${option.entityType}`}
+                            {option.label} · {option.entityType}
                           </option>
                         ))}
                       </select>
@@ -591,18 +838,19 @@ export default function DashboardPage() {
           {libraryStats.total ? (
             visibleLibrary.length ? (
               <>
-                {jobFeedback ? (
-                  <div
-                    className={`${styles.formMessage} ${
-                      jobFeedback.kind === "success"
-                        ? styles.formMessageSuccess
-                        : styles.formMessageError
-                    }`}
-                    role={jobFeedback.kind === "error" ? "alert" : "status"}
-                    aria-live={
-                      jobFeedback.kind === "error" ? "assertive" : "polite"
-                    }
-                  >
+                  {jobFeedback ? (
+                    <div
+                      className={[
+                        styles.formMessage,
+                        jobFeedback.kind === "success"
+                          ? styles.formMessageSuccess
+                          : styles.formMessageError
+                      ].join(" ")}
+                      role={jobFeedback.kind === "error" ? "alert" : "status"}
+                      aria-live={
+                        jobFeedback.kind === "error" ? "assertive" : "polite"
+                      }
+                    >
                     <span>{jobFeedback.message}</span>
                     <button
                       type="button"
@@ -613,18 +861,21 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 ) : null}
-                <div className={styles.metricsRow}>
-                  <div
-                    className={`${styles.metricCard} ${
-                      libraryTypeFilter !== "all" ? styles.metricCardEmphasis : ""
-                    }`}
-                  >
+                  <div className={styles.metricsRow}>
+                    <div
+                      className={[
+                        styles.metricCard,
+                        libraryTypeFilter !== "all" ? styles.metricCardEmphasis : ""
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
                     <span className={styles.metricValue}>{visibleLibrary.length}</span>
-                    <span className={styles.metricLabel}>
-                      {libraryTypeFilter === "all"
-                        ? "Total entities"
-                        : `Filtered · ${selectedLibraryLabel}`}
-                    </span>
+                      <span className={styles.metricLabel}>
+                        {libraryTypeFilter === "all"
+                          ? "Total entities"
+                          : "Filtered · " + selectedLibraryLabel}
+                      </span>
                   </div>
                   {libraryTypeFilter !== "all" ? (
                     <div className={styles.metricCard}>
@@ -639,9 +890,9 @@ export default function DashboardPage() {
                     return (
                       <div
                         key={type}
-                        className={`${styles.metricCard} ${
-                          isActive ? styles.metricCardActive : ""
-                        }`}
+                        className={[styles.metricCard, isActive ? styles.metricCardActive : ""]
+                          .filter(Boolean)
+                          .join(" ")}
                       >
                         <span className={styles.metricValue}>{count}</span>
                         <span className={styles.metricLabel}>{type}</span>
@@ -708,18 +959,21 @@ export default function DashboardPage() {
           {jobStats.total ? (
             visibleJobs.length ? (
               <>
-                <div className={styles.metricsRow}>
-                  <div
-                    className={`${styles.metricCard} ${
-                      jobStateFilter !== "all" ? styles.metricCardEmphasis : ""
-                    }`}
-                  >
+                  <div className={styles.metricsRow}>
+                    <div
+                      className={[
+                        styles.metricCard,
+                        jobStateFilter !== "all" ? styles.metricCardEmphasis : ""
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
                     <span className={styles.metricValue}>{visibleJobs.length}</span>
-                    <span className={styles.metricLabel}>
-                      {jobStateFilter === "all"
-                        ? "Total jobs"
-                        : `Filtered · ${selectedJobLabel}`}
-                    </span>
+                      <span className={styles.metricLabel}>
+                        {jobStateFilter === "all"
+                          ? "Total jobs"
+                          : "Filtered · " + selectedJobLabel}
+                      </span>
                   </div>
                   {jobStateFilter !== "all" ? (
                     <div className={styles.metricCard}>
@@ -727,22 +981,63 @@ export default function DashboardPage() {
                       <span className={styles.metricLabel}>Cluster total</span>
                     </div>
                   ) : null}
-                  {jobStats.counts.map(([state, count]) => {
-                    const isActive =
-                      jobStateFilter !== "all" &&
-                      normalize(state) === jobStateFilter;
-                    return (
-                      <div
-                        key={state}
-                        className={`${styles.metricCard} ${
-                          isActive ? styles.metricCardActive : ""
-                        }`}
-                      >
-                        <span className={styles.metricValue}>{count}</span>
-                        <span className={styles.metricLabel}>{state}</span>
+                    {jobStats.counts.map(([state, count]) => {
+                      const isActive =
+                        jobStateFilter !== "all" &&
+                        normalize(state) === jobStateFilter;
+                      return (
+                        <div
+                          key={state}
+                          className={[styles.metricCard, isActive ? styles.metricCardActive : ""]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
+                          <span className={styles.metricValue}>{count}</span>
+                          <span className={styles.metricLabel}>{state}</span>
+                        </div>
+                      );
+                    })}
+                </div>
+                <div className={styles.analyticsGrid}>
+                  <div className={styles.analyticsCard}>
+                    <h3 className={styles.analyticsTitle}>By job type</h3>
+                    {queueAnalytics.byType.length ? (
+                      <ul className={styles.analyticsList}>
+                        {queueAnalytics.byType.map(([type, count]) => (
+                          <li key={type} className={styles.analyticsListItem}>
+                            <span className={styles.analyticsLabel}>{type}</span>
+                            <span className={styles.analyticsValue}>{count}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className={styles.emptyState}>No jobs recorded yet.</p>
+                    )}
+                  </div>
+                  <div className={styles.analyticsCard}>
+                    <h3 className={styles.analyticsTitle}>Recent activity</h3>
+                    <dl className={styles.analyticsDetails}>
+                      <div className={styles.analyticsDetailRow}>
+                        <dt>Average attempts</dt>
+                        <dd>
+                          {queueAnalytics.total
+                            ? queueAnalytics.averageAttempts.toFixed(1)
+                            : "—"}
+                        </dd>
                       </div>
-                    );
-                  })}
+                      <div className={styles.analyticsDetailRow}>
+                        <dt>Last submission</dt>
+                        <dd>
+                          {queueAnalytics.latestSubmittedAt
+                            ? [
+                                formatRelativeTime(queueAnalytics.latestSubmittedAt),
+                                formatTimestamp(queueAnalytics.latestSubmittedAt)
+                              ].join(" · ")
+                            : "—"}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
                 </div>
                 <div className={styles.tableWrapper}>
                   <table className={styles.table}>
@@ -753,6 +1048,7 @@ export default function DashboardPage() {
                         <th scope="col">State</th>
                         <th scope="col">Submitted</th>
                         <th scope="col">Attempt</th>
+                        <th scope="col">Details</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -760,7 +1056,7 @@ export default function DashboardPage() {
                         <tr key={job.id}>
                           <td>
                             <div className={styles.jobDetails}>
-                              <span className={`${styles.monospace}`}>
+                              <span className={styles.monospace}>
                                 {job.jobType}
                               </span>
                               {job.payloadURI ? (
@@ -777,6 +1073,15 @@ export default function DashboardPage() {
                           </td>
                           <td>{formatTimestamp(job.submittedAt)}</td>
                           <td>{job.attempt}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className={styles.linkButton}
+                              onClick={() => setSelectedJob(job)}
+                            >
+                              Inspect
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -849,18 +1154,21 @@ export default function DashboardPage() {
           {workerStats.total ? (
             visibleWorkers.length ? (
               <>
-                <div className={styles.metricsRow}>
-                  <div
-                    className={`${styles.metricCard} ${
-                      workerFiltersActive ? styles.metricCardEmphasis : ""
-                    }`}
-                  >
+                  <div className={styles.metricsRow}>
+                    <div
+                      className={[
+                        styles.metricCard,
+                        workerFiltersActive ? styles.metricCardEmphasis : ""
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
                     <span className={styles.metricValue}>{visibleWorkers.length}</span>
-                    <span className={styles.metricLabel}>
-                      {workerFiltersActive
-                        ? `Filtered · ${workerFilterDescription}`
-                        : "Total workers"}
-                    </span>
+                      <span className={styles.metricLabel}>
+                        {workerFiltersActive
+                          ? "Filtered · " + workerFilterDescription
+                          : "Total workers"}
+                      </span>
                   </div>
                   {workerFiltersActive ? (
                     <div className={styles.metricCard}>
@@ -868,23 +1176,29 @@ export default function DashboardPage() {
                       <span className={styles.metricLabel}>Cluster total</span>
                     </div>
                   ) : null}
-                  <div
-                    className={`${styles.metricCard} ${
-                      workerStatusFilter === "healthy"
-                        ? styles.metricCardActive
-                        : ""
-                    }`}
-                  >
+                    <div
+                      className={[
+                        styles.metricCard,
+                        workerStatusFilter === "healthy"
+                          ? styles.metricCardActive
+                          : ""
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
                     <span className={styles.metricValue}>{workerStats.healthy}</span>
                     <span className={styles.metricLabel}>Healthy</span>
                   </div>
-                  <div
-                    className={`${styles.metricCard} ${
-                      workerStatusFilter === "stale"
-                        ? styles.metricCardActive
-                        : ""
-                    }`}
-                  >
+                    <div
+                      className={[
+                        styles.metricCard,
+                        workerStatusFilter === "stale"
+                          ? styles.metricCardActive
+                          : ""
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
                     <span className={styles.metricValue}>{workerStats.stale}</span>
                     <span className={styles.metricLabel}>Stale</span>
                   </div>
@@ -896,13 +1210,17 @@ export default function DashboardPage() {
                         workerPoolFilter !== "all" &&
                         normalize(pool, "unassigned") === workerPoolFilter;
                       return (
-                        <span
-                          key={pool}
-                          className={`${styles.poolBadge} ${styles.monospace} ${
-                            isActive ? styles.poolBadgeActive : ""
-                          }`}
-                          title={`${count} worker${count === 1 ? "" : "s"}`}
-                        >
+                          <span
+                            key={pool}
+                            className={[
+                              styles.poolBadge,
+                              styles.monospace,
+                              isActive ? styles.poolBadgeActive : ""
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            title={String(count) + (count === 1 ? " worker" : " workers")}
+                          >
                           {pool} · {count}
                         </span>
                       );
@@ -925,10 +1243,10 @@ export default function DashboardPage() {
                         <tr key={worker.id}>
                           <td>
                             <div className={styles.jobDetails}>
-                              <span
-                                className={`${styles.monospace}`}
-                                title={worker.id}
-                              >
+                                <span
+                                  className={styles.monospace}
+                                  title={worker.id}
+                                >
                                 {shortenIdentifier(worker.id)}
                               </span>
                               <span className={styles.smallText}>{worker.version}</span>
@@ -966,7 +1284,326 @@ export default function DashboardPage() {
             </p>
           )}
         </DataPanel>
+        <DataPanel
+          title="Worker pool configuration"
+          description="Tune queue assignments and cadence for master/worker pools."
+          loading={pools.loading}
+          error={pools.error}
+          onRetry={pools.refresh}
+          actions={
+            pools.data && pools.data.length ? (
+              <div className={styles.panelControls}>
+                <div className={styles.controlGroup}>
+                  <label className={styles.controlLabel} htmlFor="pool-select">
+                    Pool
+                  </label>
+                  <select
+                    id="pool-select"
+                    className={styles.controlSelect}
+                    value={poolSelection}
+                    onChange={(event) => {
+                      setPoolSelection(event.target.value);
+                      setPoolFeedback(null);
+                    }}
+                  >
+                    {poolOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : null
+          }
+        >
+          {pools.loading ? null : pools.data && pools.data.length ? (
+            <form className={styles.poolForm} onSubmit={handlePoolSubmit}>
+              <div className={styles.metricsRow}>
+                <div className={styles.metricCard}>
+                  <span className={styles.metricValue}>{selectedPoolWorkerCount}</span>
+                  <span className={styles.metricLabel}>Workers in pool</span>
+                </div>
+                <div className={styles.metricCard}>
+                  <span className={styles.metricValue}>
+                    {selectedPoolConfig
+                      ? String(selectedPoolConfig.heartbeatIntervalSeconds) + "s"
+                      : "—"}
+                  </span>
+                  <span className={styles.metricLabel}>Heartbeat interval</span>
+                </div>
+                <div className={styles.metricCard}>
+                  <span className={styles.metricValue}>
+                    {selectedPoolConfig
+                      ? String(selectedPoolConfig.staleAfterSeconds) + "s"
+                      : "—"}
+                  </span>
+                  <span className={styles.metricLabel}>Stale threshold</span>
+                </div>
+                {selectedPoolConfig?.maxConcurrentJobs !== undefined ? (
+                  <div className={styles.metricCard}>
+                    <span className={styles.metricValue}>
+                      {selectedPoolConfig.maxConcurrentJobs}
+                    </span>
+                    <span className={styles.metricLabel}>Max concurrent jobs</span>
+                  </div>
+                ) : null}
+              </div>
+              <div className={styles.poolFormGrid}>
+                <div className={styles.controlGroup}>
+                  <label className={styles.controlLabel} htmlFor="pool-description">
+                    Description
+                  </label>
+                  <input
+                    id="pool-description"
+                    className={styles.controlInput}
+                    value={poolForm.description}
+                    onChange={(event) => {
+                      setPoolForm((previous) => ({
+                        ...previous,
+                        description: event.target.value
+                      }));
+                      setPoolFeedback(null);
+                    }}
+                    placeholder="Optional summary"
+                  />
+                </div>
+                <div className={styles.controlGroup}>
+                  <label className={styles.controlLabel} htmlFor="pool-stream">
+                    Stream
+                  </label>
+                  <input
+                    id="pool-stream"
+                    className={styles.controlInput}
+                    value={poolForm.stream}
+                    onChange={(event) => {
+                      setPoolForm((previous) => ({
+                        ...previous,
+                        stream: event.target.value
+                      }));
+                      setPoolFeedback(null);
+                    }}
+                    required
+                  />
+                </div>
+                <div className={styles.controlGroup}>
+                  <label
+                    className={styles.controlLabel}
+                    htmlFor="pool-consumer-group"
+                  >
+                    Consumer group
+                  </label>
+                  <input
+                    id="pool-consumer-group"
+                    className={styles.controlInput}
+                    value={poolForm.consumerGroup}
+                    onChange={(event) => {
+                      setPoolForm((previous) => ({
+                        ...previous,
+                        consumerGroup: event.target.value
+                      }));
+                      setPoolFeedback(null);
+                    }}
+                    required
+                  />
+                </div>
+                <div className={styles.controlGroup}>
+                  <label
+                    className={styles.controlLabel}
+                    htmlFor="pool-heartbeat-interval"
+                  >
+                    Heartbeat interval (s)
+                  </label>
+                  <input
+                    id="pool-heartbeat-interval"
+                    type="number"
+                    min={0}
+                    className={styles.controlInput}
+                    value={poolForm.heartbeatIntervalSeconds}
+                    onChange={(event) => {
+                      setPoolForm((previous) => ({
+                        ...previous,
+                        heartbeatIntervalSeconds: event.target.value
+                      }));
+                      setPoolFeedback(null);
+                    }}
+                  />
+                </div>
+                <div className={styles.controlGroup}>
+                  <label className={styles.controlLabel} htmlFor="pool-stale-after">
+                    Stale after (s)
+                  </label>
+                  <input
+                    id="pool-stale-after"
+                    type="number"
+                    min={0}
+                    className={styles.controlInput}
+                    value={poolForm.staleAfterSeconds}
+                    onChange={(event) => {
+                      setPoolForm((previous) => ({
+                        ...previous,
+                        staleAfterSeconds: event.target.value
+                      }));
+                      setPoolFeedback(null);
+                    }}
+                  />
+                </div>
+                <div className={styles.controlGroup}>
+                  <label className={styles.controlLabel} htmlFor="pool-max-jobs">
+                    Max concurrent jobs
+                  </label>
+                  <input
+                    id="pool-max-jobs"
+                    type="number"
+                    min={0}
+                    className={styles.controlInput}
+                    value={poolForm.maxConcurrentJobs}
+                    onChange={(event) => {
+                      setPoolForm((previous) => ({
+                        ...previous,
+                        maxConcurrentJobs: event.target.value
+                      }));
+                      setPoolFeedback(null);
+                    }}
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+              {poolFeedback ? (
+                <div
+                  className={[
+                    styles.formMessage,
+                    poolFeedback.kind === "success"
+                      ? styles.formMessageSuccess
+                      : styles.formMessageError
+                  ].join(" ")}
+                >
+                  <span>{poolFeedback.message}</span>
+                  <button
+                    type="button"
+                    className={styles.messageDismiss}
+                    onClick={() => setPoolFeedback(null)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              ) : null}
+              <button
+                type="submit"
+                className={styles.primaryButton}
+                disabled={poolSubmitting}
+              >
+                Save configuration
+              </button>
+            </form>
+          ) : (
+            <p className={styles.emptyState}>
+              Define a worker pool to begin tuning queue assignments.
+            </p>
+          )}
+        </DataPanel>
       </div>
+      {selectedJob ? (
+        <div className={styles.drawerBackdrop} role="presentation">
+          <div
+            className={styles.drawer}
+            role="dialog"
+            aria-modal="true"
+            aria-label={"Details for job " + selectedJob.id}
+          >
+            <div className={styles.drawerHeader}>
+              <h2 className={styles.drawerTitle}>Job details</h2>
+              <button
+                type="button"
+                className={styles.drawerClose}
+                onClick={() => setSelectedJob(null)}
+              >
+                Close
+              </button>
+            </div>
+            <dl className={styles.drawerDetails}>
+              <div className={styles.drawerDetailRow}>
+                <dt>Job ID</dt>
+                <dd className={styles.monospace}>{selectedJob.id}</dd>
+              </div>
+              <div className={styles.drawerDetailRow}>
+                <dt>Job type</dt>
+                <dd className={styles.monospace}>{selectedJob.jobType}</dd>
+              </div>
+              <div className={styles.drawerDetailRow}>
+                <dt>Target</dt>
+                <dd className={styles.monospace}>{selectedJob.targetID}</dd>
+              </div>
+              <div className={styles.drawerDetailRow}>
+                <dt>Status</dt>
+                <dd>
+                  <StatusPill
+                    label={selectedJob.state || "unknown"}
+                    tone={jobTone(selectedJob.state)}
+                  />
+                </dd>
+              </div>
+              <div className={styles.drawerDetailRow}>
+                <dt>Payload URI</dt>
+                <dd className={styles.monospace}>
+                  {selectedJob.payloadURI || "—"}
+                </dd>
+              </div>
+              <div className={styles.drawerDetailRow}>
+                <dt>Idempotency key</dt>
+                <dd className={styles.monospace}>
+                  {selectedJob.idempotencyKey || "—"}
+                </dd>
+              </div>
+              <div className={styles.drawerDetailRow}>
+                <dt>Attempt</dt>
+                <dd>{selectedJob.attempt}</dd>
+              </div>
+              <div className={styles.drawerDetailRow}>
+                <dt>Submitted</dt>
+                <dd>
+                  {formatTimestamp(selectedJob.submittedAt)}
+                  {selectedJob.submittedAt ? (
+                    <span className={styles.drawerSubtle}>
+                      {formatRelativeTime(selectedJob.submittedAt)}
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
+              <div className={styles.drawerDetailRow}>
+                <dt>Last attempt</dt>
+                <dd>
+                  {selectedJob.lastAttemptAt ? (
+                    <>
+                      {formatTimestamp(selectedJob.lastAttemptAt)}
+                      <span className={styles.drawerSubtle}>
+                        {formatRelativeTime(selectedJob.lastAttemptAt)}
+                      </span>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
+              </div>
+              <div className={styles.drawerDetailRow}>
+                <dt>Completed</dt>
+                <dd>
+                  {selectedJob.completedAt ? (
+                    <>
+                      {formatTimestamp(selectedJob.completedAt)}
+                      <span className={styles.drawerSubtle}>
+                        {formatRelativeTime(selectedJob.completedAt)}
+                      </span>
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
