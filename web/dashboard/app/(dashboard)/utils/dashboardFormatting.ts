@@ -101,3 +101,19 @@ export function releaseTone(status: string): Tone {
       return "neutral";
   }
 }
+
+export function downloadTone(status: string): Tone {
+  switch (status?.toLowerCase()) {
+    case "completed":
+    case "imported":
+      return "success";
+    case "failed":
+    case "rejected":
+      return "danger";
+    case "downloading":
+    case "processing":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}

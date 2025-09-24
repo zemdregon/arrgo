@@ -82,6 +82,53 @@ export interface ManualSearchResult {
   results: ManualSearchRelease[];
 }
 
+export interface ReadingList {
+  id: string;
+  name: string;
+  source: string;
+  curator?: string;
+  entryCount: number;
+  completedCount: number;
+  lastSyncedAt?: string;
+  tags: string[];
+}
+
+export interface MetadataSourceSummary {
+  provider: string;
+  identifier?: string;
+  edition?: string;
+  language?: string;
+  publishedAt?: string;
+  runtimeMinutes?: number;
+  quality?: string;
+  format?: string;
+}
+
+export interface MetadataComparison {
+  id: string;
+  title: string;
+  author?: string;
+  ebook?: MetadataSourceSummary | null;
+  audiobook?: MetadataSourceSummary | null;
+  confidence: number;
+  mismatchedFields: string[];
+  lastEvaluatedAt?: string;
+}
+
+export interface DownloadHistoryEntry {
+  id: string;
+  entityID?: string;
+  title: string;
+  format: string;
+  status: string;
+  sizeBytes?: number;
+  sourceList?: string;
+  client?: string;
+  downloadedAt?: string;
+  completedAt?: string;
+  failureReason?: string;
+}
+
 export interface TriggerJobInput {
   jobType: string;
   targetID: string;
@@ -199,6 +246,53 @@ interface RawManualSearchResult {
   Results: RawManualSearchRelease[];
 }
 
+interface RawReadingList {
+  id: string;
+  name: string;
+  source: string;
+  curator?: string;
+  entry_count?: number;
+  completed_count?: number;
+  last_synced_at?: string;
+  tags?: Array<string | null | undefined>;
+}
+
+interface RawMetadataSourceSummary {
+  provider: string;
+  identifier?: string;
+  edition?: string;
+  language?: string;
+  published_at?: string;
+  runtime_minutes?: number;
+  quality?: string;
+  format?: string;
+}
+
+interface RawMetadataComparison {
+  id: string;
+  title: string;
+  author?: string;
+  ebook?: RawMetadataSourceSummary | null;
+  audiobook?: RawMetadataSourceSummary | null;
+  confidence?: number;
+  mismatched_fields?: Array<string | null | undefined>;
+  last_evaluated_at?: string;
+}
+
+interface RawDownloadHistoryEntry {
+  id: string;
+  entity_id?: string;
+  title: string;
+  format: string;
+  status: string;
+  size_bytes?: number;
+  source_list?: string;
+  client?: string;
+  downloaded_at?: string;
+  completed_at?: string;
+  failure_reason?: string;
+}
+
 interface RawPrincipal {
   key: {
     id: string;
@@ -312,6 +406,82 @@ function normalizeManualSearchResult(
     query: search.Query?.trim() || "",
     executedAt: normalizeTimestamp(search.ExecutedAt),
     results: (search.Results ?? []).map(normalizeManualSearchRelease),
+  };
+}
+
+function normalizeStringArray(
+  values?: Array<string | null | undefined>,
+): string[] {
+  return (values ?? [])
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+}
+
+function normalizeReadingList(list: RawReadingList): ReadingList {
+  return {
+    id: list.id,
+    name: list.name,
+    source: list.source,
+    curator: list.curator?.trim() || undefined,
+    entryCount: list.entry_count ?? 0,
+    completedCount: list.completed_count ?? 0,
+    lastSyncedAt: normalizeTimestamp(list.last_synced_at),
+    tags: normalizeStringArray(list.tags),
+  };
+}
+
+function normalizeMetadataSource(
+  source?: RawMetadataSourceSummary | null,
+): MetadataSourceSummary | null {
+  if (!source) {
+    return null;
+  }
+  return {
+    provider: source.provider,
+    identifier: source.identifier?.trim() || undefined,
+    edition: source.edition?.trim() || undefined,
+    language: source.language?.trim() || undefined,
+    publishedAt: normalizeTimestamp(source.published_at),
+    runtimeMinutes: source.runtime_minutes ?? undefined,
+    quality: source.quality?.trim() || undefined,
+    format: source.format?.trim() || undefined,
+  };
+}
+
+function normalizeMetadataComparison(
+  comparison: RawMetadataComparison,
+): MetadataComparison {
+  const confidence = comparison.confidence ?? 0;
+  const normalizedConfidence = Number.isFinite(confidence)
+    ? Math.min(Math.max(confidence, 0), 1)
+    : 0;
+  return {
+    id: comparison.id,
+    title: comparison.title,
+    author: comparison.author?.trim() || undefined,
+    ebook: normalizeMetadataSource(comparison.ebook),
+    audiobook: normalizeMetadataSource(comparison.audiobook),
+    confidence: normalizedConfidence,
+    mismatchedFields: normalizeStringArray(comparison.mismatched_fields),
+    lastEvaluatedAt: normalizeTimestamp(comparison.last_evaluated_at),
+  };
+}
+
+function normalizeDownloadHistoryEntry(
+  entry: RawDownloadHistoryEntry,
+): DownloadHistoryEntry {
+  return {
+    id: entry.id,
+    entityID: entry.entity_id?.trim() || undefined,
+    title: entry.title,
+    format: entry.format,
+    status: entry.status,
+    sizeBytes: entry.size_bytes ?? undefined,
+    sourceList: entry.source_list?.trim() || undefined,
+    client: entry.client?.trim() || undefined,
+    downloadedAt: normalizeTimestamp(entry.downloaded_at),
+    completedAt: normalizeTimestamp(entry.completed_at),
+    failureReason: entry.failure_reason?.trim() || undefined,
   };
 }
 
@@ -549,6 +719,39 @@ export class RestApiClient {
     );
     return normalizePrincipal(payload.principal);
   }
+
+  async fetchReadingLists(): Promise<ReadingList[]> {
+    const payload = await this.http.get<{ lists: RawReadingList[] }>(
+      "/api/v1/library/reading-lists",
+      {
+        traceName: "REST GET /api/v1/library/reading-lists",
+        traceAttributes: { resource: "library.reading_lists" },
+      },
+    );
+    return (payload.lists ?? []).map(normalizeReadingList);
+  }
+
+  async fetchMetadataComparisons(): Promise<MetadataComparison[]> {
+    const payload = await this.http.get<{ comparisons: RawMetadataComparison[] }>(
+      "/api/v1/library/metadata/comparisons",
+      {
+        traceName: "REST GET /api/v1/library/metadata/comparisons",
+        traceAttributes: { resource: "library.metadata_comparisons" },
+      },
+    );
+    return (payload.comparisons ?? []).map(normalizeMetadataComparison);
+  }
+
+  async fetchDownloadHistory(): Promise<DownloadHistoryEntry[]> {
+    const payload = await this.http.get<{ history: RawDownloadHistoryEntry[] }>(
+      "/api/v1/library/download-history",
+      {
+        traceName: "REST GET /api/v1/library/download-history",
+        traceAttributes: { resource: "library.download_history" },
+      },
+    );
+    return (payload.history ?? []).map(normalizeDownloadHistoryEntry);
+  }
 }
 
 const defaultRestClient = new RestApiClient();
@@ -615,6 +818,22 @@ export function grabManualRelease(
 
 export function fetchPrincipal(baseUrl?: string): Promise<Principal> {
   return defaultRestClient.withBaseUrl(baseUrl).fetchPrincipal();
+}
+
+export function fetchReadingLists(baseUrl?: string): Promise<ReadingList[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchReadingLists();
+}
+
+export function fetchMetadataComparisons(
+  baseUrl?: string,
+): Promise<MetadataComparison[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchMetadataComparisons();
+}
+
+export function fetchDownloadHistory(
+  baseUrl?: string,
+): Promise<DownloadHistoryEntry[]> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchDownloadHistory();
 }
 
 export interface GrpcLibraryClientOptions extends RestApiClientOptions {}
