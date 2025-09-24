@@ -74,6 +74,11 @@ Until the initial release is available, track the following tasks.
 ### Up Next
 - 🚧 Implement cross-region media replication workflows with S3-compatible object storage targets and policy-driven retention.
 - 🚧 Add automated indexer health scoring and discovery to help operators tune failover thresholds without manual intervention.
+- 🚧 Implement external list ingestion (e.g., Trakt, IMDb, Last.fm) with a pluggable module system—mirroring notification and downloader agents—so new providers can be added without core changes while still matching Sonarr/Radarr/Lidarr list sync behavior.
+- 🚧 Build release profile/custom format scoring with preferred group/codec filters, blocklists, and backwards-compatible support for importing Sonarr/Radarr custom format definitions to match the advanced grab rules in the existing *arr applications.
+- 🚧 Add interactive/manual search workflows in the dashboard and APIs for reviewing indexer results and force-grabbing specific releases when automation falls short.
+- 🚧 Deliver configurable file renaming and folder organization templates for episodes, movies, and music libraries with history-aware rename jobs.
+- 🚧 Expose rich metadata override tools (episode/season cutovers, album editions, track numbering) so operators can correct catalog data without waiting on upstream providers.
 
 ### Docker Compose development stack
 
