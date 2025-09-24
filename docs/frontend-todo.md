@@ -30,10 +30,10 @@
 - [ ] Readarr replacement UI: reading lists, audiobook/ebook metadata comparisons, and download history timelines.
 
 ### Request Management (Overseerr Replacement)
-- [ ] Public/private request form with media search, availability indicators, and quota display.
-- [ ] Approval workflow view with bulk actions, automation previews, and status history.
-- [ ] Notification settings for request outcomes (email, webhook, push integrations).
-- [ ] SLA metrics for request turnaround, backlog aging, and policy violations.
+- [x] Public/private request form with media search, availability indicators, and quota display.
+- [x] Approval workflow view with bulk actions, automation previews, and status history.
+- [x] Notification settings for request outcomes (email, webhook, push integrations).
+- [x] SLA metrics for request turnaround, backlog aging, and policy violations.
 
 ### Worker & Infrastructure Operations
 - [ ] Worker pool list with health indicators, capability tags, and heartbeat timelines.

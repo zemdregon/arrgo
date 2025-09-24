@@ -11,7 +11,7 @@ import styles from "./layout.module.css";
 const NAVIGATION_ITEMS = [
   { href: "/", label: "Overview" },
   { href: "/library", label: "Library", disabled: true },
-  { href: "/requests", label: "Requests", disabled: true },
+  { href: "/requests", label: "Requests" },
   { href: "/workers", label: "Workers", disabled: true },
   { href: "/automation", label: "Automation", disabled: true }
 ];
