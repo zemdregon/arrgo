@@ -55,6 +55,48 @@ export interface WorkerSummary {
   activeJobs: number;
 }
 
+export type QueueHealthStatus = "healthy" | "warning" | "critical";
+
+export interface QueueStreamLagMetric {
+  stream: string;
+  consumerGroup: string;
+  lagSeconds?: number;
+  lagMessages?: number;
+  oldestPendingAgeSeconds?: number;
+  lastProducedAt?: string;
+  lastConsumedAt?: string;
+  status: QueueHealthStatus;
+}
+
+export interface QueueRetryMetric {
+  jobType: string;
+  retryCount: number;
+  recentFailureRate?: number;
+  maxAttempts?: number;
+  oldestRetryAgeSeconds?: number;
+  lastRetryAt?: string;
+  status: QueueHealthStatus;
+}
+
+export interface QueueSlaIndicator {
+  queue: string;
+  targetSeconds?: number;
+  p95Seconds?: number;
+  p99Seconds?: number;
+  successRate?: number;
+  breachesToday?: number;
+  status: QueueHealthStatus;
+  updatedAt?: string;
+}
+
+export interface QueueAnalyticsOverview {
+  updatedAt?: string;
+  observedWindowSeconds?: number;
+  streamLag: QueueStreamLagMetric[];
+  retries: QueueRetryMetric[];
+  sla: QueueSlaIndicator[];
+}
+
 export interface ManualSearchRelease {
   id: string;
   searchID: string;
@@ -170,6 +212,50 @@ interface RawWorkerPool {
   heartbeat_interval_seconds: number;
   stale_after_seconds: number;
   max_concurrent_jobs?: number;
+}
+
+interface RawQueueStreamLagMetric {
+  stream: string;
+  consumer_group: string;
+  lag_seconds?: number;
+  lag_messages?: number;
+  oldest_pending_age_seconds?: number;
+  last_produced_at?: string;
+  last_consumed_at?: string;
+  status?: string;
+}
+
+interface RawQueueRetryMetric {
+  job_type: string;
+  retry_count?: number;
+  recent_failure_rate?: number;
+  max_attempts?: number;
+  oldest_retry_age_seconds?: number;
+  last_retry_at?: string;
+  status?: string;
+}
+
+interface RawQueueSlaIndicator {
+  queue: string;
+  target_seconds?: number;
+  p95_seconds?: number;
+  p99_seconds?: number;
+  success_rate?: number;
+  breaches_today?: number;
+  status?: string;
+  updated_at?: string;
+}
+
+interface RawQueueAnalyticsOverview {
+  updated_at?: string;
+  observed_window_seconds?: number;
+  stream_lag?: RawQueueStreamLagMetric[];
+  retry_metrics?: RawQueueRetryMetric[];
+  sla?: RawQueueSlaIndicator[];
+}
+
+interface RawQueueAnalyticsResponse {
+  analytics: RawQueueAnalyticsOverview;
 }
 
 interface RawManualSearchRelease {
@@ -349,6 +435,109 @@ function normalizePrincipal(payload: RawPrincipal): Principal {
   };
 }
 
+function normalizeQueueStatus(status?: string): QueueHealthStatus {
+  switch (status?.toLowerCase()) {
+    case "healthy":
+    case "ok":
+    case "normal":
+      return "healthy";
+    case "warning":
+    case "degraded":
+    case "elevated":
+      return "warning";
+    case "critical":
+    case "danger":
+    case "failed":
+      return "critical";
+    default:
+      return "warning";
+  }
+}
+
+function sanitizePositiveNumber(value?: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value <= 0) {
+    return 0;
+  }
+  return value;
+}
+
+function sanitizeRate(value?: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  if (value <= 0) {
+    return 0;
+  }
+  if (value >= 1) {
+    return 1;
+  }
+  return value;
+}
+
+function normalizeQueueStreamLag(
+  metric: RawQueueStreamLagMetric,
+): QueueStreamLagMetric {
+  return {
+    stream: metric.stream,
+    consumerGroup: metric.consumer_group,
+    lagSeconds: sanitizePositiveNumber(metric.lag_seconds),
+    lagMessages: sanitizePositiveNumber(metric.lag_messages),
+    oldestPendingAgeSeconds: sanitizePositiveNumber(
+      metric.oldest_pending_age_seconds,
+    ),
+    lastProducedAt: normalizeTimestamp(metric.last_produced_at),
+    lastConsumedAt: normalizeTimestamp(metric.last_consumed_at),
+    status: normalizeQueueStatus(metric.status),
+  };
+}
+
+function normalizeQueueRetryMetric(metric: RawQueueRetryMetric): QueueRetryMetric {
+  return {
+    jobType: metric.job_type,
+    retryCount: sanitizePositiveNumber(metric.retry_count) ?? 0,
+    recentFailureRate: sanitizeRate(metric.recent_failure_rate),
+    maxAttempts: sanitizePositiveNumber(metric.max_attempts),
+    oldestRetryAgeSeconds: sanitizePositiveNumber(
+      metric.oldest_retry_age_seconds,
+    ),
+    lastRetryAt: normalizeTimestamp(metric.last_retry_at),
+    status: normalizeQueueStatus(metric.status),
+  };
+}
+
+function normalizeQueueSlaIndicator(
+  indicator: RawQueueSlaIndicator,
+): QueueSlaIndicator {
+  return {
+    queue: indicator.queue,
+    targetSeconds: sanitizePositiveNumber(indicator.target_seconds),
+    p95Seconds: sanitizePositiveNumber(indicator.p95_seconds),
+    p99Seconds: sanitizePositiveNumber(indicator.p99_seconds),
+    successRate: sanitizeRate(indicator.success_rate),
+    breachesToday: sanitizePositiveNumber(indicator.breaches_today),
+    status: normalizeQueueStatus(indicator.status),
+    updatedAt: normalizeTimestamp(indicator.updated_at),
+  };
+}
+
+function normalizeQueueAnalytics(
+  analytics?: RawQueueAnalyticsOverview,
+): QueueAnalyticsOverview {
+  const safeAnalytics = analytics ?? {};
+  return {
+    updatedAt: normalizeTimestamp(safeAnalytics.updated_at),
+    observedWindowSeconds: sanitizePositiveNumber(
+      safeAnalytics.observed_window_seconds,
+    ),
+    streamLag: (safeAnalytics.stream_lag ?? []).map(normalizeQueueStreamLag),
+    retries: (safeAnalytics.retry_metrics ?? []).map(normalizeQueueRetryMetric),
+    sla: (safeAnalytics.sla ?? []).map(normalizeQueueSlaIndicator),
+  };
+}
+
 export interface RestApiClientOptions {
   baseUrl?: string;
   tokenProvider?: TokenProvider;
@@ -415,6 +604,17 @@ export class RestApiClient {
       },
     );
     return payload.workers.map(mapWorkerSummary);
+  }
+
+  async fetchQueueAnalytics(): Promise<QueueAnalyticsOverview> {
+    const payload = await this.http.get<RawQueueAnalyticsResponse>(
+      "/api/v1/queue/analytics",
+      {
+        traceName: "REST GET /api/v1/queue/analytics",
+        traceAttributes: { resource: "queue.analytics" },
+      },
+    );
+    return normalizeQueueAnalytics(payload.analytics);
   }
 
   async triggerJob(input: TriggerJobInput): Promise<JobSummary> {
@@ -567,6 +767,12 @@ export function fetchJobs(baseUrl?: string): Promise<JobSummary[]> {
 
 export function fetchWorkers(baseUrl?: string): Promise<WorkerSummary[]> {
   return defaultRestClient.withBaseUrl(baseUrl).fetchWorkers();
+}
+
+export function fetchQueueAnalytics(
+  baseUrl?: string,
+): Promise<QueueAnalyticsOverview> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchQueueAnalytics();
 }
 
 export function triggerJob(
