@@ -1,19 +1,19 @@
 .panel {
-  background: rgba(15, 23, 42, 0.85);
+  background: var(--surface-elevated);
   backdrop-filter: blur(18px);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 18px;
-  padding: 1.5rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-xl);
+  padding: var(--space-lg);
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  box-shadow: 0 24px 48px rgba(2, 6, 23, 0.4);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  gap: var(--space-md);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
 .panel:hover {
-  border-color: rgba(148, 163, 184, 0.35);
-  box-shadow: 0 32px 60px rgba(2, 6, 23, 0.5);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
 }
 
 .header {
@@ -48,24 +48,33 @@
 
 .description {
   margin: 0.25rem 0 0;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-size: 0.95rem;
 }
 
 .refreshButton {
-  background: linear-gradient(135deg, #38bdf8, #6366f1);
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-strong));
   border: none;
-  color: #0f172a;
+  color: var(--color-text-inverse);
   padding: 0.5rem 1rem;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.2s ease;
+  transition:
+    transform var(--transition-base),
+    box-shadow var(--transition-base),
+    opacity var(--transition-base);
 }
 
 .refreshButton:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  box-shadow: none;
+}
+
+.refreshButton:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-accent);
 }
 
 .content {
@@ -75,11 +84,11 @@
 }
 
 .error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  color: #fecaca;
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+  color: var(--status-danger-text);
   padding: 0.75rem 1rem;
-  border-radius: 1rem;
+  border-radius: var(--radius-lg);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -88,10 +97,10 @@
 
 .inlineRetry {
   background: transparent;
-  border: 1px solid rgba(248, 113, 113, 0.6);
-  color: #fecaca;
+  border: 1px solid var(--status-danger-border);
+  color: inherit;
   padding: 0.35rem 0.75rem;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   cursor: pointer;
 }
 
@@ -102,12 +111,12 @@
 
 .loading {
   font-style: italic;
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 .footer {
-  border-top: 1px solid rgba(148, 163, 184, 0.15);
+  border-top: 1px solid var(--color-border-subtle);
   padding-top: 0.75rem;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-size: 0.9rem;
 }

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { AppShell } from "../../components/layout/AppShell";
 import { SidebarNavigation } from "../../components/layout/SidebarNavigation";
+import { ThemeToggle } from "../../components/theme/ThemeToggle";
 import styles from "./layout.module.css";
 
 const NAVIGATION_ITEMS = [
@@ -32,9 +33,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <span className={styles.brand}>arrgo</span>
             <span className={styles.product}>dashboard</span>
           </div>
-          <div className={styles.environmentGroup}>
-            <span className={styles.environmentLabel}>Environment</span>
-            <span className={styles.environmentValue}>Local</span>
+          <div className={styles.controls}>
+            <div className={styles.environmentGroup}>
+              <span className={styles.environmentLabel}>Environment</span>
+              <span className={styles.environmentValue}>Local</span>
+            </div>
+            <ThemeToggle />
           </div>
         </div>
       }

@@ -43,15 +43,15 @@
 .link:hover {
   text-decoration: none;
   color: var(--color-text-primary);
-  border-color: var(--border-subtle);
-  background: rgba(148, 163, 184, 0.08);
+  border-color: var(--color-border-subtle);
+  background: var(--surface-panel);
 }
 
 .link[data-active="true"] {
   color: var(--color-text-primary);
-  border-color: rgba(56, 189, 248, 0.45);
-  background: rgba(56, 189, 248, 0.15);
-  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25);
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-muted);
+  box-shadow: 0 0 0 1px var(--color-accent-border-strong);
 }
 
 .link[data-disabled] {
@@ -72,8 +72,8 @@
   width: 1.25rem;
   height: 1.25rem;
   border-radius: var(--radius-full);
-  background: rgba(56, 189, 248, 0.08);
-  color: var(--color-primary);
+  background: var(--color-accent-muted);
+  color: var(--color-accent);
   font-size: 0.8rem;
 }
 
