@@ -1,5 +1,8 @@
 # ADR 0001: Redis Streams Orchestration Queue
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Accepted and implemented in `internal/library/queue.go`
+
 - Status: Accepted
 - Date: 2024-07-13
 - Owners: Platform Engineering

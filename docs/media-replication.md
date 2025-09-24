@@ -1,5 +1,8 @@
 # Cross-Region Media Replication
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented with workflow engine in `internal/replication`
+
 ## Overview
 Arrgo now includes a dedicated replication service that mirrors library imports across
 multiple S3-compatible regions. The service is implemented in [`internal/replication`](../internal/replication)
@@ -96,3 +99,19 @@ replication metrics or encryption envelopes can be layered in the concrete clien
 - **Future integration** – the next step is wiring the library import pipeline so the
   worker posts replication requests after successful imports, then exposing progress in
   the dashboard.
+
+## Observability & Operations
+- Track replication latency per target (`replication_duration_seconds`) and the
+  size of queued replication jobs. Alert if lag exceeds retention windows.
+- Emit events when retention policies prune historical versions so operators can
+  audit deletion activity.
+- Expose workflow status in the dashboard, including last success timestamp and
+  outstanding retries per target.
+
+## Future Enhancements
+- Support checksum validation at the destination to detect silent data
+  corruption.
+- Integrate with cold storage tiers (Glacier, Deep Archive) and customizable
+  lifecycle transitions.
+- Allow conditional replication based on media attributes (e.g., only replicate
+  high-value titles or specific quality tiers).

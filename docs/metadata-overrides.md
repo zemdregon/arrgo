@@ -1,5 +1,8 @@
 # Metadata Override Toolkit
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented (overrides exposed via REST API and dashboard workflows)
+
 arrgo exposes first-class tools that let operators reshape catalog metadata without waiting on upstream providers. Overrides
 are persisted alongside library entities so workflow automation, renaming pipelines, and dashboard views stay consistent with
 manual corrections.
@@ -58,3 +61,18 @@ curl -X PUT \
 Refer to the implementation details in [`internal/library/metadata_overrides.go`](../internal/library/metadata_overrides.go)
 and the REST wiring in [`internal/api/httpapi/server.go`](../internal/api/httpapi/server.go) for full struct definitions and
 validation rules.
+
+## Observability & Operations
+- Override mutations emit audit events containing the actor, entity ID, and
+  change summary. Subscribe to these events to keep governance logs current.
+- Prometheus counters track override creations, updates, and deletions per media
+  type to highlight high-touch catalogs.
+- Dashboard panels expose the latest override timestamp and a diff view so
+  operators can confirm active overrides quickly.
+
+## Future Enhancements
+- Introduce approval workflows for multi-operator environments that require
+  peer review before overrides apply.
+- Allow partial overrides at the field level (e.g., only change artwork while
+  keeping provider-supplied titles).
+- Provide bulk import/export tools for migrating overrides between environments.

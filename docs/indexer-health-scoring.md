@@ -1,5 +1,8 @@
 # Indexer Health Scoring and Discovery
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented with monitoring hooks in `internal/integrations/indexer`
+
 arrgo now tracks indexer reliability automatically so that operators can set failover thresholds based on live traffic instead of manual guesswork. The monitoring logic lives in [`internal/integrations/indexer`](../internal/integrations/indexer) and pairs rolling health scores with discovery hooks so that new indexers are incorporated as soon as they respond to requests or are surfaced by pluggable discovery sources.
 
 ## Monitor Overview
@@ -65,3 +68,20 @@ Key tunables exposed via `indexer.Config`:
 | `Discoverers` | Optional list of discovery sources consulted by `Monitor.Discover`. |
 
 These defaults match the requirements captured in the roadmap item: score indexer reliability automatically, surface context for each discovery, and deliver actionable recommendations that eliminate manual threshold tuning.
+
+## Operational Monitoring
+- Export monitor snapshots to Prometheus via gauges/histograms (`indexer_health_score`,
+  `indexer_latency_seconds`) to trend reliability over time.
+- Emit structured events when discovery sources add or remove indexers so that
+  dashboards and audit logs stay synchronized.
+- Surface failover recommendations in the dashboard with the underlying
+  percentile, sample size, and number of participating indexers to build trust
+  in the automation.
+
+## Future Enhancements
+- Incorporate request volume weighting so high-throughput indexers have more
+  influence on failover thresholds than rarely used ones.
+- Persist health history in Postgres to support long-term reporting and anomaly
+  detection.
+- Allow per-indexer maintenance windows that suppress alerts and avoid penalizing
+  known downtime.

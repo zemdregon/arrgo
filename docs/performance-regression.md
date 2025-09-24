@@ -1,5 +1,8 @@
 # Performance and Regression Testing
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Automated suites running locally; CI integration in progress
+
 Automated suites exercise library orchestration behavior against large catalogs so regressions are caught before they reach production-scale deployments.
 
 ## Scheduler fan-out regression
@@ -35,3 +38,18 @@ go test ./internal/library -bench BenchmarkSchedulerRunLargeLibrary -run '^$'
 - Incorporate the regression tests into nightly or pre-release workflows to surface scaling issues early while keeping routine developer runs fast.
 - Capture benchmark output across releases to spot throughput regressions; persisting historical results makes performance trends easy to visualize.
 - For deeper profiling, wrap benchmark executions with `go test -benchmem` and `pprof` captures so flame graphs highlight new bottlenecks.
+
+## Observability Hooks
+- Publish benchmark artifacts (latency percentiles, throughput summaries) to a
+  central dashboard so trends are visible without combing through logs.
+- Emit Prometheus metrics during regression runs to compare scheduler behaviour
+  across commits.
+- Attach flame graph snapshots to CI artifacts for easy review when regressions
+  surface.
+
+## Future Enhancements
+- Add load tests for metadata ingestion and download router throughput as those
+  components stabilize.
+- Integrate chaos testing (e.g., Redis restarts) into the regression suite to
+  measure recovery behaviour.
+- Expand benchmarks to cover Postgres-backed operations once persistence lands.

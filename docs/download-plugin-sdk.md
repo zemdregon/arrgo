@@ -1,5 +1,8 @@
 # Download Client Plugin SDK
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Contract tests available and enforced via `sdk/downloadclient/contract`
+
 The download client SDK exposes a stable contract for third-party maintainers who want to ship adapters alongside arrgo releases. The SDK lives in [`sdk/downloadclient`](../sdk/downloadclient) and mirrors the semantics used internally by the download router while remaining importable from external Go modules.
 
 ## Adapter Interface
@@ -94,8 +97,18 @@ func TestAdapterContract(t *testing.T) {
 
 The suite is intentionally flexible: adapters can provide any number of health or enqueue scenarios, inject contexts, and reuse the exported assertion helpers to describe the expected outcomes.
 
-## Next Steps
+## Operational Guidance
+- Keep adapter names stable so that arrgo operators can reference them in
+  configuration files and dashboards.
+- Emit structured logs for health probes and enqueue attempts to make
+  troubleshooting easier.
+- Ship adapters with semantic versioning and changelogs so operators can pin
+  compatible versions across clusters.
 
-- Keep adapter names stable so that arrgo operators can refer to them in configuration files.
-- Emit structured logs for health probes and enqueue attempts to make troubleshooting easier.
-- When adding new adapter capabilities, update the contract tests to reflect the additional expectations so consumers get immediate feedback during development.
+## Future Enhancements
+- Expand the contract suite with performance benchmarks to validate adapter
+  throughput under parallel dispatch.
+- Publish packaging templates (Go modules, Docker images) that demonstrate how
+  to distribute adapters independently from arrgo releases.
+- Provide SDK shims for non-Go languages if the community demands alternative
+  runtimes for adapters.

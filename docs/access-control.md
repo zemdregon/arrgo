@@ -1,9 +1,20 @@
 # Access Control and API Keys
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented for alpha builds (RBAC and API key workflows are wired into the HTTP server and dashboard)
+
 arrgo secures its HTTP surfaces with role-based access control (RBAC) backed by
 labeled API keys. Every integration, automation, or user interface receives a
 dedicated credential so operators can audit activity, rotate secrets
 selectively, and scope permissions to the minimum required actions.
+
+## Implementation Snapshot
+- RBAC enforcement lives in the `internal/auth` package and is invoked by both
+  REST and gRPC middleware before handlers execute.
+- API key issuance flows are exposed in the dashboard and through the
+  `auth.Service` so that automation scripts can self-manage credentials.
+- Audit metadata (creator, last rotation timestamp, revocation reason) is stored
+  alongside hashed secrets for downstream analytics.
 
 ## Roles and Permissions
 
@@ -67,3 +78,21 @@ operators can integrate them with existing telemetry pipelines.
   return `401` responses so monitoring can alert on stale integrations.
 - Extend the RBAC model through new roles if a workflow requires a bespoke
   blend of read/write capabilities.
+
+## Audit & Compliance Considerations
+- **Logging:** Authentication middleware emits structured logs for every
+  successful and failed request, including key ID, role, and HTTP status code.
+- **Metrics:** Prometheus counters track per-role request volume, rejected
+  requests, and rotation events. Alert on spikes in `401` responses to detect
+  leaked keys.
+- **Dashboards:** The dashboard surfaces key age, last used timestamp, and the
+  services calling each credential so that compliance checks can spot dormant
+  integrations.
+
+## Future Enhancements
+- Integrate single sign-on providers and map identity provider groups to arrgo
+  roles for organizations that prefer centralized identity management.
+- Allow scoped API keys with fine-grained permissions (e.g., read-only access
+  to specific libraries) to support delegated automation.
+- Provide built-in rotation reminders and exportable audit trails for regulated
+  environments.

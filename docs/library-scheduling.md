@@ -1,5 +1,8 @@
 # Library Scheduling
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented (cron-backed scheduler running in master service)
+
 The library scheduler automates recurring scan and import workflows by wiring cron-based
 triggers directly to the orchestration queue. It ensures that large media libraries stay
 current without manual intervention and keeps worker utilization predictable via explicit
@@ -98,3 +101,20 @@ additional plumbing is not yet required.
   to keep the worker pipeline flowing.
 - Ensure the library service is constructed with a Redis client so jobs can be enqueued. The
   scheduler returns `ErrQueueUnavailable` if the orchestration queue is not configured.
+
+## Observability & Alerting
+- Emit Prometheus counters for scheduled jobs, skipped entities, and queue
+  submission failures. Alert if submissions fail continuously for longer than a
+  single schedule interval.
+- Use tracing spans around schedule execution to visualize fan-out latency and
+  downstream queue wait times.
+- Surface schedule metadata in the dashboard so operators can confirm cadence
+  and concurrency limits without digging into configuration files.
+
+## Future Enhancements
+- Support holiday/maintenance windows that pause schedules automatically during
+  planned outages.
+- Allow entity-level inclusion/exclusion lists to customize which series or
+  artists participate in each schedule.
+- Integrate with calendar feeds (ICS) so schedules can react to external
+  release calendars.

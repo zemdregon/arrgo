@@ -1,5 +1,8 @@
 # Dashboard Operations Enhancements
 
+> **Last reviewed:** 2025-03-08  
+> **Status:** Implemented with continuous iteration (Next.js dashboard served from `web/dashboard`)
+
 The arrgo dashboard now surfaces deeper operational insights and direct
 configuration controls so operators can steer orchestration without leaving the
 UI.
@@ -48,3 +51,22 @@ with status pills so rejections are surfaced alongside the rejection reason. The
 automation and mark a candidate as manually grabbed. Results update in-place so
 operators can track which releases have been queued while auditing additional
 candidates.
+
+## Health & Alerting Views
+- **Worker status banner:** A global banner summarizes registered workers,
+  highlighting stale agents and surfacing the most recent heartbeat age. Clicking
+  the banner filters the worker table to affected pools.
+- **Queue saturation chart:** Line charts render queue depth and throughput over
+  time using streaming data from `/api/v1/jobs`. Thresholds are configurable per
+  pool so operators can align visuals with alerting rules.
+- **Indexer health widget:** The dashboard consumes the health scoring API and
+  displays percentile-based recommendations, recent discovery events, and the
+  most recent error for quick diagnostics.
+
+## Future Enhancements
+- Native dark mode and theme customization for control rooms with strict
+  lighting requirements.
+- Inline log and trace viewers using embedded links to observability platforms
+  so operators can pivot from a job directly into telemetry.
+- Role-aware widgets that tailor controls to the authenticated user's
+  permissions, reducing interface noise for observers.
