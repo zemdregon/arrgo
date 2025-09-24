@@ -36,10 +36,10 @@
 - [x] SLA metrics for request turnaround, backlog aging, and policy violations.
 
 ### Worker & Infrastructure Operations
-- [ ] Worker pool list with health indicators, capability tags, and heartbeat timelines.
-- [ ] Job drill-down views showing execution logs, retries, and related media entities.
-- [ ] Observability suite integration: charts for metrics, trace sampling, and log streaming.
-- [ ] Configuration UI for secrets management pointers and infrastructure environment variables.
+- [x] Worker pool list with health indicators, capability tags, and heartbeat timelines.
+- [x] Job drill-down views showing execution logs, retries, and related media entities.
+- [x] Observability suite integration: charts for metrics, trace sampling, and log streaming.
+- [x] Configuration UI for secrets management pointers and infrastructure environment variables.
 
 ### Quality, Testing, and Delivery
 - [ ] Storybook (or equivalent) coverage for core components with visual regression testing.

@@ -43,6 +43,35 @@ export interface JobSummary {
   completedAt?: string;
 }
 
+export interface KeyValuePair {
+  key: string;
+  value: string;
+}
+
+export interface JobLogEntry {
+  timestamp?: string;
+  level: string;
+  message: string;
+  fields: KeyValuePair[];
+}
+
+export interface JobAttemptDetail {
+  attempt: number;
+  status: string;
+  workerId?: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+  backoffSeconds?: number;
+}
+
+export interface JobDetail {
+  job: JobSummary;
+  logs: JobLogEntry[];
+  attempts: JobAttemptDetail[];
+  relatedEntities: LibraryEntity[];
+}
+
 export interface WorkerSummary {
   id: string;
   pool: string;
@@ -53,6 +82,43 @@ export interface WorkerSummary {
   registeredAt?: string;
   lastHeartbeatAt?: string;
   activeJobs: number;
+}
+
+export interface MetricPoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface MetricSeries {
+  name: string;
+  unit?: string;
+  points: MetricPoint[];
+}
+
+export interface TraceSample {
+  traceId: string;
+  spanId: string;
+  name: string;
+  status: string;
+  durationMs: number;
+  service?: string;
+  startedAt?: string;
+  attributes: Record<string, string>;
+}
+
+export interface LogEntry {
+  timestamp?: string;
+  level: string;
+  message: string;
+  source?: string;
+  fields: KeyValuePair[];
+}
+
+export interface ObservabilitySnapshot {
+  updatedAt?: string;
+  metrics: MetricSeries[];
+  traces: TraceSample[];
+  logs: LogEntry[];
 }
 
 export type QueueHealthStatus = "healthy" | "warning" | "critical";
@@ -197,6 +263,33 @@ export interface UpdateWorkerPoolInput {
   maxConcurrentJobs?: number;
 }
 
+export interface SecretPointer {
+  name: string;
+  provider: string;
+  path: string;
+  lastRotatedAt?: string;
+  rotationIntervalHours?: number;
+  owner?: string;
+  status?: string;
+}
+
+export interface EnvironmentVariableSummary {
+  key: string;
+  value: string;
+  scope: string;
+  source?: string;
+  description?: string;
+  required?: boolean;
+  secret?: boolean;
+}
+
+export interface ConfigurationSummary {
+  secrets: SecretPointer[];
+  environment: EnvironmentVariableSummary[];
+  documentationUrl?: string;
+  lastUpdatedAt?: string;
+}
+
 export interface PrincipalRole {
   name: string;
   description?: string;
@@ -237,6 +330,30 @@ interface RawJob {
   Attempt: number;
   LastAttemptAt?: string;
   CompletedAt?: string;
+}
+
+interface RawJobLogEntry {
+  timestamp?: string;
+  level?: string;
+  message?: string;
+  fields?: Record<string, unknown>;
+}
+
+interface RawJobAttempt {
+  attempt?: number;
+  status?: string;
+  worker_id?: string;
+  started_at?: string;
+  completed_at?: string;
+  error?: string;
+  backoff_seconds?: number;
+}
+
+interface RawJobDetail {
+  job: RawJob;
+  logs?: RawJobLogEntry[];
+  attempts?: RawJobAttempt[];
+  related_entities?: RawEntity[];
 }
 
 interface RawWorker {
@@ -303,6 +420,43 @@ interface RawQueueAnalyticsOverview {
 
 interface RawQueueAnalyticsResponse {
   analytics: RawQueueAnalyticsOverview;
+}
+
+interface RawMetricPoint {
+  timestamp?: string;
+  value?: number;
+}
+
+interface RawMetricSeries {
+  name: string;
+  unit?: string;
+  points?: RawMetricPoint[];
+}
+
+interface RawTraceSample {
+  trace_id: string;
+  span_id: string;
+  name: string;
+  status?: string;
+  duration_ms?: number;
+  service?: string;
+  started_at?: string;
+  attributes?: Record<string, unknown>;
+}
+
+interface RawLogEntry {
+  timestamp?: string;
+  level?: string;
+  message?: string;
+  source?: string;
+  fields?: Record<string, unknown>;
+}
+
+interface RawObservabilitySnapshot {
+  updated_at?: string;
+  metrics?: RawMetricSeries[];
+  traces?: RawTraceSample[];
+  logs?: RawLogEntry[];
 }
 
 interface RawManualSearchRelease {
@@ -379,6 +533,33 @@ interface RawDownloadHistoryEntry {
   failure_reason?: string;
 }
 
+interface RawSecretPointer {
+  name: string;
+  provider: string;
+  path: string;
+  last_rotated_at?: string;
+  rotation_interval_hours?: number;
+  owner?: string;
+  status?: string;
+}
+
+interface RawEnvironmentVariableSummary {
+  key: string;
+  value?: string;
+  scope?: string;
+  source?: string;
+  description?: string;
+  required?: boolean;
+  secret?: boolean;
+}
+
+interface RawConfigurationSummary {
+  secrets?: RawSecretPointer[];
+  environment?: RawEnvironmentVariableSummary[];
+  documentation_url?: string;
+  last_updated_at?: string;
+}
+
 interface RawPrincipal {
   key: {
     id: string;
@@ -408,6 +589,50 @@ function normalizeTimestamp(value?: string): string | undefined {
     return undefined;
   }
   return trimmed;
+}
+
+function normalizeLogFieldValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    return String(value);
+  }
+}
+
+function sanitizeKeyValueRecord(
+  record?: Record<string, unknown>,
+): KeyValuePair[] {
+  if (!record) {
+    return [];
+  }
+  return Object.entries(record)
+    .map<KeyValuePair>(([key, rawValue]) => ({
+      key,
+      value: normalizeLogFieldValue(rawValue),
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function sanitizeAttributeRecord(
+  record?: Record<string, unknown>,
+): Record<string, string> {
+  if (!record) {
+    return {};
+  }
+  const attributes: Record<string, string> = {};
+  for (const [key, value] of Object.entries(record)) {
+    attributes[key] = normalizeLogFieldValue(value);
+  }
+  return attributes;
 }
 
 function mapLibraryEntity(entity: RawEntity): LibraryEntity {
@@ -457,6 +682,36 @@ function mapWorkerPool(pool: RawWorkerPool): WorkerPoolConfig {
     heartbeatIntervalSeconds: pool.heartbeat_interval_seconds ?? 0,
     staleAfterSeconds: pool.stale_after_seconds ?? 0,
     maxConcurrentJobs: pool.max_concurrent_jobs ?? undefined,
+  };
+}
+
+function normalizeJobLogEntry(entry: RawJobLogEntry): JobLogEntry {
+  return {
+    timestamp: normalizeTimestamp(entry.timestamp),
+    level: entry.level?.trim().toLowerCase() || "info",
+    message: entry.message?.trim() || "(no message)",
+    fields: sanitizeKeyValueRecord(entry.fields),
+  };
+}
+
+function normalizeJobAttempt(attempt: RawJobAttempt): JobAttemptDetail {
+  return {
+    attempt: attempt.attempt ?? 0,
+    status: attempt.status?.trim() || "unknown",
+    workerId: attempt.worker_id?.trim() || undefined,
+    startedAt: normalizeTimestamp(attempt.started_at),
+    completedAt: normalizeTimestamp(attempt.completed_at),
+    error: attempt.error?.trim() || undefined,
+    backoffSeconds: attempt.backoff_seconds ?? undefined,
+  };
+}
+
+function normalizeJobDetail(detail: RawJobDetail): JobDetail {
+  return {
+    job: mapJobSummary(detail.job),
+    logs: (detail.logs ?? []).map(normalizeJobLogEntry),
+    attempts: (detail.attempts ?? []).map(normalizeJobAttempt),
+    relatedEntities: (detail.related_entities ?? []).map(mapLibraryEntity),
   };
 }
 
@@ -708,6 +963,99 @@ function normalizeQueueAnalytics(
   };
 }
 
+function normalizeMetricPoint(point: RawMetricPoint): MetricPoint {
+  const numericValue = Number(point.value);
+  return {
+    timestamp: normalizeTimestamp(point.timestamp) ?? new Date().toISOString(),
+    value: Number.isFinite(numericValue) ? numericValue : 0,
+  };
+}
+
+function normalizeMetricSeries(series: RawMetricSeries): MetricSeries {
+  return {
+    name: series.name?.trim() || "Unknown metric",
+    unit: series.unit?.trim() || undefined,
+    points: (series.points ?? []).map(normalizeMetricPoint),
+  };
+}
+
+function normalizeTraceSample(sample: RawTraceSample): TraceSample {
+  return {
+    traceId: sample.trace_id,
+    spanId: sample.span_id,
+    name: sample.name?.trim() || "Unnamed span",
+    status: sample.status?.trim().toLowerCase() || "success",
+    durationMs: Number.isFinite(sample.duration_ms)
+      ? Math.max(0, Number(sample.duration_ms))
+      : 0,
+    service: sample.service?.trim() || undefined,
+    startedAt: normalizeTimestamp(sample.started_at),
+    attributes: sanitizeAttributeRecord(sample.attributes),
+  };
+}
+
+function normalizeLogEntry(entry: RawLogEntry): LogEntry {
+  return {
+    timestamp: normalizeTimestamp(entry.timestamp),
+    level: entry.level?.trim().toLowerCase() || "info",
+    message: entry.message?.trim() || "(no message)",
+    source: entry.source?.trim() || undefined,
+    fields: sanitizeKeyValueRecord(entry.fields),
+  };
+}
+
+function normalizeObservabilitySnapshot(
+  snapshot?: RawObservabilitySnapshot,
+): ObservabilitySnapshot {
+  const safeSnapshot = snapshot ?? {};
+  return {
+    updatedAt: normalizeTimestamp(safeSnapshot.updated_at),
+    metrics: (safeSnapshot.metrics ?? []).map(normalizeMetricSeries),
+    traces: (safeSnapshot.traces ?? []).map(normalizeTraceSample),
+    logs: (safeSnapshot.logs ?? []).map(normalizeLogEntry),
+  };
+}
+
+function normalizeSecretPointer(pointer: RawSecretPointer): SecretPointer {
+  return {
+    name: pointer.name,
+    provider: pointer.provider,
+    path: pointer.path,
+    lastRotatedAt: normalizeTimestamp(pointer.last_rotated_at),
+    rotationIntervalHours: pointer.rotation_interval_hours ?? undefined,
+    owner: pointer.owner?.trim() || undefined,
+    status: pointer.status?.trim() || undefined,
+  };
+}
+
+function normalizeEnvironmentVariable(
+  variable: RawEnvironmentVariableSummary,
+): EnvironmentVariableSummary {
+  return {
+    key: variable.key,
+    value: variable.value ?? "",
+    scope: variable.scope?.trim() || "global",
+    source: variable.source?.trim() || undefined,
+    description: variable.description?.trim() || undefined,
+    required: variable.required ?? false,
+    secret: variable.secret ?? false,
+  };
+}
+
+function normalizeConfigurationSummary(
+  summary?: RawConfigurationSummary,
+): ConfigurationSummary {
+  const safeSummary = summary ?? {};
+  return {
+    secrets: (safeSummary.secrets ?? []).map(normalizeSecretPointer),
+    environment: (safeSummary.environment ?? []).map(
+      normalizeEnvironmentVariable,
+    ),
+    documentationUrl: safeSummary.documentation_url?.trim() || undefined,
+    lastUpdatedAt: normalizeTimestamp(safeSummary.last_updated_at),
+  };
+}
+
 export interface RestApiClientOptions {
   baseUrl?: string;
   tokenProvider?: TokenProvider;
@@ -785,6 +1133,39 @@ export class RestApiClient {
       },
     );
     return normalizeQueueAnalytics(payload.analytics);
+  }
+
+  async fetchJobDetail(jobId: string): Promise<JobDetail> {
+    const payload = await this.http.get<RawJobDetail>(
+      `/api/v1/jobs/${encodeURIComponent(jobId)}`,
+      {
+        traceName: "REST GET /api/v1/jobs/{id}",
+        traceAttributes: { resource: "library.jobs.detail", jobId },
+      },
+    );
+    return normalizeJobDetail(payload);
+  }
+
+  async fetchObservabilitySnapshot(): Promise<ObservabilitySnapshot> {
+    const payload = await this.http.get<{ snapshot?: RawObservabilitySnapshot }>(
+      "/api/v1/observability/dashboard",
+      {
+        traceName: "REST GET /api/v1/observability/dashboard",
+        traceAttributes: { resource: "observability.dashboard" },
+      },
+    );
+    return normalizeObservabilitySnapshot(payload.snapshot);
+  }
+
+  async fetchConfigurationSummary(): Promise<ConfigurationSummary> {
+    const payload = await this.http.get<{ configuration?: RawConfigurationSummary }>(
+      "/api/v1/infrastructure/configuration",
+      {
+        traceName: "REST GET /api/v1/infrastructure/configuration",
+        traceAttributes: { resource: "infrastructure.configuration" },
+      },
+    );
+    return normalizeConfigurationSummary(payload.configuration);
   }
 
   async triggerJob(input: TriggerJobInput): Promise<JobSummary> {
@@ -1040,6 +1421,29 @@ export function fetchDownloadHistory(
   baseUrl?: string,
 ): Promise<DownloadHistoryEntry[]> {
   return defaultRestClient.withBaseUrl(baseUrl).fetchDownloadHistory();
+}
+
+export function fetchJobDetail(
+  jobId: string,
+  baseUrl?: string,
+): Promise<JobDetail> {
+  return defaultRestClient.withBaseUrl(baseUrl).fetchJobDetail(jobId);
+}
+
+export function fetchObservabilitySnapshot(
+  baseUrl?: string,
+): Promise<ObservabilitySnapshot> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .fetchObservabilitySnapshot();
+}
+
+export function fetchConfigurationSummary(
+  baseUrl?: string,
+): Promise<ConfigurationSummary> {
+  return defaultRestClient
+    .withBaseUrl(baseUrl)
+    .fetchConfigurationSummary();
 }
 
 export interface GrpcLibraryClientOptions extends RestApiClientOptions {}

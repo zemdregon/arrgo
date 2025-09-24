@@ -399,6 +399,393 @@
   color: var(--color-accent-strong);
 }
 
+.observabilityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-xl);
+}
+
+.metricColumn,
+.traceColumn,
+.logColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.observabilityTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.sparklineGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-md);
+}
+
+.sparklineCard {
+  background: var(--surface-panel);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.sparklineHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.sparklineTitle {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.sparklineValue {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.sparkline {
+  width: 100%;
+  height: 60px;
+  color: var(--color-accent);
+}
+
+.traceList,
+.logList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.traceItem,
+.logListItem {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm);
+  background: var(--surface-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.traceHeader,
+.traceMeta,
+.logListHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.traceMeta {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.logListMessage {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+}
+
+.configurationGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-xl);
+}
+
+.configurationColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.secretList,
+.environmentList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.secretItem,
+.environmentItem {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm);
+  background: var(--surface-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.secretHeader,
+.environmentHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.secretName,
+.environmentKey {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.secretProvider,
+.environmentScope {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.secretMeta {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.environmentDescription {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.environmentValueRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.environmentValue {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+  padding: 0.3rem 0.5rem;
+  background: var(--surface-panel-strong);
+  border-radius: var(--radius-sm);
+}
+
+.environmentActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.poolDirectory {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-bottom: var(--space-lg);
+}
+
+.poolCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--surface-panel);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--transition-base),
+    box-shadow var(--transition-base),
+    transform var(--transition-base);
+}
+
+.poolCard:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.poolCardActive {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 0 0 1px var(--color-accent-border);
+}
+
+.poolCardUnmanaged {
+  border-style: dashed;
+}
+
+.poolCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.poolCardTitle {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.poolCardDescription {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.poolCardMetrics {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.capabilityGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.capabilityTag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-full);
+  padding: 0.25rem 0.6rem;
+  background: var(--surface-panel-strong);
+  font-size: 0.75rem;
+  color: var(--color-text-primary);
+}
+
+.capabilityTagMuted {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-full);
+  padding: 0.25rem 0.6rem;
+  background: var(--color-accent-muted);
+  color: var(--color-accent-strong);
+  font-size: 0.75rem;
+}
+
+.poolCardEmpty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.poolCardNotice {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--status-warning-text);
+}
+
+.poolInsightSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: var(--space-md) 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.metricDetail {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.heartbeatSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.heartbeatHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.heartbeatTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.heartbeatTimeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.timelineItem {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.timelineMarker {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  margin-top: 0.4rem;
+  background: var(--color-accent-muted);
+  border: 1px solid var(--color-accent-border);
+  flex-shrink: 0;
+}
+
+.timelineContent {
+  flex: 1;
+  border-left: 1px solid var(--color-border-subtle);
+  padding-left: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.timelineRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.timelineMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.poolNotice {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 .readarrSection {
   display: flex;
   flex-direction: column;
@@ -800,6 +1187,136 @@
   display: block;
   font-size: 0.75rem;
   color: var(--color-text-muted);
+}
+
+.drawerStatus {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.drawerError {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--status-danger-text);
+}
+
+.drawerSection {
+  margin-top: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.drawerSectionTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.attemptList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.attemptItem {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm);
+  background: var(--surface-panel);
+}
+
+.attemptHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.drawerErrorMessage {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--status-danger-text);
+}
+
+.logStream {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.logEntry {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm);
+  background: var(--surface-panel);
+}
+
+.logHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: 0.35rem;
+}
+
+.logMessage {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-primary);
+}
+
+.logFields {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.logFieldRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.logFieldRow dt {
+  margin: 0;
+  font-weight: 600;
+}
+
+.logFieldRow dd {
+  margin: 0;
+  flex: 1;
+  text-align: right;
+  color: var(--color-text-primary);
+}
+
+.relatedEntityList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.relatedEntityItem {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  align-items: flex-start;
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding-bottom: 0.5rem;
 }
 
 @media (max-width: 960px) {
