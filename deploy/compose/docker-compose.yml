@@ -75,14 +75,18 @@ services:
         condition: service_healthy
     environment:
       ARRGO_ROLE: master
+      ARRGO_HTTP_ADDR: :8080
+      ARRGO_GRPC_ADDR: :9090
       ARRGO_LOG_LEVEL: info
       ARRGO_DATABASE_URL: >-
         postgres://${ARRGO_DB_USER:-arrgo}:${ARRGO_DB_PASSWORD:-arrgo}@postgres:5432/${ARRGO_DB_NAME:-arrgo}?sslmode=disable
       ARRGO_REDIS_ADDR: redis:6379
       ARRGO_OPENSEARCH_URL: http://opensearch:9200
+      ARRGO_BOOTSTRAP_ADMIN_TOKEN: ${ARRGO_BOOTSTRAP_ADMIN_TOKEN:-arrgo-admin.devtoken}
+      ARRGO_BOOTSTRAP_ADMIN_LABEL: ${ARRGO_BOOTSTRAP_ADMIN_LABEL:-dashboard}
     ports:
       - "8080:8080"
-    command: ["/bin/sh", "-c", "echo 'arrgo master placeholder running'; sleep infinity"]
+      - "9090:9090"
     networks:
       - arrgo
 
@@ -97,6 +101,7 @@ services:
         condition: service_started
     environment:
       NEXT_PUBLIC_ARRGO_API_URL: http://arrgo-master:8080
+      NEXT_PUBLIC_ARRGO_API_TOKEN: ${ARRGO_BOOTSTRAP_ADMIN_TOKEN:-arrgo-admin.devtoken}
     ports:
       - "3000:3000"
     networks:
@@ -113,7 +118,11 @@ services:
       ARRGO_LOG_LEVEL: info
       ARRGO_MASTER_URL: http://arrgo-master:8080
       ARRGO_REDIS_ADDR: redis:6379
-    command: ["/bin/sh", "-c", "echo 'arrgo worker placeholder running'; sleep infinity"]
+      ARRGO_MASTER_GRPC_ADDR: arrgo-master:9090
+      ARRGO_WORKER_POOL: default
+      ARRGO_WORKER_VERSION: dev-compose
+      ARRGO_WORKER_CAPABILITIES: import,scan
+      ARRGO_WORKER_ENDPOINT: http://arrgo-worker:9000
     networks:
       - arrgo
 
