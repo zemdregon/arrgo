@@ -198,5 +198,4 @@ When preparing a change:
    affected subsystems and include test evidence.
 
 ## License
-The project is currently distributed without a finalized license. A permissive
-open-source license will be published alongside the first public release.
+This project is licensed under the [Apache License 2.0](LICENSE).
