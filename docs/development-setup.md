@@ -44,6 +44,11 @@ docker compose up --build --scale arrgo-worker=3
 
 The stack uses named volumes so data survives container restarts. Use `docker compose down -v` to stop the stack and remove volumes when you need a clean slate.
 
+> **API token:** The Compose file sets `ARRGO_BOOTSTRAP_ADMIN_TOKEN` (default
+> `arrgo-admin.devtoken`) so the dashboard and workers can authenticate against
+> the master API. Override the environment variable in `deploy/compose/.env` to
+> supply a custom credential.
+
 ## Go Tooling
 - Run `go fmt ./...` to format Go sources.
 - Execute `go test ./...` before pushing changes.

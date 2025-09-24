@@ -176,6 +176,10 @@ async function requestJSON<T>(path: string, init: RequestInit): Promise<T> {
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json");
   }
+  const token = process.env.NEXT_PUBLIC_ARRGO_API_TOKEN?.trim();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   let response: Response;
   try {
     response = await fetch(url, {

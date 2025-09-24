@@ -128,7 +128,12 @@ The following documents provide deep dives into the subsystems listed above:
 3. Explore the REST API documented in
    [`docs/api-first-iteration.md`](docs/api-first-iteration.md) or browse the
    dashboard at <http://localhost:3000> (served by Compose) to inspect library
-   entities and queues. The dashboard can also be run directly from
+   entities and queues. Compose seeds an `admin` API token via the
+   `ARRGO_BOOTSTRAP_ADMIN_TOKEN` environment variable (default
+   `arrgo-admin.devtoken`). The token is injected into the dashboard container
+   automatically so authenticated requests succeed out of the box. Override the
+   variable in `deploy/compose/.env` to generate a unique credential for your
+   environment. The dashboard can also be run directly from
    [`web/dashboard`](web/dashboard) for local iteration.
 4. Review [`docs/project-status.md`](docs/project-status.md) for current
    deliverables, owners, and outstanding risks before contributing changes.
