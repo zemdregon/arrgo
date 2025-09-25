@@ -31,6 +31,7 @@ These guidelines help existing Sonarr, Radarr, and Lidarr users move their media
 - Launch an arrgo master container configured with connection strings, API secrets, and cluster metadata.
 - Start worker pools that align with your hardware capabilities (e.g., GPU-enabled transcode workers, dedicated music metadata workers).
 - Configure observability endpoints (Prometheus, Grafana, log shipping) so you can monitor the migration in real time.
+- **Status update (2025-09-26):** Provisioned PostgreSQL (primary + read replica) and Redis via the `deploy/compose` stack. Health checks (`pg_isready`, `redis-cli PING`) and application-level connection tests confirm all endpoints are reachable from the arrgo master and worker pools.
 
 ### 3. Map Domain Concepts
 - **Media entities:**
@@ -91,7 +92,7 @@ These guidelines help existing Sonarr, Radarr, and Lidarr users move their media
 
 ## Appendix: Quick Reference Checklist
 - [x] Backups exported for each *arr service ([runbook](servarr-backup-export.md))
-- [ ] arrgo data services deployed and reachable
+- [x] arrgo data services deployed and reachable
 - [ ] Master and worker pools configured with secrets and observability
 - [ ] Media libraries mapped to arrgo entities and policies
 - [ ] Metadata imported and reconciled with on-disk files
