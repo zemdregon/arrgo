@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/observability/logging"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -130,9 +131,15 @@ func (q *OrchestrationQueue) Claim(ctx context.Context, consumer string, count i
 		for _, msg := range stream.Messages {
 			job, err := q.deserializeJob(msg)
 			if err != nil {
-				q.logger.Warn("library: discard malformed job", "streamID", msg.ID, "error", err)
+				logging.WithContext(ctx, q.logger).Warn("library: discard malformed job",
+					"stream_id", msg.ID,
+					"error", err,
+				)
 				if ackErr := q.client.XAck(ctx, q.stream, q.group, msg.ID).Err(); ackErr != nil {
-					q.logger.Warn("library: ack malformed job failed", "streamID", msg.ID, "error", ackErr)
+					logging.WithContext(ctx, q.logger).Warn("library: ack malformed job failed",
+						"stream_id", msg.ID,
+						"error", ackErr,
+					)
 				}
 				continue
 			}

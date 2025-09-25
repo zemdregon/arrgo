@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/observability/logging"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -134,11 +135,11 @@ func (s *Service) SetMetadataOverrides(ctx context.Context, entityID string, pay
 		attribute.Int("library.metadata_override_album_editions", len(normalized.AlbumEditions)),
 		attribute.Int("library.metadata_override_track_overrides", len(normalized.TrackNumberOverrides)),
 	)
-	s.logger.Info("library metadata overrides updated",
-		"entityID", trimmedID,
-		"episodeCutovers", len(normalized.EpisodeCutovers),
-		"albumEditions", len(normalized.AlbumEditions),
-		"trackOverrides", len(normalized.TrackNumberOverrides),
+	logging.WithContext(ctx, s.logger).Info("library metadata overrides updated",
+		"entity_id", trimmedID,
+		"episode_cutovers", len(normalized.EpisodeCutovers),
+		"album_editions", len(normalized.AlbumEditions),
+		"track_overrides", len(normalized.TrackNumberOverrides),
 	)
 
 	return cloneMetadataOverrides(normalized), nil
@@ -173,7 +174,7 @@ func (s *Service) ClearMetadataOverrides(ctx context.Context, entityID string) (
 	}
 
 	span.SetAttributes(attribute.Bool("library.metadata_override_deleted", true))
-	s.logger.Info("library metadata overrides cleared", "entityID", trimmedID)
+	logging.WithContext(ctx, s.logger).Info("library metadata overrides cleared", "entity_id", trimmedID)
 	return nil
 }
 

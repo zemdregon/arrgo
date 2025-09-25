@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/observability/logging"
 	"github.com/arrgo/arrgo/internal/timeutil"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -464,7 +465,11 @@ func (s *Service) RunManualSearch(ctx context.Context, entityID, query string) (
 		attribute.String("library.manual_search_id", searchID),
 		attribute.Int("library.manual_search_result_count", len(releases)),
 	)
-	s.logger.Info("library manual search completed", "entityID", trimmedID, "query", trimmedQuery, "results", len(releases))
+	logging.WithContext(ctx, s.logger).Info("library manual search completed",
+		"entity_id", trimmedID,
+		"query", trimmedQuery,
+		"results", len(releases),
+	)
 
 	return cloneManualSearchResult(result), nil
 }
@@ -558,7 +563,10 @@ func (s *Service) ForceGrabRelease(ctx context.Context, entityID, releaseID stri
 		attribute.String("library.manual_search_id", existing.SearchID),
 		attribute.String("library.manual_release_status", existing.Status),
 	)
-	s.logger.Info("library manual release grabbed", "entityID", existing.EntityID, "releaseID", existing.ID)
+	logging.WithContext(ctx, s.logger).Info("library manual release grabbed",
+		"entity_id", existing.EntityID,
+		"release_id", existing.ID,
+	)
 
 	return existing, nil
 }
@@ -607,16 +615,17 @@ func (s *Service) TriggerJob(ctx context.Context, input TriggerJobInput) (job Jo
 		PayloadURI:     strings.TrimSpace(input.PayloadURI),
 		IdempotencyKey: strings.TrimSpace(input.IdempotencyKey),
 	}
+	ctxWithJob := logging.ContextWithJobID(ctx, job.ID)
 	var streamID string
-	streamID, err = s.queue.Enqueue(ctx, job)
+	streamID, err = s.queue.Enqueue(ctxWithJob, job)
 	if err != nil {
 		job = Job{}
 		return
 	}
 	job.StreamID = streamID
 	if repoErr := s.repository.SaveJob(ctx, job); repoErr != nil {
-		if delErr := s.queue.Delete(ctx, streamID); delErr != nil {
-			s.logger.Warn("library: rollback queued job failed", "jobID", job.ID, "streamID", streamID, "error", delErr)
+		if delErr := s.queue.Delete(ctxWithJob, streamID); delErr != nil {
+			logging.WithContext(ctxWithJob, s.logger).Warn("library: rollback queued job failed", "stream_id", streamID, "error", delErr)
 		}
 		err = fmt.Errorf("library: persist job: %w", repoErr)
 		job = Job{}
@@ -627,7 +636,12 @@ func (s *Service) TriggerJob(ctx context.Context, input TriggerJobInput) (job Jo
 		attribute.String("library.job_id", job.ID),
 		attribute.String("library.stream_id", streamID),
 	)
-	s.logger.Info("library job queued", "jobID", job.ID, "jobType", job.JobType, "targetID", job.TargetID, "idempotencyKey", job.IdempotencyKey, "streamID", streamID)
+	logging.WithContext(ctxWithJob, s.logger).Info("library job queued",
+		"job_type", job.JobType,
+		"target_id", job.TargetID,
+		"idempotency_key", job.IdempotencyKey,
+		"stream_id", streamID,
+	)
 
 	return job, nil
 }
@@ -669,7 +683,12 @@ func (s *Service) ClaimJobs(ctx context.Context, consumer string, count int, blo
 	}
 
 	for _, job := range claimed {
-		s.logger.Info("library job claimed", "jobID", job.Job.ID, "streamID", job.StreamID, "consumer", consumer, "attempt", job.Job.Attempt)
+		jobCtx := logging.ContextWithJobID(ctx, job.Job.ID)
+		logging.WithContext(jobCtx, s.logger).Info("library job claimed",
+			"stream_id", job.StreamID,
+			"consumer", consumer,
+			"attempt", job.Job.Attempt,
+		)
 	}
 
 	span.SetAttributes(attribute.Int("library.claimed_count", len(claimed)))
@@ -691,7 +710,8 @@ func (s *Service) AckJob(ctx context.Context, job ClaimedJob) (err error) {
 		return
 	}
 
-	if err = s.queue.Ack(ctx, job.StreamID); err != nil {
+	jobCtx := logging.ContextWithJobID(ctx, job.Job.ID)
+	if err = s.queue.Ack(jobCtx, job.StreamID); err != nil {
 		return
 	}
 
@@ -707,12 +727,18 @@ func (s *Service) AckJob(ctx context.Context, job ClaimedJob) (err error) {
 
 	entityType, typeErr := s.entityType(ctx, job.Job.TargetID)
 	if typeErr != nil {
-		s.logger.Warn("library: failed to load entity for audit", "jobID", job.Job.ID, "targetID", job.Job.TargetID, "error", typeErr)
+		logging.WithContext(jobCtx, s.logger).Warn("library: failed to load entity for audit",
+			"target_id", job.Job.TargetID,
+			"error", typeErr,
+		)
 		entityType = ""
 	}
 
 	span.SetAttributes(attribute.String("library.entity_type", entityType))
-	s.logger.Info("library job acknowledged", "jobID", job.Job.ID, "streamID", job.StreamID, "attempt", job.Job.Attempt)
+	logging.WithContext(jobCtx, s.logger).Info("library job acknowledged",
+		"stream_id", job.StreamID,
+		"attempt", job.Job.Attempt,
+	)
 
 	if strings.EqualFold(job.Job.JobType, JobTypeImport) {
 		event := AuditEvent{
@@ -724,7 +750,7 @@ func (s *Service) AckJob(ctx context.Context, job ClaimedJob) (err error) {
 			CompletedAt: completedAt,
 		}
 		if err := s.auditSink.Publish(ctx, event); err != nil {
-			s.logger.Warn("library: audit sink publish failed", "error", err)
+			logging.WithContext(jobCtx, s.logger).Warn("library: audit sink publish failed", "error", err)
 		}
 	}
 
@@ -746,8 +772,9 @@ func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (updated Job, er
 		return
 	}
 
+	jobCtx := logging.ContextWithJobID(ctx, job.Job.ID)
 	var streamID string
-	streamID, err = s.queue.Retry(ctx, job.StreamID, job.Job)
+	streamID, err = s.queue.Retry(jobCtx, job.StreamID, job.Job)
 	if err != nil {
 		return
 	}
@@ -763,7 +790,11 @@ func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (updated Job, er
 		attribute.String("library.stream_id", streamID),
 		attribute.Int("library.next_attempt", job.Job.Attempt+1),
 	)
-	s.logger.Info("library job retried", "jobID", updated.ID, "previousStreamID", job.StreamID, "streamID", streamID, "attempt", job.Job.Attempt+1)
+	logging.WithContext(jobCtx, s.logger).Info("library job retried",
+		"previous_stream_id", job.StreamID,
+		"stream_id", streamID,
+		"attempt", job.Job.Attempt+1,
+	)
 
 	return updated, nil
 }
