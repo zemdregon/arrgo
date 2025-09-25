@@ -137,7 +137,9 @@ Alerting rules should balance responsiveness with noise reduction.
 - [x] Structured logs include trace IDs and job identifiers.
 - [x] Prometheus, Grafana, Alertmanager, and the OpenTelemetry Collector are
       included in development and production manifests (Docker Compose and Helm).
-- [ ] Dashboards and alert rules are version-controlled within the repository.
+- [x] Dashboards and alert rules are version-controlled within the repository. See
+      [`deploy/compose/grafana-provisioning`](../deploy/compose/grafana-provisioning)
+      and [`deploy/compose/prometheus-rules`](../deploy/compose/prometheus-rules).
 
 ## Deployment Artifacts
 

@@ -1,0 +1,55 @@
+groups:
+  - name: arrgo-control-plane
+    interval: 1m
+    rules:
+      - alert: ArrgoHttpErrorRateHigh
+        expr: sum(rate(arrgo_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(arrgo_http_requests_total[5m])), 1)
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: arrgo
+        annotations:
+          summary: "arrgo HTTP error ratio is above 5%"
+          description: |
+            The percentage of HTTP 5xx responses served by the arrgo API has
+            been above 5% for more than 5 minutes. Inspect recent deployments
+            or upstream dependencies and roll back if necessary.
+      - alert: ArrgoSchedulerBacklogGrowing
+        expr: avg_over_time(arrgo_scheduler_backlog[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: arrgo
+        annotations:
+          summary: "arrgo scheduler backlog is not draining"
+          description: |
+            Scheduler backlog has been greater than zero for 10 minutes.
+            Verify worker pool capacity and investigate stuck jobs or paused
+            queues to restore throughput.
+      - alert: ArrgoWorkerHeartbeatStale
+        expr: max(arrgo_worker_heartbeat_seconds) > 120
+        for: 2m
+        labels:
+          severity: critical
+          service: arrgo
+        annotations:
+          summary: "Worker heartbeats are stale"
+          description: |
+            One or more workers have not reported a heartbeat in over two
+            minutes. Check worker logs, node health, and connectivity to Redis
+            Streams.
+      - alert: ArrgoJobRetriesElevated
+        expr: sum(rate(arrgo_job_retries_total[15m])) by (job_type) > 5
+        for: 15m
+        labels:
+          severity: warning
+          service: arrgo
+        annotations:
+          summary: "arrgo job retries are elevated"
+          description: |
+            Retry volume for {{ $labels.job_type }} jobs exceeded 5 attempts in
+            the last 15 minutes. Investigate download clients, indexers, or
+            metadata providers for failures.

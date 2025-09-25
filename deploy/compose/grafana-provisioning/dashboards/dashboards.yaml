@@ -1,0 +1,12 @@
+apiVersion: 1
+providers:
+  - name: arrgo-observability
+    orgId: 1
+    folder: arrgo
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+    allowUiUpdates: true
+    updateIntervalSeconds: 60
