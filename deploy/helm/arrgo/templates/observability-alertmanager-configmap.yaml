@@ -1,0 +1,19 @@
+{{- if and .Values.observability.enabled .Values.observability.alertmanager.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "arrgo.observability.alertmanager.fullname" . }}-config
+  labels:
+    {{- include "arrgo.observability.alertmanager.labels" . | nindent 4 }}
+data:
+  alertmanager.yml: |
+    route:
+      receiver: default
+      group_by: ['alertname']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 3h
+    receivers:
+      - name: default
+        webhook_configs: []
+{{- end }}

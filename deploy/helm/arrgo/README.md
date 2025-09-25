@@ -49,8 +49,21 @@ secret creation and point the chart at an existing secret.
 | `dashboard.image.repository` | Dashboard container image repository. | `ghcr.io/example-org/arrgo-dashboard` |
 | `dashboard.service.type` | Kubernetes service type for the dashboard UI. | `ClusterIP` |
 | `dashboard.ingress.enabled` | Create an Ingress resource for the dashboard UI. | `false` |
+| `observability.enabled` | Deploy Prometheus, Alertmanager, Grafana, and the OpenTelemetry Collector. | `true` |
+| `observability.prometheus.enabled` | Toggle Prometheus deployment. | `true` |
+| `observability.grafana.enabled` | Toggle Grafana deployment. | `true` |
+| `observability.otelCollector.service.ports.grpc` | OTLP gRPC service port for the collector. | `4317` |
 
 Refer to [`values.yaml`](./values.yaml) for the complete set of tunable options.
+
+### Observability Stack
+
+When `observability.enabled=true`, the chart deploys a baseline observability
+suite composed of Prometheus (metrics collection), Alertmanager (alert fan-out),
+Grafana (dashboards), and the OpenTelemetry Collector (OTLP ingest and metrics
+forwarding). Grafana is pre-provisioned with a Prometheus data source pointing
+at the in-cluster Prometheus service so dashboards can be imported without
+additional configuration.
 
 ## Secrets and Connection Management
 

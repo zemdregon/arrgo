@@ -1,0 +1,35 @@
+{{- if and .Values.observability.enabled .Values.observability.otelCollector.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "arrgo.observability.otelCollector.fullname" . }}-config
+  labels:
+    {{- include "arrgo.observability.otelCollector.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+          http:
+    processors:
+      batch:
+    exporters:
+      logging:
+        loglevel: info
+      prometheus:
+        endpoint: 0.0.0.0:{{ default 8889 .Values.observability.otelCollector.service.ports.metrics }}
+    service:
+      telemetry:
+        logs:
+          level: info
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [logging]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [prometheus]
+{{- end }}
