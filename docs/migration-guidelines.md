@@ -23,7 +23,7 @@ These guidelines help existing Sonarr, Radarr, and Lidarr users move their media
 
 ### 1. Inventory and Backups
 - Document all media root paths, naming conventions, quality profiles, indexers, notification endpoints, and download clients that each *arr application uses.
-- Generate configuration backups from Sonarr, Radarr, and Lidarr (`System > Backup`). Store the archives in versioned storage alongside exported API keys and webhook secrets.
+- Generate configuration backups from Sonarr, Radarr, and Lidarr (`System > Backup`). Store the archives in versioned storage alongside exported API keys and webhook secrets. Follow the [export runbook](servarr-backup-export.md) to capture UI-triggered and API-driven archives plus checksum manifests.
 - Note any custom scripts or post-processing hooks so they can be reimplemented through arrgo workers or webhook automation.
 
 ### 2. Prepare arrgo Infrastructure
@@ -90,7 +90,7 @@ These guidelines help existing Sonarr, Radarr, and Lidarr users move their media
 - Publish Terraform/Ansible playbooks for blue/green migrations across clusters.
 
 ## Appendix: Quick Reference Checklist
-- [ ] Backups exported for each *arr service
+- [x] Backups exported for each *arr service ([runbook](servarr-backup-export.md))
 - [ ] arrgo data services deployed and reachable
 - [ ] Master and worker pools configured with secrets and observability
 - [ ] Media libraries mapped to arrgo entities and policies
