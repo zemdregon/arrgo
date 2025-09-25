@@ -6,7 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "type-check": "tsc --project tsconfig.typecheck.json",
+    "storybook": "storybook dev -p 6006 --no-open",
+    "storybook:build": "storybook build",
+    "test:e2e": "playwright test --config=playwright.config.ts tests/e2e",
+    "test:a11y": "playwright test --config=playwright.config.ts tests/a11y",
+    "test:performance": "playwright test --config=playwright.config.ts tests/performance",
+    "test:visual": "playwright test --config=playwright.visual.config.ts",
+    "test:ci": "npm run lint && npm run type-check && npm run test:e2e && npm run test:a11y && npm run test:performance && npm run test:visual"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.9.0",
@@ -19,11 +27,21 @@
     "swr": "^2.3.6"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.9.0",
+    "@playwright/test": "^1.45.0",
+    "@storybook/addon-a11y": "8.3.4",
+    "@storybook/addon-essentials": "8.3.4",
+    "@storybook/addon-interactions": "8.3.4",
+    "@storybook/nextjs": "8.3.4",
+    "@storybook/react": "8.3.4",
+    "@storybook/test": "8.3.4",
     "@types/node": "20.11.24",
     "@types/react": "18.3.4",
     "@types/react-dom": "18.3.3",
+    "axe-core": "^4.9.1",
     "eslint": "8.56.0",
     "eslint-config-next": "14.1.0",
+    "storybook": "8.3.4",
     "typescript": "5.9.2"
   }
 }

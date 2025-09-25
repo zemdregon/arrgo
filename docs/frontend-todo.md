@@ -42,11 +42,11 @@
 - [x] Configuration UI for secrets management pointers and infrastructure environment variables.
 
 ### Quality, Testing, and Delivery
-- [ ] Storybook (or equivalent) coverage for core components with visual regression testing.
-- [ ] Playwright end-to-end flows for critical journeys (library ingest, request approval, worker remediation).
-- [ ] Accessibility audit and keyboard navigation coverage for high-traffic interactions.
-- [ ] Performance budgets for initial load, navigation latency, and API response hydration.
-- [ ] Deployment pipeline validation (linting, type checks, tests) integrated into CI and preview environments.
+- [x] Storybook (or equivalent) coverage for core components with visual regression testing.
+- [x] Playwright end-to-end flows for critical journeys (library ingest, request approval, worker remediation).
+- [x] Accessibility audit and keyboard navigation coverage for high-traffic interactions.
+- [x] Performance budgets for initial load, navigation latency, and API response hydration.
+- [x] Deployment pipeline validation (linting, type checks, tests) integrated into CI and preview environments.
 
 ## Dependencies & Follow-Ups
 - Align API contract coverage with [`docs/api-first-iteration.md`](api-first-iteration.md) and expand endpoints for request management as backend stories land.

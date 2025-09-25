@@ -1,7 +1,7 @@
 "use client";
 
-import { DataPanel } from "../../../components/DataPanel";
-import { StatusPill } from "../../../components/StatusPill";
+import { DataPanel } from "../../../../components/DataPanel";
+import { StatusPill } from "../../../../components/StatusPill";
 import styles from "./SlaMetricsPanel.module.css";
 
 type MetricTone = "success" | "warning" | "danger" | "neutral";

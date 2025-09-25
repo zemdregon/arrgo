@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { DataPanel } from "../../../components/DataPanel";
-import { StatusPill } from "../../../components/StatusPill";
+import { DataPanel } from "../../../../components/DataPanel";
+import { StatusPill } from "../../../../components/StatusPill";
 import styles from "./ApprovalWorkflowPanel.module.css";
 
 type MediaKind = "Movie" | "Series" | "Album" | "Book";
@@ -436,7 +436,7 @@ export function ApprovalWorkflowPanel({ className }: ApprovalWorkflowPanelProps)
             </div>
 
             {focusedRequest ? (
-              <aside className={styles.details}>
+              <div className={styles.details}>
                 <div className={styles.detailsHeader}>
                   <h3 className={styles.detailsTitle}>{focusedRequest.title}</h3>
                   <StatusPill label={focusedRequest.policy} tone="neutral" />
@@ -497,7 +497,7 @@ export function ApprovalWorkflowPanel({ className }: ApprovalWorkflowPanelProps)
                     ))}
                   </div>
                 </section>
-              </aside>
+              </div>
             ) : null}
           </div>
         </div>

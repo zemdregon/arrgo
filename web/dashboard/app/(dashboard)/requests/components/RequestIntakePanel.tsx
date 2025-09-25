@@ -1,8 +1,8 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { DataPanel } from "../../../components/DataPanel";
-import { StatusPill } from "../../../components/StatusPill";
+import { DataPanel } from "../../../../components/DataPanel";
+import { StatusPill } from "../../../../components/StatusPill";
 import styles from "./RequestIntakePanel.module.css";
 
 type RequestMode = "public" | "private";
