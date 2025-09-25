@@ -1,0 +1,18 @@
+{{- if and .Values.observability.enabled .Values.observability.grafana.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "arrgo.observability.grafana.fullname" . }}-config
+  labels:
+    {{- include "arrgo.observability.grafana.labels" . | nindent 4 }}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://{{ include "arrgo.observability.prometheus.serviceName" . }}:{{ .Values.observability.prometheus.service.port }}
+        isDefault: true
+        editable: true
+{{- end }}

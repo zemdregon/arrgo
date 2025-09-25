@@ -160,3 +160,75 @@ app.kubernetes.io/component: dashboard
 {{ include "arrgo.selectorLabels" . }}
 app.kubernetes.io/component: dashboard
 {{- end -}}
+
+{{- define "arrgo.observability.prometheus.fullname" -}}
+{{ printf "%s-prometheus" (include "arrgo.fullname" .) }}
+{{- end -}}
+
+{{- define "arrgo.observability.prometheus.serviceName" -}}
+{{ include "arrgo.observability.prometheus.fullname" . }}
+{{- end -}}
+
+{{- define "arrgo.observability.prometheus.labels" -}}
+{{ include "arrgo.labels" . }}
+app.kubernetes.io/component: prometheus
+{{- end -}}
+
+{{- define "arrgo.observability.prometheus.selectorLabels" -}}
+{{ include "arrgo.selectorLabels" . }}
+app.kubernetes.io/component: prometheus
+{{- end -}}
+
+{{- define "arrgo.observability.alertmanager.fullname" -}}
+{{ printf "%s-alertmanager" (include "arrgo.fullname" .) }}
+{{- end -}}
+
+{{- define "arrgo.observability.alertmanager.serviceName" -}}
+{{ include "arrgo.observability.alertmanager.fullname" . }}
+{{- end -}}
+
+{{- define "arrgo.observability.alertmanager.labels" -}}
+{{ include "arrgo.labels" . }}
+app.kubernetes.io/component: alertmanager
+{{- end -}}
+
+{{- define "arrgo.observability.alertmanager.selectorLabels" -}}
+{{ include "arrgo.selectorLabels" . }}
+app.kubernetes.io/component: alertmanager
+{{- end -}}
+
+{{- define "arrgo.observability.grafana.fullname" -}}
+{{ printf "%s-grafana" (include "arrgo.fullname" .) }}
+{{- end -}}
+
+{{- define "arrgo.observability.grafana.serviceName" -}}
+{{ include "arrgo.observability.grafana.fullname" . }}
+{{- end -}}
+
+{{- define "arrgo.observability.grafana.labels" -}}
+{{ include "arrgo.labels" . }}
+app.kubernetes.io/component: grafana
+{{- end -}}
+
+{{- define "arrgo.observability.grafana.selectorLabels" -}}
+{{ include "arrgo.selectorLabels" . }}
+app.kubernetes.io/component: grafana
+{{- end -}}
+
+{{- define "arrgo.observability.otelCollector.fullname" -}}
+{{ printf "%s-otel-collector" (include "arrgo.fullname" .) }}
+{{- end -}}
+
+{{- define "arrgo.observability.otelCollector.serviceName" -}}
+{{ include "arrgo.observability.otelCollector.fullname" . }}
+{{- end -}}
+
+{{- define "arrgo.observability.otelCollector.labels" -}}
+{{ include "arrgo.labels" . }}
+app.kubernetes.io/component: otel-collector
+{{- end -}}
+
+{{- define "arrgo.observability.otelCollector.selectorLabels" -}}
+{{ include "arrgo.selectorLabels" . }}
+app.kubernetes.io/component: otel-collector
+{{- end -}}

@@ -1,0 +1,44 @@
+{{- if and .Values.observability.enabled .Values.observability.prometheus.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "arrgo.observability.prometheus.fullname" . }}
+  labels:
+    {{- include "arrgo.observability.prometheus.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "arrgo.observability.prometheus.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "arrgo.observability.prometheus.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: prometheus
+          image: "{{ .Values.observability.prometheus.image.repository }}:{{ .Values.observability.prometheus.image.tag }}"
+          imagePullPolicy: {{ .Values.observability.prometheus.image.pullPolicy }}
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"
+            - "--storage.tsdb.retention.time={{ default "15d" .Values.observability.prometheus.retention }}"
+          ports:
+            - name: http
+              containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+{{- with .Values.observability.prometheus.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+{{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "arrgo.observability.prometheus.fullname" . }}-config
+        - name: data
+          emptyDir: {}
+{{- end }}

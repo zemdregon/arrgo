@@ -1,0 +1,29 @@
+{{- if and .Values.observability.enabled .Values.observability.otelCollector.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "arrgo.observability.otelCollector.serviceName" . }}
+  labels:
+    {{- include "arrgo.observability.otelCollector.labels" . | nindent 4 }}
+  {{- with .Values.observability.otelCollector.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.observability.otelCollector.service.type }}
+  selector:
+    {{- include "arrgo.observability.otelCollector.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: otlp-grpc
+      port: {{ .Values.observability.otelCollector.service.ports.grpc }}
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: {{ .Values.observability.otelCollector.service.ports.http }}
+      targetPort: otlp-http
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.observability.otelCollector.service.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+{{- end }}

@@ -135,9 +135,18 @@ Alerting rules should balance responsiveness with noise reduction.
 - [x] Master and worker binaries expose `/metrics` and `/debug/pprof` endpoints.
 - [x] Services propagate trace context and export spans to the collector.
 - [x] Structured logs include trace IDs and job identifiers.
-- [ ] Prometheus, Grafana, Alertmanager, and the OpenTelemetry Collector are
-      included in development and production manifests.
+- [x] Prometheus, Grafana, Alertmanager, and the OpenTelemetry Collector are
+      included in development and production manifests (Docker Compose and Helm).
 - [ ] Dashboards and alert rules are version-controlled within the repository.
+
+## Deployment Artifacts
+
+- [`deploy/compose/docker-compose.yml`](../deploy/compose/docker-compose.yml) now
+  provisions Prometheus, Alertmanager, Grafana, and the OpenTelemetry Collector
+  alongside arrgo services using configuration under `deploy/compose/`.
+- The Helm chart in [`deploy/helm/arrgo`](../deploy/helm/arrgo) ships optional
+  manifests for the same observability stack so production clusters can enable
+  the components with a values override.
 
 ## Next Steps
 

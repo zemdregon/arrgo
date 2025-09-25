@@ -1,0 +1,43 @@
+{{- if and .Values.observability.enabled .Values.observability.otelCollector.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "arrgo.observability.otelCollector.fullname" . }}
+  labels:
+    {{- include "arrgo.observability.otelCollector.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "arrgo.observability.otelCollector.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "arrgo.observability.otelCollector.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: otel-collector
+          image: "{{ .Values.observability.otelCollector.image.repository }}:{{ .Values.observability.otelCollector.image.tag }}"
+          imagePullPolicy: {{ .Values.observability.otelCollector.image.pullPolicy }}
+          args:
+            - "--config=/etc/otelcol/config.yaml"
+          ports:
+            - name: otlp-grpc
+              containerPort: {{ .Values.observability.otelCollector.service.ports.grpc }}
+            - name: otlp-http
+              containerPort: {{ .Values.observability.otelCollector.service.ports.http }}
+            - name: metrics
+              containerPort: {{ .Values.observability.otelCollector.service.ports.metrics }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol/config.yaml
+              subPath: config.yaml
+{{- with .Values.observability.otelCollector.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+{{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "arrgo.observability.otelCollector.fullname" . }}-config
+{{- end }}
