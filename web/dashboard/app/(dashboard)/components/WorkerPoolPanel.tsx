@@ -580,8 +580,12 @@ export function WorkerPoolPanel({
                         ? styles.formMessageSuccess
                         : styles.formMessageError,
                     ].join(" ")}
+                    role={poolFeedback.kind === "error" ? "alert" : "status"}
+                    aria-live={
+                      poolFeedback.kind === "error" ? "assertive" : "polite"
+                    }
                   >
-                    <span>{poolFeedback.message}</span>
+                    <span>{poolFeedback.message}</span>{" "}
                     <button
                       type="button"
                       className={styles.messageDismiss}

@@ -297,35 +297,6 @@ export function CommandPalette({
     setShortcutLabel(detectShortcutLabel());
   }, []);
 
-  const handleSearchKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLInputElement>) => {
-      if (!flatItems.length) {
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-          event.preventDefault();
-        }
-        return;
-      }
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setActiveIndex((index) => Math.min(flatItems.length - 1, index + 1));
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setActiveIndex((index) => Math.max(0, index - 1));
-        return;
-      }
-      if (event.key === "Enter") {
-        event.preventDefault();
-        const item = flatItems[activeIndex];
-        if (item) {
-          void handleSelect(item);
-        }
-      }
-    },
-    [activeIndex, flatItems, handleSelect],
-  );
-
   const handleSelect = useCallback(
     async (item: PaletteItem) => {
       if (item.kind === "navigation") {
@@ -417,6 +388,35 @@ export function CommandPalette({
       router,
       toast,
     ],
+  );
+
+  const handleSearchKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (!flatItems.length) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+        }
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveIndex((index) => Math.min(flatItems.length - 1, index + 1));
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveIndex((index) => Math.max(0, index - 1));
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        const item = flatItems[activeIndex];
+        if (item) {
+          void handleSelect(item);
+        }
+      }
+    },
+    [activeIndex, flatItems, handleSelect],
   );
 
   const handleBackdropClick = useCallback(

@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "global.d.ts",
+    "playwright.config.ts",
+    "playwright.visual.config.ts",
+    "tests/**/*.ts",
+    "components/**/*.stories.tsx",
+    ".storybook/**/*.ts"
+  ]
+}

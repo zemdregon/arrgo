@@ -308,7 +308,7 @@ export function ManualSearchPanel({
                 manualSearchFeedback.kind === "error" ? "assertive" : "polite"
               }
             >
-              <span>{manualSearchFeedback.message}</span>
+              <span>{manualSearchFeedback.message}</span>{" "}
               <button
                 type="button"
                 className={styles.messageDismiss}

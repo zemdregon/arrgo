@@ -3,6 +3,8 @@
 web/dashboard/.next/
 web/dashboard/out/
 web/dashboard/.turbo/
+web/dashboard/test-results/
+*.tsbuildinfo
 
 # Editor noise
 .DS_Store

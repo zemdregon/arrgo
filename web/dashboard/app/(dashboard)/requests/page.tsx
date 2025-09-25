@@ -1,6 +1,6 @@
 "use client";
 
-import { PageHeader } from "../../components/layout/PageHeader";
+import { PageHeader } from "../../../components/layout/PageHeader";
 import { RequestIntakePanel } from "./components/RequestIntakePanel";
 import { SlaMetricsPanel } from "./components/SlaMetricsPanel";
 import { NotificationSettingsPanel } from "./components/NotificationSettingsPanel";
