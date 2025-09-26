@@ -13,7 +13,7 @@ The items below consolidate cross-team follow-ups required to ship a cohesive, p
   - Added stream keyspace rotation helpers, lag alert instrumentation, and automatic dead-letter routing for exhausted jobs.
 
 ## API Surface & Request Management
-- [ ] Implement the request endpoints documented in [`docs/api-first-iteration.md`](api-first-iteration.md) with RBAC enforcement.
+- [x] Implement the request endpoints documented in [`docs/api-first-iteration.md`](api-first-iteration.md) with RBAC enforcement.
 - [ ] Add policy evaluation hooks so quotas and automation previews run before requests are approved.
 - [ ] Publish OpenAPI/Buf descriptors for REST and gRPC services once the request APIs stabilize.
 - [ ] Provide contract/integration tests that cover approve/deny/cancel flows and downstream job fan-out.

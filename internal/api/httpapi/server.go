@@ -37,6 +37,8 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("/api/v1/library/entities", s.instrument("/api/v1/library/entities", http.HandlerFunc(s.handleListEntities)))
 	mux.Handle("/api/v1/library/entities/", s.instrument("/api/v1/library/entities/{entity}", http.HandlerFunc(s.handleLibraryEntityRoutes)))
 	mux.Handle("/api/v1/jobs", s.instrument("/api/v1/jobs", http.HandlerFunc(s.handleJobs)))
+	mux.Handle("/api/v1/requests", s.instrument("/api/v1/requests", http.HandlerFunc(s.handleRequests)))
+	mux.Handle("/api/v1/requests/", s.instrument("/api/v1/requests/{request}", http.HandlerFunc(s.handleRequestRoutes)))
 	mux.Handle("/api/v1/indexer/search", s.instrument("/api/v1/indexer/search", http.HandlerFunc(s.handleIndexerSearch)))
 	mux.Handle("/api/v1/indexer/releases/grab", s.instrument("/api/v1/indexer/releases/grab", http.HandlerFunc(s.handleIndexerGrab)))
 	mux.Handle("/api/v1/library/overrides/", s.instrument("/api/v1/library/overrides/{entity}", http.HandlerFunc(s.handleMetadataOverrides)))
@@ -225,6 +227,220 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w, http.MethodGet, http.MethodPost)
 	}
+}
+
+func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		if _, ok := s.requirePermission(w, r, auth.PermissionRequestsRead); !ok {
+			return
+		}
+
+		requests, err := s.service.ListRequests(r.Context())
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to list requests")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, map[string]any{
+			"requests":    requests,
+			"next_cursor": nil,
+		})
+	case http.MethodPost:
+		if _, ok := s.requirePermission(w, r, auth.PermissionRequestsSubmit); !ok {
+			return
+		}
+
+		var payload struct {
+			Kind           string            `json:"kind"`
+			Title          string            `json:"title"`
+			ExternalIDs    map[string]string `json:"external_ids"`
+			RequestedBy    string            `json:"requested_by"`
+			Notes          string            `json:"notes"`
+			Policy         string            `json:"policy"`
+			QuotaRemaining int               `json:"quota_remaining"`
+			SLADeadline    string            `json:"sla_deadline"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		var deadline time.Time
+		if strings.TrimSpace(payload.SLADeadline) != "" {
+			parsed, err := time.Parse(time.RFC3339, payload.SLADeadline)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "sla_deadline must be an RFC3339 timestamp")
+				return
+			}
+			deadline = parsed
+		}
+
+		request, err := s.service.SubmitRequest(r.Context(), library.SubmitRequestInput{
+			Kind:           payload.Kind,
+			Title:          payload.Title,
+			RequestedBy:    payload.RequestedBy,
+			Notes:          payload.Notes,
+			Policy:         payload.Policy,
+			ExternalIDs:    payload.ExternalIDs,
+			QuotaRemaining: payload.QuotaRemaining,
+			SLADeadline:    deadline,
+		})
+		if err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, library.ErrRequestKindRequired), errors.Is(err, library.ErrRequestRequesterRequired):
+				status = http.StatusBadRequest
+			}
+			respondError(w, status, err.Error())
+			return
+		}
+
+		respondJSON(w, http.StatusAccepted, map[string]any{"request": request})
+	default:
+		methodNotAllowed(w, http.MethodGet, http.MethodPost)
+	}
+}
+
+func (s *Server) handleRequestRoutes(w http.ResponseWriter, r *http.Request) {
+	trimmed := strings.TrimPrefix(r.URL.Path, "/api/v1/requests/")
+	trimmed = strings.Trim(trimmed, "/")
+	if trimmed == "" {
+		respondError(w, http.StatusNotFound, "request resource not found")
+		return
+	}
+
+	parts := strings.Split(trimmed, "/")
+	requestID := strings.TrimSpace(parts[0])
+	if requestID == "" {
+		respondError(w, http.StatusNotFound, "request resource not found")
+		return
+	}
+
+	if len(parts) == 1 {
+		respondError(w, http.StatusNotFound, "request resource not found")
+		return
+	}
+
+	switch parts[1] {
+	case "approve":
+		s.handleRequestDecision(w, r, requestID, library.RequestDecisionApproved, auth.PermissionRequestsManage)
+	case "deny":
+		s.handleRequestDecision(w, r, requestID, library.RequestDecisionDenied, auth.PermissionRequestsManage)
+	case "cancel":
+		s.handleRequestDecision(w, r, requestID, library.RequestDecisionCancelled, auth.PermissionRequestsManage, auth.PermissionRequestsSubmit)
+	case "timeline":
+		s.handleRequestTimeline(w, r, requestID)
+	default:
+		respondError(w, http.StatusNotFound, "request resource not found")
+	}
+}
+
+func (s *Server) handleRequestDecision(w http.ResponseWriter, r *http.Request, requestID string, decision library.RequestDecision, permissions ...auth.Permission) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+
+	if len(permissions) == 0 {
+		permissions = []auth.Permission{auth.PermissionRequestsManage}
+	}
+
+	if _, ok := s.requireAnyPermission(w, r, permissions...); !ok {
+		return
+	}
+
+	var payload struct {
+		Actor       string `json:"actor"`
+		ApprovedBy  string `json:"approved_by"`
+		DeniedBy    string `json:"denied_by"`
+		CancelledBy string `json:"cancelled_by"`
+		Notes       string `json:"notes"`
+		DecidedAt   string `json:"decided_at"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	actor := firstNonEmpty(payload.Actor, payload.ApprovedBy, payload.DeniedBy, payload.CancelledBy)
+	if strings.TrimSpace(actor) == "" {
+		respondError(w, http.StatusBadRequest, "actor is required")
+		return
+	}
+
+	var decidedAt time.Time
+	if strings.TrimSpace(payload.DecidedAt) != "" {
+		parsed, err := time.Parse(time.RFC3339, payload.DecidedAt)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "decided_at must be an RFC3339 timestamp")
+			return
+		}
+		decidedAt = parsed
+	}
+
+	request, err := s.service.RecordRequestApproval(r.Context(), requestID, library.RecordRequestApprovalInput{
+		Decision:  decision,
+		Actor:     actor,
+		Notes:     payload.Notes,
+		DecidedAt: decidedAt,
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, library.ErrRequestIDRequired),
+			errors.Is(err, library.ErrRequestDecisionRequired),
+			errors.Is(err, library.ErrRequestActorRequired):
+			status = http.StatusBadRequest
+		case errors.Is(err, library.ErrRequestNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, library.ErrRequestFinalized):
+			status = http.StatusConflict
+		}
+		respondError(w, status, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{"request": request})
+}
+
+func (s *Server) handleRequestTimeline(w http.ResponseWriter, r *http.Request, requestID string) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+
+	if _, ok := s.requirePermission(w, r, auth.PermissionRequestsRead); !ok {
+		return
+	}
+
+	request, found, err := s.service.GetRequest(r.Context(), requestID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !found {
+		respondError(w, http.StatusNotFound, "request not found")
+		return
+	}
+
+	approvals := request.Approvals
+	if approvals == nil {
+		approvals = []library.RequestApprovalEvent{}
+	}
+	notifications := request.Notifications
+	if notifications == nil {
+		notifications = []library.RequestNotification{}
+	}
+
+	request.Approvals = nil
+	request.Notifications = nil
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"request":       request,
+		"approvals":     approvals,
+		"notifications": notifications,
+	})
 }
 
 func (s *Server) handleIndexerSearch(w http.ResponseWriter, r *http.Request) {
@@ -703,6 +919,50 @@ func (s *Server) requirePermission(w http.ResponseWriter, r *http.Request, permi
 	return auth.Principal{}, false
 }
 
+func (s *Server) requireAnyPermission(w http.ResponseWriter, r *http.Request, permissions ...auth.Permission) (auth.Principal, bool) {
+	if s.authorizer == nil {
+		return auth.Principal{}, true
+	}
+	if len(permissions) == 0 {
+		return s.requirePermission(w, r, "")
+	}
+
+	token := extractToken(r)
+	if token == "" {
+		respondError(w, http.StatusUnauthorized, "missing api key")
+		return auth.Principal{}, false
+	}
+
+	var denied bool
+	for _, permission := range permissions {
+		principal, err := s.authorizer.Authorize(r.Context(), token, permission)
+		if err == nil {
+			return principal, true
+		}
+		switch {
+		case errors.Is(err, auth.ErrPermissionDenied):
+			denied = true
+			continue
+		case errors.Is(err, auth.ErrAPIKeyRevoked):
+			respondError(w, http.StatusUnauthorized, "api key revoked")
+			return auth.Principal{}, false
+		case errors.Is(err, auth.ErrInvalidToken):
+			respondError(w, http.StatusUnauthorized, "invalid api key")
+			return auth.Principal{}, false
+		default:
+			respondError(w, http.StatusInternalServerError, "authorization failure")
+			return auth.Principal{}, false
+		}
+	}
+
+	if denied {
+		respondError(w, http.StatusForbidden, "forbidden")
+	} else {
+		respondError(w, http.StatusUnauthorized, "not authorized")
+	}
+	return auth.Principal{}, false
+}
+
 func extractToken(r *http.Request) string {
 	authz := strings.TrimSpace(r.Header.Get(headerAuthorization))
 	if authz != "" {
@@ -713,6 +973,16 @@ func extractToken(r *http.Request) string {
 		return authz
 	}
 	return strings.TrimSpace(r.Header.Get(headerAPIKey))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func registerPprofHandlers(mux *http.ServeMux) {
