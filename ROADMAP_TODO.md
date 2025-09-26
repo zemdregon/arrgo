@@ -1,6 +1,6 @@
 # Roadmap TODO
 
-> **Last updated:** 2025-03-10
+> **Last updated:** 2025-09-26
 > **Source of truth:** Mirrors the functional release checklist in [`docs/project-functional-todo.md`](docs/project-functional-todo.md).
 
 This file tracks the highest-priority roadmap items that still require work before the functional release milestone is complete.
@@ -9,7 +9,8 @@ This file tracks the highest-priority roadmap items that still require work befo
 - [x] Finalize PostgreSQL schema migrations with rollback coverage and seed data for demo environments.
 - [x] Persist job execution history with retention policies and expose it through `/api/v1/jobs` pagination.
   - Job lifecycle events now flow into the dedicated history store with automatic retention pruning, and `/api/v1/jobs` returns paginated listings hydrated with per-job history records.
-- [ ] Land request persistence models (request, approval event, notification) and wire them into the library service.
+- [x] Land request persistence models (request, approval event, notification) and wire them into the library service.
+  - Request submissions, approvals, and notifications now persist through the library repository (in-memory and Postgres) with schema migrations, seeding hooks, and service methods that hydrate timelines on read.
 - [x] Harden Redis Streams configuration (key rotation, consumer group lag alerts, automated dead-letter handling).
   - Stream namespaces now support version rotation, emit lag warnings, and funnel exhausted jobs into a managed dead-letter queue.
 
