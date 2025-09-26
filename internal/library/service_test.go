@@ -255,6 +255,118 @@ func TestSubmitRequestPersistsAndReturnsRecord(t *testing.T) {
 	}
 }
 
+func TestListRequestsPageFiltersAndPagination(t *testing.T) {
+	base := time.Date(2025, 2, 5, 12, 0, 0, 0, time.UTC)
+	idSeq := 0
+	svc, err := NewService(Config{
+		Clock: stubClock{now: base},
+		IDGenerator: func() string {
+			idSeq++
+			return fmt.Sprintf("req-%d", idSeq)
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	req1, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
+		Kind:        "series",
+		Title:       "The Expanse",
+		RequestedBy: "user1@example.com",
+		Policy:      "Public",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest returned error: %v", err)
+	}
+
+	svc.clock = stubClock{now: base.Add(1 * time.Minute)}
+	req2, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
+		Kind:        "movie",
+		Title:       "Dune",
+		RequestedBy: "user2@example.com",
+		Policy:      "VIP",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest returned error: %v", err)
+	}
+
+	svc.clock = stubClock{now: base.Add(2 * time.Minute)}
+	req3, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
+		Kind:        "series",
+		Title:       "Foundation",
+		RequestedBy: "user3@example.com",
+		Policy:      "Public",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest returned error: %v", err)
+	}
+
+	svc.clock = stubClock{now: base.Add(3 * time.Minute)}
+	if _, err := svc.RecordRequestApproval(context.Background(), req2.ID, RecordRequestApprovalInput{
+		Decision: RequestDecisionApproved,
+		Actor:    "approver@example.com",
+	}); err != nil {
+		t.Fatalf("RecordRequestApproval returned error: %v", err)
+	}
+
+	result, err := svc.ListRequestsPage(context.Background(), ListRequestsPageInput{Status: "pending", Limit: 1})
+	if err != nil {
+		t.Fatalf("ListRequestsPage returned error: %v", err)
+	}
+	if len(result.Requests) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(result.Requests))
+	}
+	if result.Requests[0].ID != req3.ID {
+		t.Fatalf("expected newest pending request %q, got %q", req3.ID, result.Requests[0].ID)
+	}
+	if result.NextCursor == "" {
+		t.Fatalf("expected next cursor for additional results")
+	}
+
+	nextPage, err := svc.ListRequestsPage(context.Background(), ListRequestsPageInput{Status: "pending", Cursor: result.NextCursor, Limit: 5})
+	if err != nil {
+		t.Fatalf("ListRequestsPage returned error: %v", err)
+	}
+	if len(nextPage.Requests) != 1 {
+		t.Fatalf("expected second pending request, got %d entries", len(nextPage.Requests))
+	}
+	if nextPage.Requests[0].ID != req1.ID {
+		t.Fatalf("expected pending request %q, got %q", req1.ID, nextPage.Requests[0].ID)
+	}
+	if nextPage.NextCursor != "" {
+		t.Fatalf("expected no further pages, got cursor %q", nextPage.NextCursor)
+	}
+
+	policyFiltered, err := svc.ListRequestsPage(context.Background(), ListRequestsPageInput{Policy: "PUBLIC", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListRequestsPage returned error: %v", err)
+	}
+	if len(policyFiltered.Requests) != 2 {
+		t.Fatalf("expected 2 requests for policy filter, got %d", len(policyFiltered.Requests))
+	}
+	if policyFiltered.Requests[0].ID != req3.ID || policyFiltered.Requests[1].ID != req1.ID {
+		t.Fatalf("unexpected policy ordering: %#v", policyFiltered.Requests)
+	}
+
+	kindFiltered, err := svc.ListRequestsPage(context.Background(), ListRequestsPageInput{Kind: "MOVIE", Limit: 5})
+	if err != nil {
+		t.Fatalf("ListRequestsPage returned error: %v", err)
+	}
+	if len(kindFiltered.Requests) != 1 || kindFiltered.Requests[0].ID != req2.ID {
+		t.Fatalf("expected only movie request %q, got %#v", req2.ID, kindFiltered.Requests)
+	}
+
+	if _, err := svc.ListRequestsPage(context.Background(), ListRequestsPageInput{Status: "unknown"}); !errors.Is(err, ErrInvalidRequestStatusFilter) {
+		t.Fatalf("expected ErrInvalidRequestStatusFilter, got %v", err)
+	}
+	if _, err := svc.ListRequestsPage(context.Background(), ListRequestsPageInput{Cursor: "!!!"}); !errors.Is(err, ErrInvalidRequestCursor) {
+		t.Fatalf("expected ErrInvalidRequestCursor, got %v", err)
+	}
+	if _, err := svc.ListRequestsPage(context.Background(), ListRequestsPageInput{Limit: -1}); !errors.Is(err, ErrInvalidRequestPageLimit) {
+		t.Fatalf("expected ErrInvalidRequestPageLimit, got %v", err)
+	}
+}
+
 func TestRecordRequestApprovalTransitionsStatus(t *testing.T) {
 	now := time.Date(2025, 3, 2, 14, 0, 0, 0, time.UTC)
 	idSeq := 0

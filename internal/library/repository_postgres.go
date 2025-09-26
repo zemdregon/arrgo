@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -723,6 +724,104 @@ ORDER BY submitted_at DESC, id DESC;
 		requests = append(requests, record)
 	}
 	return requests, nil
+}
+
+func (r *PostgresRepository) ListRequestsPage(ctx context.Context, opts ListRequestsOptions) (ListRequestsResult, error) {
+	clauses := []string{}
+	args := []any{}
+	argPos := 1
+
+	if status := strings.TrimSpace(opts.Status); status != "" {
+		clauses = append(clauses, fmt.Sprintf("status = $%d", argPos))
+		args = append(args, status)
+		argPos++
+	}
+	if policy := strings.TrimSpace(opts.Policy); policy != "" {
+		clauses = append(clauses, fmt.Sprintf("LOWER(policy) = $%d", argPos))
+		args = append(args, strings.ToLower(policy))
+		argPos++
+	}
+	if kind := strings.TrimSpace(opts.Kind); kind != "" {
+		clauses = append(clauses, fmt.Sprintf("kind = $%d", argPos))
+		args = append(args, kind)
+		argPos++
+	}
+	if opts.Cursor != nil {
+		clauses = append(clauses, fmt.Sprintf("(submitted_at < $%d OR (submitted_at = $%d AND id < $%d))", argPos, argPos, argPos+1))
+		args = append(args, opts.Cursor.SubmittedAt, opts.Cursor.RequestID)
+		argPos += 2
+	}
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 25
+	}
+
+	stmt := `SELECT id, kind, title, requested_by, notes, policy, external_ids,
+       quota_remaining, submitted_at, updated_at, sla_deadline, status
+FROM library_requests`
+	if len(clauses) > 0 {
+		stmt += " WHERE " + strings.Join(clauses, " AND ")
+	}
+	stmt += " ORDER BY submitted_at DESC, id DESC LIMIT $" + strconv.Itoa(argPos)
+	args = append(args, limit+1)
+
+	rows, err := r.pool.Query(ctx, stmt, args...)
+	if err != nil {
+		return ListRequestsResult{}, fmt.Errorf("library: list requests page: %w", err)
+	}
+	defer rows.Close()
+
+	requests := []Request{}
+	for rows.Next() {
+		var record Request
+		var idsJSON []byte
+		var sla pgtype.Timestamptz
+		if scanErr := rows.Scan(
+			&record.ID,
+			&record.Kind,
+			&record.Title,
+			&record.RequestedBy,
+			&record.Notes,
+			&record.Policy,
+			&idsJSON,
+			&record.QuotaRemaining,
+			&record.SubmittedAt,
+			&record.UpdatedAt,
+			&sla,
+			&record.Status,
+		); scanErr != nil {
+			return ListRequestsResult{}, fmt.Errorf("library: scan request: %w", scanErr)
+		}
+		record.SubmittedAt = record.SubmittedAt.UTC()
+		record.UpdatedAt = record.UpdatedAt.UTC()
+		if sla.Valid {
+			record.SLADeadline = sla.Time.UTC()
+		}
+		if len(idsJSON) > 0 {
+			ids := make(map[string]string)
+			if err := json.Unmarshal(idsJSON, &ids); err != nil {
+				return ListRequestsResult{}, fmt.Errorf("library: decode request external ids: %w", err)
+			}
+			if len(ids) > 0 {
+				record.ExternalIDs = ids
+			}
+		}
+		requests = append(requests, record)
+	}
+	if err := rows.Err(); err != nil {
+		return ListRequestsResult{}, fmt.Errorf("library: iterate requests: %w", err)
+	}
+
+	result := ListRequestsResult{Requests: requests}
+	if len(requests) > limit {
+		if limit > 0 {
+			last := requests[limit-1]
+			result.NextCursor = &RequestCursor{SubmittedAt: last.SubmittedAt, RequestID: last.ID}
+		}
+		result.Requests = requests[:limit]
+	}
+	return result, nil
 }
 
 func (r *PostgresRepository) AppendRequestApproval(ctx context.Context, event RequestApprovalEvent) error {
