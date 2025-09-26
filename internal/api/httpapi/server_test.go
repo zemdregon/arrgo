@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -322,6 +323,144 @@ func TestRequestEndpoints(t *testing.T) {
 	}
 	if timelinePayload.Request.Status != library.RequestStatusApproved {
 		t.Fatalf("expected approved request status, got %s", timelinePayload.Request.Status)
+	}
+}
+
+func TestRequestDecisionEndpointsCoverFlows(t *testing.T) {
+	preview := &automationPreviewStub{jobs: []library.AutomationPreviewJob{{JobType: "import", TargetID: "entity-1"}}}
+	var mu sync.Mutex
+	idSeq := 0
+	svc := mustRedisBackedService(t, library.Config{
+		Entities:            []library.Entity{{ID: "entity-1", EntityType: "series"}},
+		AutomationPreviewer: preview,
+		IDGenerator: func() string {
+			mu.Lock()
+			defer mu.Unlock()
+			idSeq++
+			return fmt.Sprintf("id-%d", idSeq)
+		},
+	})
+	authSvc := mustAuthService(t)
+	adminToken := mustAPIKey(t, authSvc, "admin")
+	srv := NewServer(svc, nil, authSvc)
+
+	submitRequest := func(title string) string {
+		body, _ := json.Marshal(map[string]any{
+			"kind":         "series",
+			"title":        title,
+			"requested_by": "user@example.com",
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/requests", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+adminToken)
+		resp := httptest.NewRecorder()
+		srv.handleRequests(resp, req)
+		if resp.Code != http.StatusAccepted {
+			t.Fatalf("expected submit status 202, got %d: %s", resp.Code, resp.Body.String())
+		}
+		var payload struct {
+			Request library.Request `json:"request"`
+		}
+		if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("failed to decode submit payload: %v", err)
+		}
+		return payload.Request.ID
+	}
+
+	approvedID := submitRequest("Approve flow")
+
+	approveBody, _ := json.Marshal(map[string]string{"approved_by": "ops@arrgo.dev"})
+	approveReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/requests/%s/approve", approvedID), bytes.NewReader(approveBody))
+	approveReq.Header.Set("Authorization", "Bearer "+adminToken)
+	approveResp := httptest.NewRecorder()
+	srv.handleRequestRoutes(approveResp, approveReq)
+	if approveResp.Code != http.StatusOK {
+		t.Fatalf("expected approve status 200, got %d: %s", approveResp.Code, approveResp.Body.String())
+	}
+	var approvePayload struct {
+		Request library.Request `json:"request"`
+	}
+	if err := json.Unmarshal(approveResp.Body.Bytes(), &approvePayload); err != nil {
+		t.Fatalf("failed to decode approve payload: %v", err)
+	}
+	if approvePayload.Request.Status != library.RequestStatusApproved {
+		t.Fatalf("expected approved status, got %s", approvePayload.Request.Status)
+	}
+
+	jobs, err := svc.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs returned error: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 automation job after approval, got %d", len(jobs))
+	}
+	job := jobs[0]
+	if job.JobType != "import" {
+		t.Fatalf("expected automation job type import, got %s", job.JobType)
+	}
+	if job.TargetID != "entity-1" {
+		t.Fatalf("expected automation job target entity-1, got %s", job.TargetID)
+	}
+	expectedKey := fmt.Sprintf("request:%s:%s:%s", strings.ToLower(approvedID), "import", "entity-1")
+	if job.IdempotencyKey != expectedKey {
+		t.Fatalf("expected idempotency key %q, got %q", expectedKey, job.IdempotencyKey)
+	}
+
+	deniedID := submitRequest("Deny flow")
+	denyBody, _ := json.Marshal(map[string]string{"denied_by": "ops@arrgo.dev"})
+	denyReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/requests/%s/deny", deniedID), bytes.NewReader(denyBody))
+	denyReq.Header.Set("Authorization", "Bearer "+adminToken)
+	denyResp := httptest.NewRecorder()
+	srv.handleRequestRoutes(denyResp, denyReq)
+	if denyResp.Code != http.StatusOK {
+		t.Fatalf("expected deny status 200, got %d: %s", denyResp.Code, denyResp.Body.String())
+	}
+	var denyPayload struct {
+		Request library.Request `json:"request"`
+	}
+	if err := json.Unmarshal(denyResp.Body.Bytes(), &denyPayload); err != nil {
+		t.Fatalf("failed to decode deny payload: %v", err)
+	}
+	if denyPayload.Request.Status != library.RequestStatusDenied {
+		t.Fatalf("expected denied status, got %s", denyPayload.Request.Status)
+	}
+
+	jobsAfterDeny, err := svc.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs returned error: %v", err)
+	}
+	if len(jobsAfterDeny) != 1 {
+		t.Fatalf("expected automation jobs to remain at 1 after denial, got %d", len(jobsAfterDeny))
+	}
+
+	cancelledID := submitRequest("Cancel flow")
+	cancelBody, _ := json.Marshal(map[string]string{"cancelled_by": "user@example.com"})
+	cancelReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/requests/%s/cancel", cancelledID), bytes.NewReader(cancelBody))
+	cancelReq.Header.Set("Authorization", "Bearer "+adminToken)
+	cancelResp := httptest.NewRecorder()
+	srv.handleRequestRoutes(cancelResp, cancelReq)
+	if cancelResp.Code != http.StatusOK {
+		t.Fatalf("expected cancel status 200, got %d: %s", cancelResp.Code, cancelResp.Body.String())
+	}
+	var cancelPayload struct {
+		Request library.Request `json:"request"`
+	}
+	if err := json.Unmarshal(cancelResp.Body.Bytes(), &cancelPayload); err != nil {
+		t.Fatalf("failed to decode cancel payload: %v", err)
+	}
+	if cancelPayload.Request.Status != library.RequestStatusCancelled {
+		t.Fatalf("expected cancelled status, got %s", cancelPayload.Request.Status)
+	}
+
+	jobsAfterCancel, err := svc.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs returned error: %v", err)
+	}
+	if len(jobsAfterCancel) != 1 {
+		t.Fatalf("expected automation jobs to remain at 1 after cancellation, got %d", len(jobsAfterCancel))
+	}
+
+	if preview.Calls() != 1 {
+		t.Fatalf("expected automation preview to run once, got %d", preview.Calls())
 	}
 }
 
@@ -851,6 +990,27 @@ func mustLibraryService(t *testing.T, cfg library.Config) *library.Service {
 		t.Fatalf("NewService returned error: %v", err)
 	}
 	return svc
+}
+
+type automationPreviewStub struct {
+	mu    sync.Mutex
+	jobs  []library.AutomationPreviewJob
+	count int
+}
+
+func (s *automationPreviewStub) PreviewAutomation(context.Context, library.Request) (library.AutomationPreviewResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	jobs := make([]library.AutomationPreviewJob, len(s.jobs))
+	copy(jobs, s.jobs)
+	s.count++
+	return library.AutomationPreviewResult{Jobs: jobs}, nil
+}
+
+func (s *automationPreviewStub) Calls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.count
 }
 
 func mustRedisBackedService(t *testing.T, cfg library.Config) *library.Service {

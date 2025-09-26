@@ -748,13 +748,14 @@ func (s *Service) GetRequest(ctx context.Context, id string) (request Request, f
 	return request, true, nil
 }
 
-func (s *Service) runApprovalPolicies(ctx context.Context, span trace.Span, request *Request) error {
+func (s *Service) runApprovalPolicies(ctx context.Context, span trace.Span, request *Request) (AutomationPreviewResult, error) {
+	var preview AutomationPreviewResult
 	if s.quotaEvaluator != nil {
 		result, err := s.quotaEvaluator.EvaluateQuota(ctx, cloneRequest(*request))
 		if err != nil {
 			span.RecordError(err, trace.WithAttributes(attribute.String("library.policy_stage", "quota")))
 			span.SetStatus(codes.Error, "quota evaluation failed")
-			return fmt.Errorf("evaluate quota: %w", err)
+			return AutomationPreviewResult{}, fmt.Errorf("evaluate quota: %w", err)
 		}
 		if result.Remaining != nil {
 			request.QuotaRemaining = *result.Remaining
@@ -763,18 +764,19 @@ func (s *Service) runApprovalPolicies(ctx context.Context, span trace.Span, requ
 	}
 
 	if s.automationPreviewer != nil {
-		preview, err := s.automationPreviewer.PreviewAutomation(ctx, cloneRequest(*request))
+		var err error
+		preview, err = s.automationPreviewer.PreviewAutomation(ctx, cloneRequest(*request))
 		if err != nil {
 			span.RecordError(err, trace.WithAttributes(attribute.String("library.policy_stage", "automation_preview")))
 			span.SetStatus(codes.Error, "automation preview failed")
-			return fmt.Errorf("preview automation: %w", err)
+			return AutomationPreviewResult{}, fmt.Errorf("preview automation: %w", err)
 		}
 		span.AddEvent("library.request.automation_preview", trace.WithAttributes(
 			attribute.Int("library.policy.preview_jobs", len(preview.Jobs)),
 		))
 	}
 
-	return nil
+	return preview, nil
 }
 
 // RecordRequestApproval applies an approval decision to a request and returns the updated record.
@@ -815,8 +817,10 @@ func (s *Service) RecordRequestApproval(ctx context.Context, requestID string, i
 		return
 	}
 
+	var preview AutomationPreviewResult
 	if decision == RequestDecisionApproved {
-		if evalErr := s.runApprovalPolicies(ctx, span, &base); evalErr != nil {
+		var evalErr error
+		if preview, evalErr = s.runApprovalPolicies(ctx, span, &base); evalErr != nil {
 			err = fmt.Errorf("library: %w", evalErr)
 			return
 		}
@@ -858,8 +862,52 @@ func (s *Service) RecordRequestApproval(ctx context.Context, requestID string, i
 		err = ErrRequestNotFound
 		return
 	}
+	if decision == RequestDecisionApproved {
+		enqueued, fanoutErr := s.fanOutRequestJobs(ctx, request, preview)
+		if fanoutErr != nil {
+			span.RecordError(fanoutErr, trace.WithAttributes(attribute.String("library.policy_stage", "automation_fanout")))
+			span.SetStatus(codes.Error, "automation fan-out failed")
+			err = fmt.Errorf("library: fan out automation jobs: %w", fanoutErr)
+			return
+		}
+		if enqueued > 0 {
+			span.AddEvent("library.request.automation_fanout", trace.WithAttributes(attribute.Int("library.policy.enqueued_jobs", enqueued)))
+		}
+	}
 	span.SetAttributes(attribute.String("library.request_status", string(request.Status)))
 	return request, nil
+}
+
+func (s *Service) fanOutRequestJobs(ctx context.Context, request Request, preview AutomationPreviewResult) (int, error) {
+	if len(preview.Jobs) == 0 {
+		return 0, nil
+	}
+	trimmedID := strings.TrimSpace(request.ID)
+	if trimmedID == "" {
+		return 0, fmt.Errorf("request id is required for automation fan-out")
+	}
+
+	enqueued := 0
+	for idx, job := range preview.Jobs {
+		jobType := strings.TrimSpace(job.JobType)
+		targetID := strings.TrimSpace(job.TargetID)
+		if jobType == "" || targetID == "" {
+			return enqueued, fmt.Errorf("automation job %d missing job type or target", idx)
+		}
+		key := fmt.Sprintf("request:%s:%s:%s", strings.ToLower(trimmedID), strings.ToLower(jobType), targetID)
+		if _, err := s.TriggerJob(ctx, TriggerJobInput{
+			JobType:        jobType,
+			TargetID:       targetID,
+			IdempotencyKey: key,
+		}); err != nil {
+			if errors.Is(err, ErrDuplicateJob) {
+				continue
+			}
+			return enqueued, fmt.Errorf("trigger automation job %q for request %q: %w", jobType, trimmedID, err)
+		}
+		enqueued++
+	}
+	return enqueued, nil
 }
 
 // RecordRequestNotification stores a notification delivery attempt for a request.

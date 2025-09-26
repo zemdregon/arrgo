@@ -17,7 +17,9 @@ This file tracks the highest-priority roadmap items that still require work befo
 - [x] Add policy evaluation hooks so quotas and automation previews run before requests are approved.
   - Library service now evaluates quotas and automation previews ahead of approval to block exhausted policies and capture preview telemetry.
 - [ ] Publish OpenAPI/Buf descriptors for REST and gRPC services once the request APIs stabilize.
-- [ ] Provide contract/integration tests that cover approve/deny/cancel flows and downstream job fan-out.
+  - **Do not do:** Blocked until the request APIs reach GA stability; revisit after the release candidate hardening window.
+- [x] Provide contract/integration tests that cover approve/deny/cancel flows and downstream job fan-out.
+  - Added service- and HTTP-level tests that assert approval fan-out enqueues automation jobs while denial/cancel flows skip queueing.
 
 ## Observability & Operations
 - [ ] Export master HTTP metrics (`arrgo_http_requests_total`, `arrgo_http_request_duration_seconds`) via the OpenTelemetry Collector to Prometheus.

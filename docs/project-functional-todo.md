@@ -17,7 +17,9 @@ The items below consolidate cross-team follow-ups required to ship a cohesive, p
  - [x] Add policy evaluation hooks so quotas and automation previews run before requests are approved.
    - Library service injects quota and automation preview evaluators that run prior to approvals, updating persisted quota state and surfacing preview telemetry.
 - [ ] Publish OpenAPI/Buf descriptors for REST and gRPC services once the request APIs stabilize.
-- [ ] Provide contract/integration tests that cover approve/deny/cancel flows and downstream job fan-out.
+  - **Do not do:** Deferred until the request endpoints are version-locked for GA; leave documentation work parked until that decision.
+- [x] Provide contract/integration tests that cover approve/deny/cancel flows and downstream job fan-out.
+  - `internal/library/service_test.go` and `internal/api/httpapi/server_test.go` now verify approval fan-out queues automation jobs while deny/cancel paths avoid the orchestration queue.
 
 ## Observability & Operations
 - [ ] Export master HTTP metrics (`arrgo_http_requests_total`, `arrgo_http_request_duration_seconds`) via the OpenTelemetry Collector to Prometheus.
