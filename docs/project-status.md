@@ -1,6 +1,6 @@
 # arrgo Project Status
 
-> **Last reviewed:** 2025-03-08  
+> **Last reviewed:** 2025-03-09
 > **Current phase:** Alpha hardening (foundational infrastructure feature complete, polish in progress)
 
 This document aggregates milestone tracking, delivery confidence, and near-term
@@ -42,6 +42,9 @@ referenced before planning new workstreams.
   [`docs/access-control.md`](access-control.md),
   [`docs/observability-baseline.md`](observability-baseline.md), and
   [`docs/adrs/0001-job-queue-selection.md`](adrs/0001-job-queue-selection.md).
+- **Request portal UI** — Next.js request intake, approval workflows, and
+  notification settings shipped behind feature flags pending backend request
+  persistence. Tracked in [`docs/project-functional-todo.md`](project-functional-todo.md).
 - **Deployment assets** — Docker Compose, Helm charts, Terraform modules, and
   GHCR image publication workflows. See [`docs/deployment/production.md`](deployment/production.md)
   and the repository `.github/workflows` directory.
@@ -55,6 +58,8 @@ referenced before planning new workstreams.
   ingesters) to accelerate community contributions.
 - Document incident response playbooks for queue stalls, ingestion failures, and
   metadata discrepancies.
+- Deliver request persistence, approval events, and automation fan-out so the
+  dashboard request portal can ship without feature flags.
 
 ## Upcoming Milestones
 | Target | Focus | Exit Criteria |
@@ -85,6 +90,8 @@ referenced before planning new workstreams.
 - **Release gates**: Alpha exit review focuses on persistence and observability;
   beta kickoff emphasizes integrations and security; GA prep centers on scale
   validations and marketplace operations.
+- **Cross-team visibility**: Keep [`docs/project-functional-todo.md`](project-functional-todo.md)
+  current so backend, frontend, and observability owners can coordinate releases.
 
 ## How to Contribute
 - Review the [development setup guide](development-setup.md) to bootstrap your

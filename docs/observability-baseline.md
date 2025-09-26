@@ -1,6 +1,6 @@
 # Observability Baseline
 
-> **Last reviewed:** 2025-03-08  
+> **Last reviewed:** 2025-03-09
 > **Status:** Baseline instrumentation in place; packaging dashboards ongoing
 
 This document captures the initial observability plan for arrgo. It defines the
@@ -52,6 +52,22 @@ The following metrics remain on the roadmap and should accompany their respectiv
 - Scrape master and worker `/metrics` endpoints every 15 seconds.
 - Configure service discovery labels for `cluster`, `service`, `instance`, and `worker_pool` to power multi-cluster dashboards.
 - Record rules to compute availability SLIs (e.g., request success ratio, scheduler latency P95).
+
+### Master/worker signal integration
+
+- **Master service HTTP metrics:** `internal/api/httpapi.Server` wraps every
+  route with `otelhttp.NewHandler`, exposing standard OpenTelemetry HTTP server
+  metrics (`http.server.duration`, `http.server.request_content_length`) and
+  traces. The observability workstream should export these signals to Prometheus
+  as `arrgo_http_requests_total`/`arrgo_http_request_duration_seconds` and to the
+  tracing backend for request-level analysis.
+- **Worker service gauges:** `internal/worker.Metrics` publishes
+  `arrgo_workers_active`, `arrgo_workers_heartbeat_seconds`, and
+  `arrgo_workers_stale` with `pool`/`worker_id` labels. Dashboards should chart
+  these against queue depth and job latency to catch unhealthy pools early.
+- **Trace propagation:** Master-to-worker interactions reuse the global tracer;
+  ensure OTLP exporters are configured for both binaries so spans stitched in
+  the master appear contiguous with worker execution spans.
 
 ## Tracing
 
