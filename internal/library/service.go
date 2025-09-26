@@ -140,37 +140,78 @@ type TriggerJobInput struct {
 // IDGenerator produces stable identifiers for new jobs.
 type IDGenerator func() string
 
+// SubmitRequestInput captures the metadata required to persist a new request.
+type SubmitRequestInput struct {
+	Kind           string
+	Title          string
+	RequestedBy    string
+	Notes          string
+	Policy         string
+	ExternalIDs    map[string]string
+	QuotaRemaining int
+	SLADeadline    time.Time
+}
+
+// RecordRequestApprovalInput captures approval decisions applied to a request.
+type RecordRequestApprovalInput struct {
+	Decision  RequestDecision
+	Actor     string
+	Notes     string
+	DecidedAt time.Time
+}
+
+// RecordRequestNotificationInput captures notification delivery attempts for a request.
+type RecordRequestNotificationInput struct {
+	Channel      string
+	Target       string
+	Status       RequestNotificationStatus
+	AttemptedAt  time.Time
+	ErrorMessage string
+}
+
 // Config drives Service construction.
 type Config struct {
-	Repository        Repository
-	Entities          []Entity
-	Jobs              []Job
-	Clock             timeutil.Clock
-	IDGenerator       IDGenerator
-	RedisClient       *redis.Client
-	StreamName        string
-	ConsumerGroup     string
-	Logger            *slog.Logger
-	IdempotencyTTL    time.Duration
-	AuditSink         AuditSink
-	Tracer            trace.Tracer
-	RenameTemplates   RenameTemplates
-	LibraryFiles      map[string][]LibraryFile
-	MetadataOverrides map[string]MetadataOverrides
+	Repository           Repository
+	Entities             []Entity
+	Jobs                 []Job
+	Requests             []Request
+	RequestApprovals     []RequestApprovalEvent
+	RequestNotifications []RequestNotification
+	Clock                timeutil.Clock
+	IDGenerator          IDGenerator
+	RedisClient          *redis.Client
+	StreamName           string
+	ConsumerGroup        string
+	Logger               *slog.Logger
+	IdempotencyTTL       time.Duration
+	AuditSink            AuditSink
+	Tracer               trace.Tracer
+	RenameTemplates      RenameTemplates
+	LibraryFiles         map[string][]LibraryFile
+	MetadataOverrides    map[string]MetadataOverrides
 }
 
 // Errors returned by the Service APIs.
 var (
-	ErrInvalidJobType              = errors.New("library: job type is required")
-	ErrInvalidTarget               = errors.New("library: target id is required")
-	ErrUnknownEntity               = errors.New("library: target entity not found")
-	ErrQueueUnavailable            = errors.New("library: orchestration queue unavailable")
-	ErrDuplicateJob                = errors.New("library: duplicate job for idempotency key")
-	ErrManualSearchEntityRequired  = errors.New("library: manual search entity id is required")
-	ErrManualSearchReleaseRequired = errors.New("library: manual search release id is required")
-	ErrManualSearchReleaseNotFound = errors.New("library: manual search release not found")
-	ErrManualSearchReleaseGrabbed  = errors.New("library: manual search release already grabbed")
-	ErrInvalidJobPageToken         = errors.New("library: invalid job page token")
+	ErrInvalidJobType                     = errors.New("library: job type is required")
+	ErrInvalidTarget                      = errors.New("library: target id is required")
+	ErrUnknownEntity                      = errors.New("library: target entity not found")
+	ErrQueueUnavailable                   = errors.New("library: orchestration queue unavailable")
+	ErrDuplicateJob                       = errors.New("library: duplicate job for idempotency key")
+	ErrManualSearchEntityRequired         = errors.New("library: manual search entity id is required")
+	ErrManualSearchReleaseRequired        = errors.New("library: manual search release id is required")
+	ErrManualSearchReleaseNotFound        = errors.New("library: manual search release not found")
+	ErrManualSearchReleaseGrabbed         = errors.New("library: manual search release already grabbed")
+	ErrInvalidJobPageToken                = errors.New("library: invalid job page token")
+	ErrRequestKindRequired                = errors.New("library: request kind is required")
+	ErrRequestRequesterRequired           = errors.New("library: requested by is required")
+	ErrRequestIDRequired                  = errors.New("library: request id is required")
+	ErrRequestNotFound                    = errors.New("library: request not found")
+	ErrRequestFinalized                   = errors.New("library: request has already been finalized")
+	ErrRequestDecisionRequired            = errors.New("library: request decision is required")
+	ErrRequestActorRequired               = errors.New("library: approval actor is required")
+	ErrRequestNotificationChannelRequired = errors.New("library: notification channel is required")
+	ErrRequestNotificationTargetRequired  = errors.New("library: notification target is required")
 )
 
 // Service exposes read/write helpers that back both REST and gRPC front-ends.
@@ -263,6 +304,48 @@ func NewService(cfg Config) (*Service, error) {
 		}
 		if err := svc.repository.UpsertMetadataOverrides(seedCtx, entityID, o); err != nil {
 			return nil, fmt.Errorf("library: seed metadata overrides for %q: %w", entityID, err)
+		}
+	}
+	for _, request := range cfg.Requests {
+		seeded := cloneRequest(request)
+		if strings.TrimSpace(seeded.ID) == "" {
+			seeded.ID = svc.idGen()
+		}
+		if seeded.SubmittedAt.IsZero() {
+			seeded.SubmittedAt = svc.clock.Now()
+		}
+		if seeded.UpdatedAt.IsZero() || seeded.UpdatedAt.Before(seeded.SubmittedAt) {
+			seeded.UpdatedAt = seeded.SubmittedAt
+		}
+		if seeded.Status == "" {
+			seeded.Status = RequestStatusPending
+		}
+		if err := svc.repository.SaveRequest(seedCtx, seeded); err != nil {
+			return nil, fmt.Errorf("library: seed request %q: %w", seeded.ID, err)
+		}
+	}
+	for _, approval := range cfg.RequestApprovals {
+		seeded := cloneRequestApproval(approval)
+		if strings.TrimSpace(seeded.ID) == "" {
+			seeded.ID = svc.idGen()
+		}
+		if seeded.DecidedAt.IsZero() {
+			seeded.DecidedAt = svc.clock.Now()
+		}
+		if err := svc.repository.AppendRequestApproval(seedCtx, seeded); err != nil {
+			return nil, fmt.Errorf("library: seed request approval %q: %w", seeded.ID, err)
+		}
+	}
+	for _, notification := range cfg.RequestNotifications {
+		seeded := cloneRequestNotification(notification)
+		if strings.TrimSpace(seeded.ID) == "" {
+			seeded.ID = svc.idGen()
+		}
+		if seeded.AttemptedAt.IsZero() {
+			seeded.AttemptedAt = svc.clock.Now()
+		}
+		if err := svc.repository.AppendRequestNotification(seedCtx, seeded); err != nil {
+			return nil, fmt.Errorf("library: seed request notification %q: %w", seeded.ID, err)
 		}
 	}
 
@@ -539,6 +622,285 @@ func (s *Service) recordJobHistory(ctx context.Context, jobID string, record Job
 			"error", err,
 		)
 	}
+}
+
+// SubmitRequest persists a new intake request and returns the stored record.
+func (s *Service) SubmitRequest(ctx context.Context, input SubmitRequestInput) (request Request, err error) {
+	kind := strings.ToLower(strings.TrimSpace(input.Kind))
+	if kind == "" {
+		err = ErrRequestKindRequired
+		return
+	}
+	requestedBy := strings.TrimSpace(input.RequestedBy)
+	if requestedBy == "" {
+		err = ErrRequestRequesterRequired
+		return
+	}
+
+	ctx, span := s.startSpan(ctx, "library.Service.SubmitRequest",
+		attribute.String("library.request_kind", kind),
+		attribute.String("library.requested_by", requestedBy),
+	)
+	defer endSpan(span, &err)
+
+	now := s.clock.Now()
+	externalIDs := make(map[string]string, len(input.ExternalIDs))
+	for key, value := range input.ExternalIDs {
+		externalIDs[key] = value
+	}
+
+	request = Request{
+		ID:             s.idGen(),
+		Kind:           kind,
+		Title:          strings.TrimSpace(input.Title),
+		RequestedBy:    requestedBy,
+		Notes:          strings.TrimSpace(input.Notes),
+		Policy:         strings.TrimSpace(input.Policy),
+		ExternalIDs:    externalIDs,
+		QuotaRemaining: input.QuotaRemaining,
+		SubmittedAt:    now,
+		UpdatedAt:      now,
+		SLADeadline:    input.SLADeadline,
+		Status:         RequestStatusPending,
+	}
+
+	if err = s.repository.SaveRequest(ctx, request); err != nil {
+		err = fmt.Errorf("library: submit request: %w", err)
+		return
+	}
+
+	stored, found, loadErr := s.loadRequest(ctx, request.ID)
+	if loadErr != nil {
+		err = loadErr
+		return
+	}
+	if !found {
+		err = fmt.Errorf("library: request %q not found after creation", request.ID)
+		return
+	}
+	request = stored
+	span.SetAttributes(
+		attribute.String("library.request_id", request.ID),
+		attribute.String("library.request_status", string(request.Status)),
+	)
+	return
+}
+
+// ListRequests returns persisted requests ordered by submission time.
+func (s *Service) ListRequests(ctx context.Context) (requests []Request, err error) {
+	ctx, span := s.startSpan(ctx, "library.Service.ListRequests")
+	defer endSpan(span, &err)
+
+	records, err := s.repository.ListRequests(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("library: list requests: %w", err)
+	}
+
+	requests = make([]Request, len(records))
+	for i := range records {
+		cloned := cloneRequest(records[i])
+		cloned.Approvals = nil
+		cloned.Notifications = nil
+		requests[i] = cloned
+	}
+	span.SetAttributes(attribute.Int("library.request_count", len(requests)))
+	return requests, nil
+}
+
+// GetRequest returns a single request along with approval and notification timeline.
+func (s *Service) GetRequest(ctx context.Context, id string) (request Request, found bool, err error) {
+	trimmedID := strings.TrimSpace(id)
+	ctx, span := s.startSpan(ctx, "library.Service.GetRequest",
+		attribute.String("library.request_id", trimmedID),
+	)
+	defer endSpan(span, &err)
+
+	if trimmedID == "" {
+		return Request{}, false, nil
+	}
+
+	request, found, err = s.loadRequest(ctx, trimmedID)
+	if err != nil {
+		return Request{}, false, err
+	}
+	if !found {
+		return Request{}, false, nil
+	}
+	span.SetAttributes(attribute.String("library.request_status", string(request.Status)))
+	return request, true, nil
+}
+
+// RecordRequestApproval applies an approval decision to a request and returns the updated record.
+func (s *Service) RecordRequestApproval(ctx context.Context, requestID string, input RecordRequestApprovalInput) (request Request, err error) {
+	trimmedID := strings.TrimSpace(requestID)
+	if trimmedID == "" {
+		err = ErrRequestIDRequired
+		return
+	}
+	decision := normalizeRequestDecision(input.Decision)
+	if decision == "" {
+		err = ErrRequestDecisionRequired
+		return
+	}
+	actor := strings.TrimSpace(input.Actor)
+	if actor == "" {
+		err = ErrRequestActorRequired
+		return
+	}
+
+	ctx, span := s.startSpan(ctx, "library.Service.RecordRequestApproval",
+		attribute.String("library.request_id", trimmedID),
+		attribute.String("library.request_decision", string(decision)),
+	)
+	defer endSpan(span, &err)
+
+	base, found, lookupErr := s.repository.GetRequest(ctx, trimmedID)
+	if lookupErr != nil {
+		err = fmt.Errorf("library: get request %q: %w", trimmedID, lookupErr)
+		return
+	}
+	if !found {
+		err = ErrRequestNotFound
+		return
+	}
+	if isTerminalRequestStatus(normalizeRequestStatus(base.Status)) {
+		err = ErrRequestFinalized
+		return
+	}
+
+	decidedAt := input.DecidedAt
+	if decidedAt.IsZero() {
+		decidedAt = s.clock.Now()
+	} else {
+		decidedAt = decidedAt.UTC()
+	}
+
+	event := RequestApprovalEvent{
+		ID:        s.idGen(),
+		RequestID: trimmedID,
+		Decision:  decision,
+		Actor:     actor,
+		Notes:     strings.TrimSpace(input.Notes),
+		DecidedAt: decidedAt,
+	}
+
+	if appendErr := s.repository.AppendRequestApproval(ctx, event); appendErr != nil {
+		err = fmt.Errorf("library: append request approval: %w", appendErr)
+		return
+	}
+
+	base.Status = requestStatusFromDecision(decision)
+	base.UpdatedAt = decidedAt
+	if updateErr := s.repository.UpdateRequest(ctx, base); updateErr != nil {
+		err = fmt.Errorf("library: update request %q: %w", trimmedID, updateErr)
+		return
+	}
+
+	request, found, err = s.loadRequest(ctx, trimmedID)
+	if err != nil {
+		return Request{}, err
+	}
+	if !found {
+		err = ErrRequestNotFound
+		return
+	}
+	span.SetAttributes(attribute.String("library.request_status", string(request.Status)))
+	return request, nil
+}
+
+// RecordRequestNotification stores a notification delivery attempt for a request.
+func (s *Service) RecordRequestNotification(ctx context.Context, requestID string, input RecordRequestNotificationInput) (notification RequestNotification, err error) {
+	trimmedID := strings.TrimSpace(requestID)
+	if trimmedID == "" {
+		err = ErrRequestIDRequired
+		return
+	}
+	channel := strings.TrimSpace(input.Channel)
+	if channel == "" {
+		err = ErrRequestNotificationChannelRequired
+		return
+	}
+	target := strings.TrimSpace(input.Target)
+	if target == "" {
+		err = ErrRequestNotificationTargetRequired
+		return
+	}
+
+	ctx, span := s.startSpan(ctx, "library.Service.RecordRequestNotification",
+		attribute.String("library.request_id", trimmedID),
+		attribute.String("library.notification_channel", channel),
+	)
+	defer endSpan(span, &err)
+
+	base, found, lookupErr := s.repository.GetRequest(ctx, trimmedID)
+	if lookupErr != nil {
+		err = fmt.Errorf("library: get request %q: %w", trimmedID, lookupErr)
+		return
+	}
+	if !found {
+		err = ErrRequestNotFound
+		return
+	}
+
+	attemptedAt := input.AttemptedAt
+	if attemptedAt.IsZero() {
+		attemptedAt = s.clock.Now()
+	} else {
+		attemptedAt = attemptedAt.UTC()
+	}
+
+	notification = RequestNotification{
+		ID:           s.idGen(),
+		RequestID:    trimmedID,
+		Channel:      strings.ToLower(channel),
+		Target:       target,
+		Status:       normalizeNotificationStatus(input.Status),
+		AttemptedAt:  attemptedAt,
+		ErrorMessage: strings.TrimSpace(input.ErrorMessage),
+	}
+
+	if appendErr := s.repository.AppendRequestNotification(ctx, notification); appendErr != nil {
+		err = fmt.Errorf("library: append request notification: %w", appendErr)
+		return
+	}
+
+	base.UpdatedAt = attemptedAt
+	if updateErr := s.repository.UpdateRequest(ctx, base); updateErr != nil {
+		err = fmt.Errorf("library: update request %q: %w", trimmedID, updateErr)
+		return
+	}
+
+	span.SetAttributes(attribute.String("library.notification_status", string(notification.Status)))
+	return notification, nil
+}
+
+func (s *Service) loadRequest(ctx context.Context, id string) (Request, bool, error) {
+	trimmedID := strings.TrimSpace(id)
+	if trimmedID == "" {
+		return Request{}, false, nil
+	}
+
+	base, found, err := s.repository.GetRequest(ctx, trimmedID)
+	if err != nil {
+		return Request{}, false, fmt.Errorf("library: get request %q: %w", trimmedID, err)
+	}
+	if !found {
+		return Request{}, false, nil
+	}
+
+	approvals, err := s.repository.ListRequestApprovals(ctx, trimmedID)
+	if err != nil {
+		return Request{}, false, fmt.Errorf("library: list request approvals: %w", err)
+	}
+	notifications, err := s.repository.ListRequestNotifications(ctx, trimmedID)
+	if err != nil {
+		return Request{}, false, fmt.Errorf("library: list request notifications: %w", err)
+	}
+
+	cloned := cloneRequest(base)
+	cloned.Approvals = sortApprovals(approvals)
+	cloned.Notifications = sortNotifications(notifications)
+	return cloned, true, nil
 }
 
 // RunManualSearch synthesizes indexer results for an entity so operators can review candidates.
