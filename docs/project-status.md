@@ -1,6 +1,6 @@
 # arrgo Project Status
 
-> **Last reviewed:** 2025-03-09
+> **Last reviewed:** 2025-03-10
 > **Current phase:** Alpha hardening (foundational infrastructure feature complete, polish in progress)
 
 This document aggregates milestone tracking, delivery confidence, and near-term
@@ -27,6 +27,11 @@ referenced before planning new workstreams.
   definitions. Documented in
   [`docs/library-scheduling.md`](library-scheduling.md) and
   [`docs/worker-coordination.md`](worker-coordination.md).
+- **Postgres migrations & demo seed** — repeatable schema migrations with
+  checksum enforcement, rollback coverage, and demo catalog content to
+  accelerate sandbox environments. Backed by
+  [`internal/postgres/migrate`](../internal/postgres/migrate) and documented in
+  [`docs/project-functional-todo.md`](project-functional-todo.md).
 - **Metadata & catalog** — ingestion pipeline with caching, overrides, and the
   unified domain model. See [`docs/metadata-ingestion.md`](metadata-ingestion.md),
   [`docs/metadata-overrides.md`](metadata-overrides.md), and
@@ -53,6 +58,8 @@ referenced before planning new workstreams.
 - Harden the Postgres-backed catalog with repeatable migrations, backups, and
   validation tooling. Repeatable migrations now ship with rollback helpers and
   demo seeds; backups/validation automation remain outstanding.
+- Establish automated Postgres backup verification and validation tooling to
+  complement the new migration framework.
 - Harden worker lifecycle management with grace periods, back-pressure
   heuristics, and alert-friendly metrics.
 - Expand contract test coverage for plugin SDKs (download clients, list
