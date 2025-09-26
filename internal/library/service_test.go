@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -318,13 +319,11 @@ func TestRecordRequestApprovalRunsPolicyHooks(t *testing.T) {
 	quota := &stubQuotaEvaluator{result: QuotaEvaluationResult{Remaining: &remaining}}
 	preview := &stubAutomationPreviewer{result: AutomationPreviewResult{Jobs: []AutomationPreviewJob{{JobType: "import", TargetID: "entity-42", Summary: "Import requested entity"}}}}
 
-	svc, err := NewService(Config{
+	svc := newRedisService(t, Config{
+		Entities:            []Entity{{ID: "entity-42", EntityType: "series"}},
 		QuotaEvaluator:      quota,
 		AutomationPreviewer: preview,
 	})
-	if err != nil {
-		t.Fatalf("NewService returned error: %v", err)
-	}
 
 	request, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
 		Kind:        "movie",
@@ -362,6 +361,97 @@ func TestRecordRequestApprovalRunsPolicyHooks(t *testing.T) {
 	}
 	if stored.QuotaRemaining != remaining {
 		t.Fatalf("expected persisted quota remaining %d, got %d", remaining, stored.QuotaRemaining)
+	}
+
+	jobs, err := svc.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs returned error: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 automation job, got %d", len(jobs))
+	}
+	job := jobs[0]
+	if job.TargetID != "entity-42" {
+		t.Fatalf("expected automation job target entity-42, got %s", job.TargetID)
+	}
+	if job.JobType != "import" {
+		t.Fatalf("expected automation job type import, got %s", job.JobType)
+	}
+}
+
+func TestRecordRequestApprovalFansOutAutomationJobs(t *testing.T) {
+	preview := &stubAutomationPreviewer{result: AutomationPreviewResult{Jobs: []AutomationPreviewJob{{JobType: "import", TargetID: "entity-42"}, {JobType: "scan", TargetID: "entity-42"}}}}
+	var mu sync.Mutex
+	idSeq := 0
+	svc := newRedisService(t, Config{
+		Entities:            []Entity{{ID: "entity-42", EntityType: "series"}},
+		AutomationPreviewer: preview,
+		IDGenerator: func() string {
+			mu.Lock()
+			defer mu.Unlock()
+			idSeq++
+			return fmt.Sprintf("id-%d", idSeq)
+		},
+	})
+
+	request, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
+		Kind:        "series",
+		Title:       "The Expanse",
+		RequestedBy: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest returned error: %v", err)
+	}
+
+	updated, err := svc.RecordRequestApproval(context.Background(), request.ID, RecordRequestApprovalInput{
+		Decision: RequestDecisionApproved,
+		Actor:    "approver@example.com",
+	})
+	if err != nil {
+		t.Fatalf("RecordRequestApproval returned error: %v", err)
+	}
+	if updated.Status != RequestStatusApproved {
+		t.Fatalf("expected approved status, got %s", updated.Status)
+	}
+	if preview.calls() != 1 {
+		t.Fatalf("expected automation previewer to be invoked once, got %d", preview.calls())
+	}
+
+	jobs, err := svc.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs returned error: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("expected 2 automation jobs, got %d", len(jobs))
+	}
+
+	jobsByType := make(map[string]Job)
+	for _, job := range jobs {
+		jobsByType[job.JobType] = job
+	}
+
+	importJob, ok := jobsByType["import"]
+	if !ok {
+		t.Fatalf("expected import job to be enqueued")
+	}
+	if importJob.TargetID != "entity-42" {
+		t.Fatalf("expected import job target entity-42, got %s", importJob.TargetID)
+	}
+	expectedImportKey := fmt.Sprintf("request:%s:%s:%s", strings.ToLower(updated.ID), "import", "entity-42")
+	if importJob.IdempotencyKey != expectedImportKey {
+		t.Fatalf("expected import job idempotency key %q, got %q", expectedImportKey, importJob.IdempotencyKey)
+	}
+
+	scanJob, ok := jobsByType["scan"]
+	if !ok {
+		t.Fatalf("expected scan job to be enqueued")
+	}
+	if scanJob.TargetID != "entity-42" {
+		t.Fatalf("expected scan job target entity-42, got %s", scanJob.TargetID)
+	}
+	expectedScanKey := fmt.Sprintf("request:%s:%s:%s", strings.ToLower(updated.ID), "scan", "entity-42")
+	if scanJob.IdempotencyKey != expectedScanKey {
+		t.Fatalf("expected scan job idempotency key %q, got %q", expectedScanKey, scanJob.IdempotencyKey)
 	}
 }
 
