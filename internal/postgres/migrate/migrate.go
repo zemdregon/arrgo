@@ -23,6 +23,7 @@ type Migration struct {
 
 var migrations = []Migration{
 	catalogSchemaMigration,
+	jobHistoryMigration,
 	demoSeedMigration,
 }
 
@@ -445,6 +446,25 @@ DROP TABLE IF EXISTS episodes;
 DROP TABLE IF EXISTS seasons;
 DROP TABLE IF EXISTS series;
 DROP TABLE IF EXISTS catalog_entities;
+`,
+}
+
+var jobHistoryMigration = Migration{
+	ID:          "2025031501_job_history",
+	Description: "Track job execution history",
+	Up: `
+CREATE TABLE IF NOT EXISTS library_job_history (
+    id BIGSERIAL PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES library_jobs(id) ON DELETE CASCADE,
+    attempt INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    message TEXT NOT NULL DEFAULT '',
+    occurred_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS library_job_history_job_idx ON library_job_history(job_id, occurred_at DESC, id DESC);
+`,
+	Down: `
+DROP TABLE IF EXISTS library_job_history;
 `,
 }
 
