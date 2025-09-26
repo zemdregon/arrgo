@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arrgo/arrgo/internal/postgres/migrate"
+	"github.com/arrgo/arrgo/internal/library/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,21 +16,39 @@ import (
 
 // PostgresRepository persists library state to PostgreSQL.
 type PostgresRepository struct {
-	pool *pgxpool.Pool
+	pool         *pgxpool.Pool
+	seedDemoData bool
+}
+
+// PostgresOption configures the Postgres-backed repository.
+type PostgresOption func(*PostgresRepository)
+
+// WithDemoSeedData toggles inserting demo seed data when EnsureSchema runs.
+func WithDemoSeedData(enabled bool) PostgresOption {
+	return func(r *PostgresRepository) {
+		r.seedDemoData = enabled
+	}
 }
 
 // NewPostgresRepository builds a Postgres-backed repository.
-func NewPostgresRepository(pool *pgxpool.Pool) (*PostgresRepository, error) {
+func NewPostgresRepository(pool *pgxpool.Pool, opts ...PostgresOption) (*PostgresRepository, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("library: pgx pool is required")
 	}
-	return &PostgresRepository{pool: pool}, nil
+	repo := &PostgresRepository{pool: pool}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(repo)
+		}
+	}
+	return repo, nil
 }
 
-// EnsureSchema applies the required PostgreSQL migrations.
+// EnsureSchema applies database migrations and optional demo seeds.
 func (r *PostgresRepository) EnsureSchema(ctx context.Context) error {
-	if err := migrate.Run(ctx, r.pool); err != nil {
-		return fmt.Errorf("library: migrate schema: %w", err)
+	opts := migrations.Options{SeedDemoData: r.seedDemoData}
+	if err := migrations.Apply(ctx, r.pool, opts); err != nil {
+		return fmt.Errorf("library: apply migrations: %w", err)
 	}
 	return nil
 }

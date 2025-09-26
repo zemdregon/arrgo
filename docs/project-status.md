@@ -55,6 +55,9 @@ referenced before planning new workstreams.
   and the repository `.github/workflows` directory.
 
 ## In-Flight Priorities (Alpha Polishing)
+- Harden the Postgres-backed catalog with repeatable migrations, backups, and
+  validation tooling. Repeatable migrations now ship with rollback helpers and
+  demo seeds; backups/validation automation remain outstanding.
 - Establish automated Postgres backup verification and validation tooling to
   complement the new migration framework.
 - Harden worker lifecycle management with grace periods, back-pressure

@@ -111,6 +111,8 @@ The following documents provide deep dives into the subsystems listed above:
   bootstrapping guide.
 - [`docs/migration-guidelines.md`](docs/migration-guidelines.md) — planning for
   Sonarr/Radarr/Lidarr migrations.
+- [`docs/database-migrations.md`](docs/database-migrations.md) — versioned
+  schema migrations, rollback helpers, and demo seed controls.
 - [`docs/access-control.md`](docs/access-control.md) — RBAC and API key
   management details.
 - [`docs/observability-baseline.md`](docs/observability-baseline.md) — metrics,
@@ -133,7 +135,11 @@ The following documents provide deep dives into the subsystems listed above:
    `arrgo-admin.devtoken`). The token is injected into the dashboard container
    automatically so authenticated requests succeed out of the box. Override the
    variable in `deploy/compose/.env` to generate a unique credential for your
-   environment. The dashboard can also be run directly from
+   environment. When `ARRGO_DATABASE_SEED_DEMO` is enabled (default in
+   Compose), the master service loads sample catalog entities, historical jobs,
+   and metadata overrides so dashboards and API consumers have realistic data on
+   first boot. Disable the variable when you prefer an empty database for
+   integration tests. The dashboard can also be run directly from
    [`web/dashboard`](web/dashboard) for local iteration.
 4. Review [`docs/project-status.md`](docs/project-status.md) for current
    deliverables, owners, and outstanding risks before contributing changes.
