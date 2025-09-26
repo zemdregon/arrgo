@@ -15,7 +15,8 @@ This file tracks the highest-priority roadmap items that still require work befo
   - Stream namespaces now support version rotation, emit lag warnings, and funnel exhausted jobs into a managed dead-letter queue.
 
 ## API Surface & Request Management
-- [ ] Implement the request endpoints documented in [`docs/api-first-iteration.md`](docs/api-first-iteration.md) with RBAC enforcement.
+- [x] Implement the request endpoints documented in [`docs/api-first-iteration.md`](docs/api-first-iteration.md) with RBAC enforcement.
+  - Request listings now honor status, policy, and kind filters with cursor-based pagination, and RBAC checks guard all request actions.
 - [x] Add policy evaluation hooks so quotas and automation previews run before requests are approved.
   - Library service now evaluates quotas and automation previews ahead of approval to block exhausted policies and capture preview telemetry.
 - [ ] Publish OpenAPI/Buf descriptors for REST and gRPC services once the request APIs stabilize.

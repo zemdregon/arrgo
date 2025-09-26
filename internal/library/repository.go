@@ -29,10 +29,32 @@ type Repository interface {
 	UpdateRequest(ctx context.Context, request Request) error
 	GetRequest(ctx context.Context, id string) (Request, bool, error)
 	ListRequests(ctx context.Context) ([]Request, error)
+	ListRequestsPage(ctx context.Context, opts ListRequestsOptions) (ListRequestsResult, error)
 	AppendRequestApproval(ctx context.Context, event RequestApprovalEvent) error
 	ListRequestApprovals(ctx context.Context, requestID string) ([]RequestApprovalEvent, error)
 	AppendRequestNotification(ctx context.Context, notification RequestNotification) error
 	ListRequestNotifications(ctx context.Context, requestID string) ([]RequestNotification, error)
+}
+
+// RequestCursor identifies a stable position in the requests ordering.
+type RequestCursor struct {
+	SubmittedAt time.Time
+	RequestID   string
+}
+
+// ListRequestsOptions configures filtering and pagination when listing requests.
+type ListRequestsOptions struct {
+	Status string
+	Policy string
+	Kind   string
+	Cursor *RequestCursor
+	Limit  int
+}
+
+// ListRequestsResult wraps a page of requests along with the continuation cursor.
+type ListRequestsResult struct {
+	Requests   []Request
+	NextCursor *RequestCursor
 }
 
 // InMemoryRepository provides an in-memory implementation of Repository for tests.
@@ -430,6 +452,81 @@ func (r *InMemoryRepository) ListRequests(_ context.Context) ([]Request, error) 
 		return results[i].SubmittedAt.After(results[j].SubmittedAt)
 	})
 	return results, nil
+}
+
+// ListRequestsPage returns a filtered page of requests ordered by submission time (newest first).
+func (r *InMemoryRepository) ListRequestsPage(_ context.Context, opts ListRequestsOptions) (ListRequestsResult, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	statusFilter := strings.ToLower(strings.TrimSpace(opts.Status))
+	policyFilter := strings.ToLower(strings.TrimSpace(opts.Policy))
+	kindFilter := strings.ToLower(strings.TrimSpace(opts.Kind))
+
+	filtered := make([]Request, 0, len(r.requests))
+	for _, request := range r.requests {
+		if statusFilter != "" && strings.ToLower(string(request.Status)) != statusFilter {
+			continue
+		}
+		if policyFilter != "" && !strings.EqualFold(request.Policy, policyFilter) {
+			continue
+		}
+		if kindFilter != "" && strings.ToLower(request.Kind) != kindFilter {
+			continue
+		}
+
+		cloned := cloneRequest(request)
+		cloned.Approvals = nil
+		cloned.Notifications = nil
+		filtered = append(filtered, cloned)
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		if filtered[i].SubmittedAt.Equal(filtered[j].SubmittedAt) {
+			return filtered[i].ID > filtered[j].ID
+		}
+		return filtered[i].SubmittedAt.After(filtered[j].SubmittedAt)
+	})
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = len(filtered)
+	}
+
+	cursor := opts.Cursor
+	page := make([]Request, 0, min(len(filtered), limit+1))
+	for _, request := range filtered {
+		if cursor != nil {
+			if request.SubmittedAt.After(cursor.SubmittedAt) {
+				continue
+			}
+			if request.SubmittedAt.Equal(cursor.SubmittedAt) && request.ID >= cursor.RequestID {
+				continue
+			}
+		}
+		page = append(page, request)
+		if len(page) >= limit+1 {
+			break
+		}
+	}
+
+	result := ListRequestsResult{}
+	if len(page) > limit {
+		if limit > 0 {
+			last := page[limit-1]
+			result.NextCursor = &RequestCursor{SubmittedAt: last.SubmittedAt, RequestID: last.ID}
+		}
+		page = page[:limit]
+	}
+	result.Requests = page
+	return result, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // AppendRequestApproval records an approval event.

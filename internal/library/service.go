@@ -2,6 +2,7 @@ package library
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -69,6 +70,8 @@ const (
 	defaultJobPageSize     = 25
 	maxJobPageSize         = 100
 	defaultJobHistoryLimit = 10
+	defaultRequestPageSize = 25
+	maxRequestPageSize     = 100
 )
 
 var jobHistoryRetentionPolicy = JobHistoryRetention{
@@ -153,6 +156,21 @@ type SubmitRequestInput struct {
 	SLADeadline    time.Time
 }
 
+// ListRequestsPageInput captures filters and pagination controls for request listings.
+type ListRequestsPageInput struct {
+	Status string
+	Policy string
+	Kind   string
+	Cursor string
+	Limit  int
+}
+
+// ListRequestsPageResult returns a single page of requests plus the continuation cursor.
+type ListRequestsPageResult struct {
+	Requests   []Request
+	NextCursor string
+}
+
 // RecordRequestApprovalInput captures approval decisions applied to a request.
 type RecordRequestApprovalInput struct {
 	Decision  RequestDecision
@@ -221,6 +239,9 @@ var (
 	ErrRequestActorRequired               = errors.New("library: approval actor is required")
 	ErrRequestNotificationChannelRequired = errors.New("library: notification channel is required")
 	ErrRequestNotificationTargetRequired  = errors.New("library: notification target is required")
+	ErrInvalidRequestCursor               = errors.New("library: invalid request cursor")
+	ErrInvalidRequestPageLimit            = errors.New("library: invalid request page limit")
+	ErrInvalidRequestStatusFilter         = errors.New("library: invalid request status filter")
 )
 
 // Service exposes read/write helpers that back both REST and gRPC front-ends.
@@ -704,6 +725,90 @@ func (s *Service) SubmitRequest(ctx context.Context, input SubmitRequestInput) (
 	return
 }
 
+// ListRequestsPage returns a filtered page of requests ordered by submission time.
+func (s *Service) ListRequestsPage(ctx context.Context, input ListRequestsPageInput) (result ListRequestsPageResult, err error) {
+	limit := input.Limit
+	if limit < 0 {
+		err = ErrInvalidRequestPageLimit
+		return
+	}
+	if limit == 0 {
+		limit = defaultRequestPageSize
+	}
+	if limit > maxRequestPageSize {
+		limit = maxRequestPageSize
+	}
+
+	statusFilter, statusErr := normalizeRequestStatusFilter(input.Status)
+	if statusErr != nil {
+		err = statusErr
+		return
+	}
+
+	policyFilter := strings.ToLower(strings.TrimSpace(input.Policy))
+	kindFilter := strings.ToLower(strings.TrimSpace(input.Kind))
+
+	var cursor *RequestCursor
+	cursorToken := strings.TrimSpace(input.Cursor)
+	if cursorToken != "" {
+		parsed, decodeErr := decodeRequestCursor(cursorToken)
+		if decodeErr != nil {
+			err = fmt.Errorf("%w: %v", ErrInvalidRequestCursor, decodeErr)
+			return
+		}
+		cursor = &RequestCursor{SubmittedAt: parsed.SubmittedAt, RequestID: parsed.RequestID}
+	}
+
+	ctx, span := s.startSpan(ctx, "library.Service.ListRequestsPage",
+		attribute.Int("library.request_limit", limit),
+	)
+	defer endSpan(span, &err)
+
+	if statusFilter != "" {
+		span.SetAttributes(attribute.String("library.request_status_filter", statusFilter))
+	}
+	if policyFilter != "" {
+		span.SetAttributes(attribute.String("library.request_policy_filter", policyFilter))
+	}
+	if kindFilter != "" {
+		span.SetAttributes(attribute.String("library.request_kind_filter", kindFilter))
+	}
+
+	repoResult, repoErr := s.repository.ListRequestsPage(ctx, ListRequestsOptions{
+		Status: statusFilter,
+		Policy: policyFilter,
+		Kind:   kindFilter,
+		Cursor: cursor,
+		Limit:  limit,
+	})
+	if repoErr != nil {
+		err = fmt.Errorf("library: list requests page: %w", repoErr)
+		return
+	}
+
+	requests := make([]Request, len(repoResult.Requests))
+	for i := range repoResult.Requests {
+		cloned := cloneRequest(repoResult.Requests[i])
+		cloned.Approvals = nil
+		cloned.Notifications = nil
+		requests[i] = cloned
+	}
+
+	result = ListRequestsPageResult{Requests: requests}
+	span.SetAttributes(attribute.Int("library.request_count", len(requests)))
+
+	if repoResult.NextCursor != nil {
+		encoded := encodeRequestCursor(requestPageCursor{
+			SubmittedAt: repoResult.NextCursor.SubmittedAt,
+			RequestID:   repoResult.NextCursor.RequestID,
+		})
+		result.NextCursor = encoded
+		span.SetAttributes(attribute.String("library.next_page_cursor", encoded))
+	}
+
+	return result, nil
+}
+
 // ListRequests returns persisted requests ordered by submission time.
 func (s *Service) ListRequests(ctx context.Context) (requests []Request, err error) {
 	ctx, span := s.startSpan(ctx, "library.Service.ListRequests")
@@ -723,6 +828,55 @@ func (s *Service) ListRequests(ctx context.Context) (requests []Request, err err
 	}
 	span.SetAttributes(attribute.Int("library.request_count", len(requests)))
 	return requests, nil
+}
+
+type requestPageCursor struct {
+	SubmittedAt time.Time
+	RequestID   string
+}
+
+func normalizeRequestStatusFilter(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	switch strings.ToLower(trimmed) {
+	case string(RequestStatusPending):
+		return string(RequestStatusPending), nil
+	case string(RequestStatusApproved):
+		return string(RequestStatusApproved), nil
+	case string(RequestStatusDenied):
+		return string(RequestStatusDenied), nil
+	case string(RequestStatusCancelled):
+		return string(RequestStatusCancelled), nil
+	default:
+		return "", ErrInvalidRequestStatusFilter
+	}
+}
+
+func encodeRequestCursor(cursor requestPageCursor) string {
+	payload := cursor.SubmittedAt.UTC().Format(time.RFC3339Nano) + "|" + cursor.RequestID
+	return base64.RawURLEncoding.EncodeToString([]byte(payload))
+}
+
+func decodeRequestCursor(value string) (requestPageCursor, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return requestPageCursor{}, err
+	}
+	parts := strings.SplitN(string(decoded), "|", 2)
+	if len(parts) != 2 {
+		return requestPageCursor{}, fmt.Errorf("invalid cursor format")
+	}
+	submittedAt, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return requestPageCursor{}, err
+	}
+	requestID := strings.TrimSpace(parts[1])
+	if requestID == "" {
+		return requestPageCursor{}, fmt.Errorf("missing request id")
+	}
+	return requestPageCursor{SubmittedAt: submittedAt.UTC(), RequestID: requestID}, nil
 }
 
 // GetRequest returns a single request along with approval and notification timeline.

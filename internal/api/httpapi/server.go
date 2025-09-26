@@ -236,15 +236,45 @@ func (s *Server) handleRequests(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		requests, err := s.service.ListRequests(r.Context())
+		query := r.URL.Query()
+		limitParam := strings.TrimSpace(query.Get("limit"))
+		limit := 0
+		if limitParam != "" {
+			parsed, err := strconv.Atoi(limitParam)
+			if err != nil || parsed < 0 {
+				respondError(w, http.StatusBadRequest, "limit must be a non-negative integer")
+				return
+			}
+			limit = parsed
+		}
+
+		result, err := s.service.ListRequestsPage(r.Context(), library.ListRequestsPageInput{
+			Status: strings.TrimSpace(query.Get("status")),
+			Policy: strings.TrimSpace(query.Get("policy")),
+			Kind:   strings.TrimSpace(query.Get("kind")),
+			Cursor: strings.TrimSpace(query.Get("cursor")),
+			Limit:  limit,
+		})
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to list requests")
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, library.ErrInvalidRequestPageLimit),
+				errors.Is(err, library.ErrInvalidRequestCursor),
+				errors.Is(err, library.ErrInvalidRequestStatusFilter):
+				status = http.StatusBadRequest
+			}
+			respondError(w, status, err.Error())
 			return
 		}
 
+		var nextCursor any
+		if result.NextCursor != "" {
+			nextCursor = result.NextCursor
+		}
+
 		respondJSON(w, http.StatusOK, map[string]any{
-			"requests":    requests,
-			"next_cursor": nil,
+			"requests":    result.Requests,
+			"next_cursor": nextCursor,
 		})
 	case http.MethodPost:
 		if _, ok := s.requirePermission(w, r, auth.PermissionRequestsSubmit); !ok {
