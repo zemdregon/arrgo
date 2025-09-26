@@ -24,6 +24,7 @@ import (
 	"github.com/arrgo/arrgo/internal/auth"
 	"github.com/arrgo/arrgo/internal/buildinfo"
 	"github.com/arrgo/arrgo/internal/library"
+	observabilitymetrics "github.com/arrgo/arrgo/internal/observability/metrics"
 	"github.com/arrgo/arrgo/internal/worker"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -47,6 +48,11 @@ type masterConfig struct {
 	BootstrapAdminLabel string
 	BootstrapAdminFile  string
 	SeedDemoData        bool
+	Environment         string
+	MetricsCollector    string
+	MetricsInsecure     bool
+	MetricsTimeout      time.Duration
+	MetricsInterval     time.Duration
 }
 
 func main() {
@@ -74,6 +80,30 @@ func run(ctx context.Context, cfg masterConfig, logger *slog.Logger) error {
 			"disable_auth", cfg.DisableAuth,
 		}, buildinfo.Fields()...)...,
 	)
+
+	if cfg.MetricsCollector != "" {
+		shutdownMetrics, err := observabilitymetrics.Setup(baseCtx, observabilitymetrics.Config{
+			ServiceName:       "arrgo-master",
+			ServiceVersion:    buildinfo.Version,
+			Environment:       cfg.Environment,
+			CollectorEndpoint: cfg.MetricsCollector,
+			Insecure:          cfg.MetricsInsecure,
+			Timeout:           cfg.MetricsTimeout,
+			ExportInterval:    cfg.MetricsInterval,
+		})
+		if err != nil {
+			logger.Warn("failed to configure metrics exporter", "error", err)
+		} else {
+			defer func() {
+				if err := shutdownMetrics(context.Background()); err != nil {
+					logger.Warn("metrics shutdown error", "error", err)
+				}
+			}()
+			logger.Info("metrics exporter configured", "collector", cfg.MetricsCollector)
+		}
+	} else {
+		logger.Info("metrics collector endpoint not configured; http metrics will use the noop provider")
+	}
 
 	redisClient, err := connectRedis(baseCtx, cfg, logger)
 	if err != nil {
@@ -259,6 +289,9 @@ func loadConfig() masterConfig {
 		}
 	}
 
+	metricsTimeout := parseDuration(getEnv("ARRGO_OTEL_TIMEOUT", "5s"), 5*time.Second)
+	metricsInterval := parseDuration(getEnv("ARRGO_OTEL_EXPORT_INTERVAL", "15s"), 15*time.Second)
+
 	return masterConfig{
 		HTTPAddr:            httpAddr,
 		GRPCAddr:            grpcAddr,
@@ -274,6 +307,11 @@ func loadConfig() masterConfig {
 		BootstrapAdminLabel: getEnv("ARRGO_BOOTSTRAP_ADMIN_LABEL", "arrgo-dashboard"),
 		BootstrapAdminFile:  strings.TrimSpace(os.Getenv("ARRGO_BOOTSTRAP_ADMIN_TOKEN_FILE")),
 		SeedDemoData:        seedDemoData,
+		Environment:         strings.TrimSpace(os.Getenv("ARRGO_ENVIRONMENT")),
+		MetricsCollector:    strings.TrimSpace(os.Getenv("ARRGO_OTEL_COLLECTOR_ENDPOINT")),
+		MetricsInsecure:     parseBool(os.Getenv("ARRGO_OTEL_INSECURE")),
+		MetricsTimeout:      metricsTimeout,
+		MetricsInterval:     metricsInterval,
 	}
 }
 

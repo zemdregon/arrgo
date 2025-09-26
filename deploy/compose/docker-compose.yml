@@ -85,6 +85,9 @@ services:
       ARRGO_BOOTSTRAP_ADMIN_TOKEN: ${ARRGO_BOOTSTRAP_ADMIN_TOKEN:-arrgo-admin.devtoken}
       ARRGO_BOOTSTRAP_ADMIN_LABEL: ${ARRGO_BOOTSTRAP_ADMIN_LABEL:-dashboard}
       ARRGO_DATABASE_SEED_DEMO: "true"
+      ARRGO_OTEL_COLLECTOR_ENDPOINT: otel-collector:4318
+      ARRGO_OTEL_INSECURE: "true"
+      ARRGO_ENVIRONMENT: development
     ports:
       - "8080:8080"
       - "9090:9090"

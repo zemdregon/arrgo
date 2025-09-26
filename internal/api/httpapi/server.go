@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/felixge/httpsnoop"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
@@ -24,11 +25,17 @@ type Server struct {
 	service       *library.Service
 	workerService *worker.Service
 	authorizer    Authorizer
+	httpMetrics   *httpMetrics
 }
 
 // NewServer wires a REST surface on top of the shared library service.
 func NewServer(service *library.Service, workerService *worker.Service, authorizer Authorizer) *Server {
-	return &Server{service: service, workerService: workerService, authorizer: authorizer}
+	return &Server{
+		service:       service,
+		workerService: workerService,
+		authorizer:    authorizer,
+		httpMetrics:   newHTTPMetrics(),
+	}
 }
 
 // Routes returns the HTTP multiplexer hosting the API endpoints.
@@ -881,7 +888,12 @@ func poolConfigPayload(cfg worker.PoolConfig) map[string]any {
 }
 
 func (s *Server) instrument(route string, handler http.Handler) http.Handler {
-	return otelhttp.NewHandler(handler, route,
+	measured := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		metrics := httpsnoop.CaptureMetrics(handler, w, r)
+		s.httpMetrics.record(r.Context(), route, r.Method, metrics.Code, metrics.Duration)
+	})
+
+	return otelhttp.NewHandler(measured, route,
 		otelhttp.WithSpanNameFormatter(func(operation string, r *http.Request) string {
 			return r.Method + " " + route
 		}),
