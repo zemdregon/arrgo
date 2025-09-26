@@ -16,9 +16,14 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/arrgo/arrgo/internal/auth"
 	"github.com/arrgo/arrgo/internal/library"
+	observabilitymetrics "github.com/arrgo/arrgo/internal/observability/metrics"
 	"github.com/arrgo/arrgo/internal/worker"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
 func TestListEntitiesEndpoint(t *testing.T) {
@@ -976,6 +981,107 @@ func TestObservabilityEndpoints(t *testing.T) {
 			t.Fatalf("expected pprof index output")
 		}
 	})
+}
+
+func TestHTTPMetricsRecorded(t *testing.T) {
+	metricsOnce = sync.Once{}
+	globalHTTPMetrics = nil
+
+	originalProvider := otel.GetMeterProvider()
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+	otel.SetMeterProvider(provider)
+
+	t.Cleanup(func() {
+		_ = provider.Shutdown(context.Background())
+		otel.SetMeterProvider(originalProvider)
+		metricsOnce = sync.Once{}
+		globalHTTPMetrics = nil
+	})
+
+	srv := &Server{httpMetrics: newHTTPMetrics()}
+	handler := srv.instrument("/metrics-test", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics-test", nil)
+	resp := httptest.NewRecorder()
+
+	handler.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("expected handler to preserve status code, got %d", resp.Code)
+	}
+
+	rm, err := observabilitymetrics.CollectOnce(context.Background(), reader)
+	if err != nil {
+		t.Fatalf("CollectOnce returned error: %v", err)
+	}
+
+	var requestMetricFound, durationMetricFound bool
+
+	for _, scope := range rm.ScopeMetrics {
+		for _, metricData := range scope.Metrics {
+			switch data := metricData.Data.(type) {
+			case metricdata.Sum[int64]:
+				if metricData.Name != "arrgo_http_requests_total" {
+					continue
+				}
+				requestMetricFound = true
+				if len(data.DataPoints) != 1 {
+					t.Fatalf("expected 1 datapoint for requests, got %d", len(data.DataPoints))
+				}
+				dp := data.DataPoints[0]
+				if dp.Value != 1 {
+					t.Fatalf("expected request counter to increment, got %d", dp.Value)
+				}
+				assertHTTPMetricAttributes(t, dp.Attributes)
+			case metricdata.Histogram[float64]:
+				if metricData.Name != "arrgo_http_request_duration_seconds" {
+					continue
+				}
+				durationMetricFound = true
+				if len(data.DataPoints) != 1 {
+					t.Fatalf("expected 1 datapoint for duration, got %d", len(data.DataPoints))
+				}
+				dp := data.DataPoints[0]
+				if dp.Count != 1 {
+					t.Fatalf("expected histogram count to equal 1, got %d", dp.Count)
+				}
+				if dp.Sum <= 0 {
+					t.Fatalf("expected positive duration sum, got %f", dp.Sum)
+				}
+				assertHTTPMetricAttributes(t, dp.Attributes)
+			}
+		}
+	}
+
+	if !requestMetricFound {
+		t.Fatalf("arrgo_http_requests_total metric was not recorded")
+	}
+	if !durationMetricFound {
+		t.Fatalf("arrgo_http_request_duration_seconds metric was not recorded")
+	}
+}
+
+func assertHTTPMetricAttributes(t *testing.T, attrs attribute.Set) {
+	t.Helper()
+
+	values := map[string]string{}
+	for _, kv := range attrs.ToSlice() {
+		values[string(kv.Key)] = kv.Value.AsString()
+	}
+
+	if values["route"] != "/metrics-test" {
+		t.Fatalf("expected route attribute to be /metrics-test, got %q", values["route"])
+	}
+	if values["method"] != http.MethodGet {
+		t.Fatalf("expected method attribute to be GET, got %q", values["method"])
+	}
+	if values["status"] != "202" {
+		t.Fatalf("expected status attribute to be 202, got %q", values["status"])
+	}
 }
 
 type stubClock struct{ now time.Time }

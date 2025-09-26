@@ -22,7 +22,8 @@ The items below consolidate cross-team follow-ups required to ship a cohesive, p
   - `internal/library/service_test.go` and `internal/api/httpapi/server_test.go` now verify approval fan-out queues automation jobs while deny/cancel paths avoid the orchestration queue.
 
 ## Observability & Operations
-- [ ] Export master HTTP metrics (`arrgo_http_requests_total`, `arrgo_http_request_duration_seconds`) via the OpenTelemetry Collector to Prometheus.
+- [x] Export master HTTP metrics (`arrgo_http_requests_total`, `arrgo_http_request_duration_seconds`) via the OpenTelemetry Collector to Prometheus.
+  - OpenTelemetry-backed counters and histograms now wrap the master REST API and stream to the collector for Prometheus scraping.
 - [ ] Ensure worker metrics (`arrgo_workers_*`) are present in Grafana dashboards with pooled drill-downs.
 - [ ] Propagate trace context into worker-executed jobs and surface span links in dashboard workflows.
 - [ ] Document incident response runbooks for request backlogs, worker staleness, and metadata provider outages.

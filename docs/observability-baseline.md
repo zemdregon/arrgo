@@ -35,13 +35,14 @@ registered through `promhttp`. Each metric is namespaced under `arrgo_`.
 | `arrgo_workers_active` | Gauge | Healthy workers per pool. Updated during registration, heartbeats, and explicit reconciliations. |
 | `arrgo_workers_heartbeat_seconds` | Gauge | Age in seconds of the latest heartbeat per worker (`pool`, `worker_id`). |
 | `arrgo_workers_stale` | Gauge | Workers considered stale per pool. |
+| `arrgo_http_requests_total` | Counter | HTTP requests handled by the master REST API labeled by `route`, `method`, and `status`, exported to Prometheus through the OpenTelemetry Collector. |
+| `arrgo_http_request_duration_seconds` | Histogram | Request latency distribution for the master REST API, exported to Prometheus through the OpenTelemetry Collector with the same labels as the request counter. |
 | Go runtime metrics | Mixed | Default Go collector values (goroutines, GC stats) registered automatically by `prometheus/client_golang`. |
 
 ### Planned additions
 
 The following metrics remain on the roadmap and should accompany their respective features:
 
-- `arrgo_http_requests_total` and `arrgo_http_request_duration_seconds` around REST/gRPC surfaces.
 - `arrgo_jobs_enqueued_total`, `arrgo_jobs_running`, and `arrgo_job_duration_seconds` once persistent job storage is added.
 - `arrgo_scheduler_backlog` and `arrgo_event_dispatch_failures_total` for cron scheduling and Redis stream monitoring.
 - `arrgo_worker_queue_lag_seconds` and `arrgo_transcode_resource_seconds_total` once workers execute real media workloads.
@@ -56,11 +57,10 @@ The following metrics remain on the roadmap and should accompany their respectiv
 ### Master/worker signal integration
 
 - **Master service HTTP metrics:** `internal/api/httpapi.Server` wraps every
-  route with `otelhttp.NewHandler`, exposing standard OpenTelemetry HTTP server
-  metrics (`http.server.duration`, `http.server.request_content_length`) and
-  traces. The observability workstream should export these signals to Prometheus
-  as `arrgo_http_requests_total`/`arrgo_http_request_duration_seconds` and to the
-  tracing backend for request-level analysis.
+  route with `otelhttp.NewHandler` and records `arrgo_http_requests_total` and
+  `arrgo_http_request_duration_seconds` using the OpenTelemetry metrics API.
+  These instruments emit `route`, `method`, and `status` labels and are
+  exported to Prometheus through the collector alongside standard HTTP traces.
 - **Worker service gauges:** `internal/worker.Metrics` publishes
   `arrgo_workers_active`, `arrgo_workers_heartbeat_seconds`, and
   `arrgo_workers_stale` with `pool`/`worker_id` labels. Dashboards should chart
