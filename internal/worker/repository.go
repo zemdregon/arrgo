@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/arrgo/arrgo/internal/postgres/migrate"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -210,24 +211,10 @@ func (r *PostgresRepository) ListWorkers(ctx context.Context) ([]Worker, error) 
 	return workers, nil
 }
 
-// EnsureSchema creates the worker_nodes table if it is absent.
+// EnsureSchema applies the shared PostgreSQL migrations.
 func (r *PostgresRepository) EnsureSchema(ctx context.Context) error {
-	const ddl = `
-CREATE TABLE IF NOT EXISTS worker_nodes (
-        id TEXT PRIMARY KEY,
-        pool TEXT NOT NULL,
-        endpoint TEXT NOT NULL,
-        version TEXT NOT NULL,
-        capabilities JSONB NOT NULL DEFAULT '[]'::jsonb,
-        status TEXT NOT NULL,
-        registered_at TIMESTAMPTZ NOT NULL,
-        last_heartbeat_at TIMESTAMPTZ NOT NULL,
-        active_jobs INTEGER NOT NULL DEFAULT 0
-);
-`
-	_, err := r.pool.Exec(ctx, ddl)
-	if err != nil {
-		return fmt.Errorf("worker: ensure schema: %w", err)
+	if err := migrate.Run(ctx, r.pool); err != nil {
+		return fmt.Errorf("worker: migrate schema: %w", err)
 	}
 	return nil
 }
