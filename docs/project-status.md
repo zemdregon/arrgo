@@ -51,7 +51,8 @@ referenced before planning new workstreams.
 
 ## In-Flight Priorities (Alpha Polishing)
 - Harden the Postgres-backed catalog with repeatable migrations, backups, and
-  validation tooling.
+  validation tooling. Repeatable migrations now ship with rollback helpers and
+  demo seeds; backups/validation automation remain outstanding.
 - Harden worker lifecycle management with grace periods, back-pressure
   heuristics, and alert-friendly metrics.
 - Expand contract test coverage for plugin SDKs (download clients, list

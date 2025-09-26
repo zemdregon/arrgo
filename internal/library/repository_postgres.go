@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arrgo/arrgo/internal/library/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,60 +16,39 @@ import (
 
 // PostgresRepository persists library state to PostgreSQL.
 type PostgresRepository struct {
-	pool *pgxpool.Pool
+	pool         *pgxpool.Pool
+	seedDemoData bool
+}
+
+// PostgresOption configures the Postgres-backed repository.
+type PostgresOption func(*PostgresRepository)
+
+// WithDemoSeedData toggles inserting demo seed data when EnsureSchema runs.
+func WithDemoSeedData(enabled bool) PostgresOption {
+	return func(r *PostgresRepository) {
+		r.seedDemoData = enabled
+	}
 }
 
 // NewPostgresRepository builds a Postgres-backed repository.
-func NewPostgresRepository(pool *pgxpool.Pool) (*PostgresRepository, error) {
+func NewPostgresRepository(pool *pgxpool.Pool, opts ...PostgresOption) (*PostgresRepository, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("library: pgx pool is required")
 	}
-	return &PostgresRepository{pool: pool}, nil
+	repo := &PostgresRepository{pool: pool}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(repo)
+		}
+	}
+	return repo, nil
 }
 
-// EnsureSchema creates the required tables when missing.
+// EnsureSchema applies database migrations and optional demo seeds.
 func (r *PostgresRepository) EnsureSchema(ctx context.Context) error {
-	const entitiesDDL = `
-CREATE TABLE IF NOT EXISTS catalog_entities (
-    id TEXT PRIMARY KEY,
-    entity_type TEXT NOT NULL,
-    canonical_title TEXT NOT NULL,
-    sort_title TEXT NOT NULL,
-    synopsis TEXT NOT NULL DEFAULT ''
-);
-`
-	const jobsDDL = `
-CREATE TABLE IF NOT EXISTS library_jobs (
-    id TEXT PRIMARY KEY,
-    job_type TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    state TEXT NOT NULL,
-    submitted_at TIMESTAMPTZ NOT NULL,
-    payload_uri TEXT NOT NULL DEFAULT '',
-    idempotency_key TEXT NOT NULL DEFAULT '',
-    attempt INTEGER NOT NULL DEFAULT 0,
-    last_attempt_at TIMESTAMPTZ,
-    completed_at TIMESTAMPTZ,
-    stream_id TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS library_jobs_target_idx ON library_jobs(target_id);
-`
-	const overridesDDL = `
-CREATE TABLE IF NOT EXISTS library_metadata_overrides (
-    entity_id TEXT PRIMARY KEY,
-    payload JSONB NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL
-);
-`
-
-	if _, err := r.pool.Exec(ctx, entitiesDDL); err != nil {
-		return fmt.Errorf("library: ensure catalog_entities schema: %w", err)
-	}
-	if _, err := r.pool.Exec(ctx, jobsDDL); err != nil {
-		return fmt.Errorf("library: ensure library_jobs schema: %w", err)
-	}
-	if _, err := r.pool.Exec(ctx, overridesDDL); err != nil {
-		return fmt.Errorf("library: ensure metadata_overrides schema: %w", err)
+	opts := migrations.Options{SeedDemoData: r.seedDemoData}
+	if err := migrations.Apply(ctx, r.pool, opts); err != nil {
+		return fmt.Errorf("library: apply migrations: %w", err)
 	}
 	return nil
 }

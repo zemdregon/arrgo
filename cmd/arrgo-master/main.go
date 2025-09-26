@@ -46,6 +46,7 @@ type masterConfig struct {
 	BootstrapAdminToken string
 	BootstrapAdminLabel string
 	BootstrapAdminFile  string
+	SeedDemoData        bool
 }
 
 func main() {
@@ -97,7 +98,7 @@ func run(ctx context.Context, cfg masterConfig, logger *slog.Logger) error {
 
 	var libRepo library.Repository
 	if pool != nil {
-		postgresRepo, err := library.NewPostgresRepository(pool)
+		postgresRepo, err := library.NewPostgresRepository(pool, library.WithDemoSeedData(cfg.SeedDemoData))
 		if err != nil {
 			return fmt.Errorf("initialize library repository: %w", err)
 		}
@@ -249,6 +250,7 @@ func loadConfig() masterConfig {
 	logLevel := parseLogLevel(getEnv("ARRGO_LOG_LEVEL", "info"))
 	disableAuth := parseBool(os.Getenv("ARRGO_DISABLE_AUTH"))
 	shutdownTimeout := parseDuration(getEnv("ARRGO_SHUTDOWN_TIMEOUT", "10s"), 10*time.Second)
+	seedDemoData := parseBool(os.Getenv("ARRGO_DATABASE_SEED_DEMO"))
 
 	redisDB := 0
 	if raw := strings.TrimSpace(os.Getenv("ARRGO_REDIS_DB")); raw != "" {
@@ -271,6 +273,7 @@ func loadConfig() masterConfig {
 		BootstrapAdminToken: strings.TrimSpace(os.Getenv("ARRGO_BOOTSTRAP_ADMIN_TOKEN")),
 		BootstrapAdminLabel: getEnv("ARRGO_BOOTSTRAP_ADMIN_LABEL", "arrgo-dashboard"),
 		BootstrapAdminFile:  strings.TrimSpace(os.Getenv("ARRGO_BOOTSTRAP_ADMIN_TOKEN_FILE")),
+		SeedDemoData:        seedDemoData,
 	}
 }
 

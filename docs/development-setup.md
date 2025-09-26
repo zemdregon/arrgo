@@ -49,6 +49,11 @@ The stack uses named volumes so data survives container restarts. Use `docker co
 > the master API. Override the environment variable in `deploy/compose/.env` to
 > supply a custom credential.
 
+> **Demo catalog seed:** Compose also enables `ARRGO_DATABASE_SEED_DEMO` so the
+> master service inserts sample catalog entities, jobs, and metadata overrides
+> during startup. Disable the variable in `.env` when you need a clean database
+> for integration tests.
+
 ## Go Tooling
 - Run `go fmt ./...` to format Go sources.
 - Execute `go test ./...` before pushing changes.

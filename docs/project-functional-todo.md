@@ -6,7 +6,7 @@
 The items below consolidate cross-team follow-ups required to ship a cohesive, production-ready experience. Each section highlights the expected owner and the success criteria that mark the task as complete.
 
 ## Backend & Data Plane
-- [ ] Finalize PostgreSQL schema migrations with rollback coverage and seed data for demo environments.
+- [x] Finalize PostgreSQL schema migrations with rollback coverage and seed data for demo environments.
 - [ ] Persist job execution history with retention policies and expose it through `/api/v1/jobs` pagination.
 - [ ] Land request persistence models (request, approval event, notification) and wire them into the library service.
 - [ ] Harden Redis Streams configuration (key rotation, consumer group lag alerts, automated dead-letter handling).
