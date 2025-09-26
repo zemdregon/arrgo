@@ -9,7 +9,8 @@ The items below consolidate cross-team follow-ups required to ship a cohesive, p
 - [x] Persist job execution history with retention policies and expose it through `/api/v1/jobs` pagination.
   - Job lifecycle events now flow into a dedicated history store with automatic retention, and `/api/v1/jobs` supports cursor-based pagination with per-job history hydration.
 - [x] Land request persistence models (request, approval event, notification) and wire them into the library service.
-- [ ] Harden Redis Streams configuration (key rotation, consumer group lag alerts, automated dead-letter handling).
+- [x] Harden Redis Streams configuration (key rotation, consumer group lag alerts, automated dead-letter handling).
+  - Added stream keyspace rotation helpers, lag alert instrumentation, and automatic dead-letter routing for exhausted jobs.
 
 ## API Surface & Request Management
 - [ ] Implement the request endpoints documented in [`docs/api-first-iteration.md`](api-first-iteration.md) with RBAC enforcement.

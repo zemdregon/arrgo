@@ -9,7 +9,8 @@ This file tracks the highest-priority roadmap items that still require work befo
 - [x] Finalize PostgreSQL schema migrations with rollback coverage and seed data for demo environments.
 - [ ] Persist job execution history with retention policies and expose it through `/api/v1/jobs` pagination.
 - [ ] Land request persistence models (request, approval event, notification) and wire them into the library service.
-- [ ] Harden Redis Streams configuration (key rotation, consumer group lag alerts, automated dead-letter handling).
+- [x] Harden Redis Streams configuration (key rotation, consumer group lag alerts, automated dead-letter handling).
+  - Stream namespaces now support version rotation, emit lag warnings, and funnel exhausted jobs into a managed dead-letter queue.
 
 ## API Surface & Request Management
 - [ ] Implement the request endpoints documented in [`docs/api-first-iteration.md`](docs/api-first-iteration.md) with RBAC enforcement.

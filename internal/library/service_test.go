@@ -548,6 +548,145 @@ func TestRetryJobRequeuesWithIncrementedAttempt(t *testing.T) {
 	}
 }
 
+func TestRetryJobDeadLettersAfterMaxAttempts(t *testing.T) {
+	svc := newRedisService(t, Config{
+		Entities:            []Entity{{ID: "entity-1", EntityType: "movie"}},
+		MaxDeliveryAttempts: 2,
+	})
+
+	job, err := svc.TriggerJob(context.Background(), TriggerJobInput{JobType: "refresh", TargetID: "entity-1"})
+	if err != nil {
+		t.Fatalf("TriggerJob returned error: %v", err)
+	}
+
+	claimed, err := svc.ClaimJobs(context.Background(), "worker-1", 1, 0)
+	if err != nil {
+		t.Fatalf("ClaimJobs returned error: %v", err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("expected 1 claimed job, got %d", len(claimed))
+	}
+
+	claimed[0].Job.ErrorMessage = "transient failure"
+	retried, err := svc.RetryJob(context.Background(), claimed[0])
+	if err != nil {
+		t.Fatalf("RetryJob returned error on first retry: %v", err)
+	}
+	if retried.State != JobStateQueued {
+		t.Fatalf("expected job to be queued after first retry, got %s", retried.State)
+	}
+
+	claimedAgain, err := svc.ClaimJobs(context.Background(), "worker-1", 1, 0)
+	if err != nil {
+		t.Fatalf("ClaimJobs after retry returned error: %v", err)
+	}
+	if len(claimedAgain) != 1 {
+		t.Fatalf("expected 1 claimed job after retry, got %d", len(claimedAgain))
+	}
+	if claimedAgain[0].Job.Attempt != 2 {
+		t.Fatalf("expected attempt 2 before dead-letter, got %d", claimedAgain[0].Job.Attempt)
+	}
+
+	claimedAgain[0].Job.ErrorMessage = "processing failed"
+	dead, err := svc.RetryJob(context.Background(), claimedAgain[0])
+	if err != nil {
+		t.Fatalf("RetryJob returned error on dead-letter: %v", err)
+	}
+	if dead.State != JobStateFailed {
+		t.Fatalf("expected failed state after dead-letter, got %s", dead.State)
+	}
+	if dead.CompletedAt.IsZero() {
+		t.Fatalf("expected completion timestamp after dead-letter")
+	}
+	if dead.StreamID != "" {
+		t.Fatalf("expected empty stream id after dead-letter, got %s", dead.StreamID)
+	}
+
+	jobs, err := svc.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs returned error: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected single job, got %d", len(jobs))
+	}
+	if jobs[0].State != JobStateFailed {
+		t.Fatalf("expected persisted job state failed, got %s", jobs[0].State)
+	}
+	if len(jobs[0].History) == 0 {
+		t.Fatalf("expected job history entries, got none")
+	}
+	seenDeadLetter := false
+	for _, entry := range jobs[0].History {
+		if entry.State == JobStateFailed {
+			seenDeadLetter = true
+		}
+	}
+	if !seenDeadLetter {
+		t.Fatalf("expected dead-letter history entry")
+	}
+
+	entries, err := svc.queue.client.XRange(context.Background(), svc.queue.deadLetter, "-", "+").Result()
+	if err != nil {
+		t.Fatalf("XRANGE dead-letter returned error: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 dead-letter entry, got %d", len(entries))
+	}
+	if reason, ok := entries[0].Values["failure_reason"].(string); !ok || reason != "processing failed" {
+		t.Fatalf("expected failure reason 'processing failed', got %#v", entries[0].Values["failure_reason"])
+	}
+	if jobID, ok := entries[0].Values["job_id"].(string); !ok || jobID != job.ID {
+		t.Fatalf("expected dead-letter job id %s, got %#v", job.ID, entries[0].Values["job_id"])
+	}
+}
+
+func TestRotateQueueKeyspaceUpdatesStreamAndIdempotency(t *testing.T) {
+	svc := newRedisService(t, Config{Entities: []Entity{{ID: "entity-1", EntityType: "movie"}}})
+
+	if err := svc.RotateQueueKeyspace(context.Background(), "2025/04/01"); err != nil {
+		t.Fatalf("RotateQueueKeyspace returned error: %v", err)
+	}
+
+	stream, group := svc.queue.currentStreamAndGroup()
+	if stream != "arrgo:library:jobs:2025-04-01" {
+		t.Fatalf("expected rotated stream name, got %s", stream)
+	}
+	if group != "arrgo-library-workers" {
+		t.Fatalf("unexpected consumer group %s", group)
+	}
+
+	prefix, _ := svc.queue.currentIdempotency()
+	if prefix != "arrgo:library:idemp:2025-04-01:" {
+		t.Fatalf("expected rotated idempotency prefix, got %s", prefix)
+	}
+
+	_, err := svc.TriggerJob(context.Background(), TriggerJobInput{
+		JobType:        "refresh",
+		TargetID:       "entity-1",
+		IdempotencyKey: "refresh-entity-1",
+	})
+	if err != nil {
+		t.Fatalf("TriggerJob returned error: %v", err)
+	}
+
+	exists, err := svc.queue.client.Exists(context.Background(), "arrgo:library:idemp:2025-04-01:refresh-entity-1").Result()
+	if err != nil {
+		t.Fatalf("EXISTS returned error: %v", err)
+	}
+	if exists != 1 {
+		t.Fatalf("expected idempotency key in rotated namespace, got %d", exists)
+	}
+
+	svc2 := newRedisService(t, Config{
+		Entities:         []Entity{{ID: "entity-1", EntityType: "movie"}},
+		StreamKeyVersion: "2025/04/01",
+	})
+	prefix2, _ := svc2.queue.currentIdempotency()
+	if prefix2 != "arrgo:library:idemp:2025-04-01:" {
+		t.Fatalf("expected configured idempotency prefix, got %s", prefix2)
+	}
+}
+
 func TestJobHistoryLifecycle(t *testing.T) {
 	now := time.Unix(1_700_000_100, 0)
 	svc := newRedisService(t, Config{
