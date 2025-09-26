@@ -62,6 +62,7 @@ const (
 	JobStateQueued  = "queued"
 	JobStateRunning = "running"
 	JobStateDone    = "completed"
+	JobStateFailed  = "failed"
 )
 
 const (
@@ -181,9 +182,14 @@ type Config struct {
 	IDGenerator          IDGenerator
 	RedisClient          *redis.Client
 	StreamName           string
+	DeadLetterStream     string
 	ConsumerGroup        string
+	StreamKeyVersion     string
 	Logger               *slog.Logger
 	IdempotencyTTL       time.Duration
+	MaxDeliveryAttempts  int
+	LagAlertThreshold    int64
+	LagAlertInterval     time.Duration
 	AuditSink            AuditSink
 	Tracer               trace.Tracer
 	RenameTemplates      RenameTemplates
@@ -198,6 +204,7 @@ var (
 	ErrUnknownEntity                      = errors.New("library: target entity not found")
 	ErrQueueUnavailable                   = errors.New("library: orchestration queue unavailable")
 	ErrDuplicateJob                       = errors.New("library: duplicate job for idempotency key")
+	ErrJobDeadLettered                    = errors.New("library: job moved to dead-letter stream")
 	ErrManualSearchEntityRequired         = errors.New("library: manual search entity id is required")
 	ErrManualSearchReleaseRequired        = errors.New("library: manual search release id is required")
 	ErrManualSearchReleaseNotFound        = errors.New("library: manual search release not found")
@@ -351,11 +358,16 @@ func NewService(cfg Config) (*Service, error) {
 
 	if cfg.RedisClient != nil {
 		queue, err := NewOrchestrationQueue(OrchestrationQueueConfig{
-			Client:         cfg.RedisClient,
-			Stream:         cfg.StreamName,
-			Group:          cfg.ConsumerGroup,
-			Logger:         svc.logger,
-			IdempotencyTTL: cfg.IdempotencyTTL,
+			Client:              cfg.RedisClient,
+			Stream:              cfg.StreamName,
+			Group:               cfg.ConsumerGroup,
+			Logger:              svc.logger,
+			IdempotencyTTL:      cfg.IdempotencyTTL,
+			DeadLetterStream:    cfg.DeadLetterStream,
+			MaxDeliveryAttempts: cfg.MaxDeliveryAttempts,
+			KeyVersion:          cfg.StreamKeyVersion,
+			LagAlertThreshold:   cfg.LagAlertThreshold,
+			LagAlertInterval:    cfg.LagAlertInterval,
 		})
 		if err != nil {
 			return nil, err
@@ -1287,6 +1299,31 @@ func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (updated Job, er
 	var streamID string
 	streamID, err = s.queue.Retry(jobCtx, job.StreamID, job.Job)
 	if err != nil {
+		if errors.Is(err, ErrJobDeadLettered) {
+			updated = job.Job
+			updated.State = JobStateFailed
+			updated.StreamID = ""
+			updated.CompletedAt = s.clock.Now()
+			if repoErr := s.repository.UpdateJob(ctx, updated); repoErr != nil {
+				return Job{}, fmt.Errorf("library: persist job update: %w", repoErr)
+			}
+
+			logging.WithContext(jobCtx, s.logger).Warn("library job dead-lettered",
+				"previous_stream_id", job.StreamID,
+				"attempt", job.Job.Attempt,
+			)
+			s.recordJobHistory(jobCtx, updated.ID, JobHistoryRecord{
+				Attempt:    job.Job.Attempt,
+				State:      JobStateFailed,
+				Message:    "dead-lettered",
+				OccurredAt: updated.CompletedAt,
+			})
+			span.SetAttributes(
+				attribute.String("library.stream_id", ""),
+				attribute.String("library.job_state", JobStateFailed),
+			)
+			return updated, nil
+		}
 		return
 	}
 
@@ -1314,6 +1351,14 @@ func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (updated Job, er
 	})
 
 	return updated, nil
+}
+
+// RotateQueueKeyspace switches the Redis namespace used for orchestration streams and idempotency keys.
+func (s *Service) RotateQueueKeyspace(ctx context.Context, version string) error {
+	if s.queue == nil {
+		return ErrQueueUnavailable
+	}
+	return s.queue.RotateKeyspace(ctx, version)
 }
 
 func (s *Service) buildManualSearchReleases(entity Entity, searchID, query string, now time.Time) []ManualSearchRelease {
