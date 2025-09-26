@@ -44,6 +44,9 @@ type Job struct {
 	Attempt        int
 	LastAttemptAt  time.Time
 	CompletedAt    time.Time
+	ErrorMessage   string
+
+	History []JobHistoryRecord `json:"history,omitempty"`
 
 	StreamID string `json:"-"`
 }
@@ -60,6 +63,30 @@ const (
 	JobStateRunning = "running"
 	JobStateDone    = "completed"
 )
+
+const (
+	defaultJobPageSize     = 25
+	maxJobPageSize         = 100
+	defaultJobHistoryLimit = 10
+)
+
+var jobHistoryRetentionPolicy = JobHistoryRetention{
+	MaxEntries: 200,
+	MaxAge:     30 * 24 * time.Hour,
+}
+
+// ListJobsPageInput captures pagination tuning for job listings.
+type ListJobsPageInput struct {
+	PageToken    string
+	PageSize     int
+	HistoryLimit int
+}
+
+// ListJobsPageResult wraps a page of jobs alongside the continuation token.
+type ListJobsPageResult struct {
+	Jobs          []Job
+	NextPageToken string
+}
 
 // Manual release statuses exposed by manual search helpers.
 const (
@@ -143,6 +170,7 @@ var (
 	ErrManualSearchReleaseRequired = errors.New("library: manual search release id is required")
 	ErrManualSearchReleaseNotFound = errors.New("library: manual search release not found")
 	ErrManualSearchReleaseGrabbed  = errors.New("library: manual search release already grabbed")
+	ErrInvalidJobPageToken         = errors.New("library: invalid job page token")
 )
 
 // Service exposes read/write helpers that back both REST and gRPC front-ends.
@@ -407,8 +435,110 @@ func (s *Service) ListJobs(ctx context.Context) (jobs []Job, err error) {
 		return jobs[i].SubmittedAt.After(jobs[j].SubmittedAt)
 	})
 
+	if len(jobs) > 0 {
+		jobIDs := make([]string, 0, len(jobs))
+		for _, job := range jobs {
+			jobIDs = append(jobIDs, job.ID)
+		}
+		historyMap, histErr := s.repository.ListJobHistories(ctx, jobIDs, defaultJobHistoryLimit)
+		if histErr != nil {
+			return nil, fmt.Errorf("library: list job histories: %w", histErr)
+		}
+		for i := range jobs {
+			if history := historyMap[jobs[i].ID]; len(history) > 0 {
+				jobs[i].History = append([]JobHistoryRecord(nil), history...)
+			} else {
+				jobs[i].History = nil
+			}
+		}
+	}
+
 	span.SetAttributes(attribute.Int("library.job_count", len(jobs)))
 	return jobs, nil
+}
+
+// ListJobsPage returns a paginated slice of jobs ordered by submission time (newest first).
+func (s *Service) ListJobsPage(ctx context.Context, input ListJobsPageInput) (result ListJobsPageResult, err error) {
+	pageSize := input.PageSize
+	if pageSize <= 0 {
+		pageSize = defaultJobPageSize
+	}
+	if pageSize > maxJobPageSize {
+		pageSize = maxJobPageSize
+	}
+
+	historyLimit := input.HistoryLimit
+	if historyLimit <= 0 {
+		historyLimit = defaultJobHistoryLimit
+	}
+	if historyLimit > jobHistoryRetentionPolicy.MaxEntries {
+		historyLimit = jobHistoryRetentionPolicy.MaxEntries
+	}
+
+	cursor, err := decodeJobCursor(input.PageToken)
+	if err != nil {
+		return ListJobsPageResult{}, fmt.Errorf("%w: %v", ErrInvalidJobPageToken, err)
+	}
+
+	ctx, span := s.startSpan(ctx, "library.Service.ListJobsPage",
+		attribute.Int("library.page_size", pageSize),
+		attribute.Int("library.history_limit", historyLimit),
+	)
+	defer endSpan(span, &err)
+
+	repoResult, err := s.repository.ListJobsPage(ctx, ListJobsOptions{Limit: pageSize, Cursor: cursor})
+	if err != nil {
+		return ListJobsPageResult{}, fmt.Errorf("library: list jobs page: %w", err)
+	}
+
+	jobs := append([]Job(nil), repoResult.Jobs...)
+
+	if len(jobs) > 0 && historyLimit > 0 {
+		jobIDs := make([]string, 0, len(jobs))
+		for _, job := range jobs {
+			jobIDs = append(jobIDs, job.ID)
+		}
+		historyMap, histErr := s.repository.ListJobHistories(ctx, jobIDs, historyLimit)
+		if histErr != nil {
+			return ListJobsPageResult{}, fmt.Errorf("library: list job histories: %w", histErr)
+		}
+		for i := range jobs {
+			if history := historyMap[jobs[i].ID]; len(history) > 0 {
+				jobs[i].History = append([]JobHistoryRecord(nil), history...)
+			} else {
+				jobs[i].History = nil
+			}
+		}
+	}
+
+	result = ListJobsPageResult{
+		Jobs:          jobs,
+		NextPageToken: encodeJobCursor(repoResult.NextCursor),
+	}
+	span.SetAttributes(attribute.Int("library.job_count", len(jobs)))
+	if result.NextPageToken != "" {
+		span.SetAttributes(attribute.String("library.next_page_token", result.NextPageToken))
+	}
+	return result, nil
+}
+
+func (s *Service) recordJobHistory(ctx context.Context, jobID string, record JobHistoryRecord) {
+	if strings.TrimSpace(jobID) == "" {
+		return
+	}
+	if record.OccurredAt.IsZero() {
+		record.OccurredAt = s.clock.Now()
+	} else {
+		record.OccurredAt = record.OccurredAt.UTC()
+	}
+	record.State = strings.TrimSpace(record.State)
+	record.Message = strings.TrimSpace(record.Message)
+	if err := s.repository.AppendJobHistory(ctx, jobID, record, jobHistoryRetentionPolicy); err != nil {
+		logging.WithContext(ctx, s.logger).Warn("library: append job history failed",
+			"job_id", jobID,
+			"error", err,
+		)
+	}
 }
 
 // RunManualSearch synthesizes indexer results for an entity so operators can review candidates.
@@ -632,6 +762,13 @@ func (s *Service) TriggerJob(ctx context.Context, input TriggerJobInput) (job Jo
 		return
 	}
 
+	s.recordJobHistory(ctxWithJob, job.ID, JobHistoryRecord{
+		Attempt:    job.Attempt + 1,
+		State:      JobStateQueued,
+		Message:    "queued",
+		OccurredAt: job.SubmittedAt,
+	})
+
 	span.SetAttributes(
 		attribute.String("library.job_id", job.ID),
 		attribute.String("library.stream_id", streamID),
@@ -689,6 +826,12 @@ func (s *Service) ClaimJobs(ctx context.Context, consumer string, count int, blo
 			"consumer", consumer,
 			"attempt", job.Job.Attempt,
 		)
+		s.recordJobHistory(jobCtx, job.Job.ID, JobHistoryRecord{
+			Attempt:    job.Job.Attempt,
+			State:      JobStateRunning,
+			Message:    fmt.Sprintf("claimed by %s", strings.TrimSpace(consumer)),
+			OccurredAt: job.Job.LastAttemptAt,
+		})
 	}
 
 	span.SetAttributes(attribute.Int("library.claimed_count", len(claimed)))
@@ -739,6 +882,12 @@ func (s *Service) AckJob(ctx context.Context, job ClaimedJob) (err error) {
 		"stream_id", job.StreamID,
 		"attempt", job.Job.Attempt,
 	)
+	s.recordJobHistory(jobCtx, job.Job.ID, JobHistoryRecord{
+		Attempt:    job.Job.Attempt,
+		State:      JobStateDone,
+		Message:    "completed",
+		OccurredAt: completedAt,
+	})
 
 	if strings.EqualFold(job.Job.JobType, JobTypeImport) {
 		event := AuditEvent{
@@ -795,6 +944,12 @@ func (s *Service) RetryJob(ctx context.Context, job ClaimedJob) (updated Job, er
 		"stream_id", streamID,
 		"attempt", job.Job.Attempt+1,
 	)
+
+	s.recordJobHistory(jobCtx, updated.ID, JobHistoryRecord{
+		Attempt: job.Job.Attempt + 1,
+		State:   JobStateQueued,
+		Message: "retried",
+	})
 
 	return updated, nil
 }

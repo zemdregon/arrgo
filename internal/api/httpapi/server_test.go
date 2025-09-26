@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -107,6 +109,99 @@ func TestTriggerJobEndpoint(t *testing.T) {
 	}
 	if payload.Job.ID != "job-http" {
 		t.Fatalf("expected job-http id, got %s", payload.Job.ID)
+	}
+}
+
+func TestListJobsEndpointPagination(t *testing.T) {
+	repo := library.NewInMemoryRepository()
+	now := time.Unix(1_700_000_500, 0)
+	for i := 0; i < 3; i++ {
+		jobID := fmt.Sprintf("job-%d", i)
+		submitted := now.Add(-time.Duration(i) * time.Minute)
+		if err := repo.SaveJob(context.Background(), library.Job{
+			ID:          jobID,
+			JobType:     "scan",
+			TargetID:    "entity-1",
+			State:       library.JobStateQueued,
+			SubmittedAt: submitted,
+		}); err != nil {
+			t.Fatalf("SaveJob returned error: %v", err)
+		}
+		if err := repo.AppendJobHistory(context.Background(), jobID, library.JobHistoryRecord{
+			Attempt:    1,
+			State:      library.JobStateQueued,
+			OccurredAt: submitted,
+		}, library.JobHistoryRetention{MaxEntries: 5, MaxAge: time.Hour}); err != nil {
+			t.Fatalf("AppendJobHistory returned error: %v", err)
+		}
+	}
+
+	svc := mustLibraryService(t, library.Config{
+		Repository: repo,
+		Entities:   []library.Entity{{ID: "entity-1", EntityType: "movie"}},
+	})
+	authSvc := mustAuthService(t)
+	token := mustAPIKey(t, authSvc, "observer")
+	srv := NewServer(svc, nil, authSvc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?page_size=2&history_limit=1", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp := httptest.NewRecorder()
+
+	srv.handleJobs(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.Code)
+	}
+
+	var payload struct {
+		Jobs          []library.Job `json:"jobs"`
+		NextPageToken string        `json:"next_page_token"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode payload: %v", err)
+	}
+	if len(payload.Jobs) != 2 {
+		t.Fatalf("expected 2 jobs, got %d", len(payload.Jobs))
+	}
+	if payload.NextPageToken == "" {
+		t.Fatalf("expected next page token")
+	}
+	for _, job := range payload.Jobs {
+		if len(job.History) == 0 || len(job.History) > 1 {
+			t.Fatalf("expected history length 1, got %d", len(job.History))
+		}
+	}
+
+	nextURL := "/api/v1/jobs?page_token=" + url.QueryEscape(payload.NextPageToken)
+	req2 := httptest.NewRequest(http.MethodGet, nextURL, nil)
+	req2.Header.Set("Authorization", "Bearer "+token)
+	resp2 := httptest.NewRecorder()
+	srv.handleJobs(resp2, req2)
+	if resp2.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on second page, got %d", resp2.Code)
+	}
+
+	var payload2 struct {
+		Jobs          []library.Job `json:"jobs"`
+		NextPageToken string        `json:"next_page_token"`
+	}
+	if err := json.Unmarshal(resp2.Body.Bytes(), &payload2); err != nil {
+		t.Fatalf("failed to decode second payload: %v", err)
+	}
+	if len(payload2.Jobs) != 1 {
+		t.Fatalf("expected 1 job on second page, got %d", len(payload2.Jobs))
+	}
+	if payload2.NextPageToken != "" {
+		t.Fatalf("expected empty next page token on last page")
+	}
+
+	badReq := httptest.NewRequest(http.MethodGet, "/api/v1/jobs?page_token=!!bad!!", nil)
+	badReq.Header.Set("Authorization", "Bearer "+token)
+	badResp := httptest.NewRecorder()
+	srv.handleJobs(badResp, badReq)
+	if badResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for invalid token, got %d", badResp.Code)
 	}
 }
 

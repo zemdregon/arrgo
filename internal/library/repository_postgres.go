@@ -120,9 +120,9 @@ func (r *PostgresRepository) SaveJob(ctx context.Context, job Job) error {
 	const stmt = `
 INSERT INTO library_jobs (
     id, job_type, target_id, state, submitted_at, payload_uri, idempotency_key,
-    attempt, last_attempt_at, completed_at, stream_id
+    attempt, last_attempt_at, completed_at, stream_id, error_message
 )
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11);
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12);
 `
 	_, err := r.pool.Exec(ctx, stmt,
 		canonical.ID,
@@ -136,6 +136,7 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11);
 		nullTime(canonical.LastAttemptAt),
 		nullTime(canonical.CompletedAt),
 		canonical.StreamID,
+		canonical.ErrorMessage,
 	)
 	if err != nil {
 		return fmt.Errorf("library: insert job %q: %w", canonical.ID, err)
@@ -157,7 +158,8 @@ UPDATE library_jobs SET
     attempt = $7,
     last_attempt_at = $8,
     completed_at = $9,
-    stream_id = $10
+    stream_id = $10,
+    error_message = $11
 WHERE id = $1;
 `
 	result, err := r.pool.Exec(ctx, stmt,
@@ -171,6 +173,7 @@ WHERE id = $1;
 		nullTime(canonical.LastAttemptAt),
 		nullTime(canonical.CompletedAt),
 		canonical.StreamID,
+		canonical.ErrorMessage,
 	)
 	if err != nil {
 		return fmt.Errorf("library: update job %q: %w", canonical.ID, err)
@@ -185,9 +188,9 @@ WHERE id = $1;
 func (r *PostgresRepository) ListJobs(ctx context.Context) ([]Job, error) {
 	const stmt = `
 SELECT id, job_type, target_id, state, submitted_at, payload_uri, idempotency_key,
-       attempt, last_attempt_at, completed_at, stream_id
+       attempt, last_attempt_at, completed_at, stream_id, error_message
 FROM library_jobs
-ORDER BY submitted_at DESC;
+ORDER BY submitted_at DESC, id DESC;
 `
 	rows, err := r.pool.Query(ctx, stmt)
 	if err != nil {
@@ -214,6 +217,7 @@ ORDER BY submitted_at DESC;
 			&lastAttempt,
 			&completedTime,
 			&job.StreamID,
+			&job.ErrorMessage,
 		); err != nil {
 			return nil, fmt.Errorf("library: scan job: %w", err)
 		}
@@ -231,6 +235,181 @@ ORDER BY submitted_at DESC;
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
+}
+
+// ListJobsPage returns a single page of jobs ordered by submission time (newest first).
+func (r *PostgresRepository) ListJobsPage(ctx context.Context, opts ListJobsOptions) (ListJobsResult, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultJobPageSize
+	}
+	limitPlusOne := limit + 1
+
+	params := []any{}
+	where := ""
+	if opts.Cursor != nil {
+		params = append(params, opts.Cursor.SubmittedAt, opts.Cursor.JobID)
+		where = "WHERE (submitted_at < $1) OR (submitted_at = $1 AND id < $2)"
+	}
+
+	query := `SELECT id, job_type, target_id, state, submitted_at, payload_uri, idempotency_key,
+       attempt, last_attempt_at, completed_at, stream_id, error_message
+FROM library_jobs`
+	if where != "" {
+		query += "\n" + where
+	}
+	query += "\nORDER BY submitted_at DESC, id DESC\nLIMIT $" + fmt.Sprint(len(params)+1)
+	params = append(params, limitPlusOne)
+
+	rows, err := r.pool.Query(ctx, query, params...)
+	if err != nil {
+		return ListJobsResult{}, fmt.Errorf("library: list jobs page: %w", err)
+	}
+	defer rows.Close()
+
+	jobs := make([]Job, 0, limitPlusOne)
+	for rows.Next() {
+		var (
+			job           Job
+			lastAttempt   pgtype.Timestamptz
+			completedTime pgtype.Timestamptz
+		)
+		if err := rows.Scan(
+			&job.ID,
+			&job.JobType,
+			&job.TargetID,
+			&job.State,
+			&job.SubmittedAt,
+			&job.PayloadURI,
+			&job.IdempotencyKey,
+			&job.Attempt,
+			&lastAttempt,
+			&completedTime,
+			&job.StreamID,
+			&job.ErrorMessage,
+		); err != nil {
+			return ListJobsResult{}, fmt.Errorf("library: scan job: %w", err)
+		}
+		job.SubmittedAt = job.SubmittedAt.UTC()
+		if lastAttempt.Valid {
+			job.LastAttemptAt = lastAttempt.Time.UTC()
+		}
+		if completedTime.Valid {
+			job.CompletedAt = completedTime.Time.UTC()
+		}
+		jobs = append(jobs, job)
+	}
+
+	var next *JobListCursor
+	if len(jobs) > limit {
+		last := jobs[limit-1]
+		next = &JobListCursor{SubmittedAt: last.SubmittedAt, JobID: last.ID}
+		jobs = jobs[:limit]
+	}
+
+	return ListJobsResult{Jobs: jobs, NextCursor: next}, nil
+}
+
+// AppendJobHistory stores a history record while enforcing retention policies.
+func (r *PostgresRepository) AppendJobHistory(ctx context.Context, jobID string, record JobHistoryRecord, retention JobHistoryRetention) error {
+	trimmedID := strings.TrimSpace(jobID)
+	if trimmedID == "" {
+		return fmt.Errorf("library: job history job id is required")
+	}
+
+	state := strings.TrimSpace(record.State)
+	message := strings.TrimSpace(record.Message)
+	occurredAt := record.OccurredAt
+	if occurredAt.IsZero() {
+		occurredAt = time.Now().UTC()
+	} else {
+		occurredAt = occurredAt.UTC()
+	}
+	attempt := record.Attempt
+	if attempt < 0 {
+		attempt = 0
+	}
+
+	const insertStmt = `INSERT INTO library_job_history (job_id, attempt, state, message, occurred_at)
+VALUES ($1,$2,$3,$4,$5);`
+	if _, err := r.pool.Exec(ctx, insertStmt, trimmedID, attempt, state, message, occurredAt); err != nil {
+		return fmt.Errorf("library: insert job history: %w", err)
+	}
+
+	if retention.MaxAge > 0 {
+		cutoff := occurredAt.Add(-retention.MaxAge)
+		if _, err := r.pool.Exec(ctx, `DELETE FROM library_job_history WHERE job_id = $1 AND occurred_at < $2`, trimmedID, cutoff); err != nil {
+			return fmt.Errorf("library: prune job history by age: %w", err)
+		}
+	}
+
+	if retention.MaxEntries > 0 {
+		const pruneStmt = `
+DELETE FROM library_job_history
+WHERE job_id = $1
+  AND id NOT IN (
+        SELECT id FROM library_job_history
+        WHERE job_id = $1
+        ORDER BY occurred_at DESC, id DESC
+        LIMIT $2
+  );`
+		if _, err := r.pool.Exec(ctx, pruneStmt, trimmedID, retention.MaxEntries); err != nil {
+			return fmt.Errorf("library: prune job history by count: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// ListJobHistories returns the latest history entries for the requested jobs.
+func (r *PostgresRepository) ListJobHistories(ctx context.Context, jobIDs []string, limit int) (map[string][]JobHistoryRecord, error) {
+	filtered := make([]string, 0, len(jobIDs))
+	for _, id := range jobIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed != "" {
+			filtered = append(filtered, trimmed)
+		}
+	}
+	if len(filtered) == 0 {
+		return map[string][]JobHistoryRecord{}, nil
+	}
+	if limit <= 0 {
+		limit = defaultJobHistoryLimit
+	}
+
+	const stmt = `
+SELECT job_id, attempt, state, message, occurred_at
+FROM (
+    SELECT job_id, attempt, state, message, occurred_at,
+           ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY occurred_at DESC, id DESC) AS rn
+    FROM library_job_history
+    WHERE job_id = ANY($1)
+)
+WHERE rn <= $2
+ORDER BY job_id, occurred_at DESC, rn;
+`
+	rows, err := r.pool.Query(ctx, stmt, filtered, limit)
+	if err != nil {
+		return nil, fmt.Errorf("library: list job history: %w", err)
+	}
+	defer rows.Close()
+
+	results := make(map[string][]JobHistoryRecord, len(filtered))
+	for rows.Next() {
+		var (
+			jobID    string
+			entry    JobHistoryRecord
+			occurred time.Time
+		)
+		if err := rows.Scan(&jobID, &entry.Attempt, &entry.State, &entry.Message, &occurred); err != nil {
+			return nil, fmt.Errorf("library: scan job history: %w", err)
+		}
+		entry.State = strings.TrimSpace(entry.State)
+		entry.Message = strings.TrimSpace(entry.Message)
+		entry.OccurredAt = occurred.UTC()
+		results[jobID] = append(results[jobID], entry)
+	}
+	return results, nil
 }
 
 // UpsertMetadataOverrides stores overrides in PostgreSQL.
@@ -337,9 +516,11 @@ func canonicalizeJob(job Job) Job {
 	canonical.PayloadURI = strings.TrimSpace(canonical.PayloadURI)
 	canonical.IdempotencyKey = strings.TrimSpace(canonical.IdempotencyKey)
 	canonical.StreamID = strings.TrimSpace(canonical.StreamID)
+	canonical.ErrorMessage = strings.TrimSpace(canonical.ErrorMessage)
 	canonical.SubmittedAt = canonical.SubmittedAt.UTC()
 	canonical.LastAttemptAt = canonical.LastAttemptAt.UTC()
 	canonical.CompletedAt = canonical.CompletedAt.UTC()
+	canonical.History = nil
 	return canonical
 }
 

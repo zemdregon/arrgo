@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -370,6 +371,199 @@ func TestRetryJobRequeuesWithIncrementedAttempt(t *testing.T) {
 	}
 	if claimedAgain[0].Job.Attempt != 2 {
 		t.Fatalf("expected attempt 2 after retry, got %d", claimedAgain[0].Job.Attempt)
+	}
+}
+
+func TestJobHistoryLifecycle(t *testing.T) {
+	now := time.Unix(1_700_000_100, 0)
+	svc := newRedisService(t, Config{
+		Entities: []Entity{{ID: "entity-1", EntityType: "movie"}},
+		Clock:    stubClock{now: now},
+		IDGenerator: func() string {
+			return "job-history"
+		},
+	})
+
+	_, err := svc.TriggerJob(context.Background(), TriggerJobInput{JobType: "scan", TargetID: "entity-1"})
+	if err != nil {
+		t.Fatalf("TriggerJob returned error: %v", err)
+	}
+
+	claimed, err := svc.ClaimJobs(context.Background(), "worker-1", 1, 0)
+	if err != nil {
+		t.Fatalf("ClaimJobs returned error: %v", err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("expected 1 claimed job, got %d", len(claimed))
+	}
+
+	if err := svc.AckJob(context.Background(), claimed[0]); err != nil {
+		t.Fatalf("AckJob returned error: %v", err)
+	}
+
+	jobs, err := svc.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs returned error: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected single job, got %d", len(jobs))
+	}
+
+	history := jobs[0].History
+	if len(history) != 3 {
+		t.Fatalf("expected 3 history entries, got %d", len(history))
+	}
+
+	states := make(map[string]int)
+	for _, entry := range history {
+		states[entry.State]++
+		if entry.Attempt != 1 {
+			t.Fatalf("expected attempt 1, got %d", entry.Attempt)
+		}
+	}
+	for _, state := range []string{JobStateQueued, JobStateRunning, JobStateDone} {
+		if states[state] == 0 {
+			t.Fatalf("expected history entry for state %s", state)
+		}
+	}
+}
+
+func TestJobHistoryRecordsRetry(t *testing.T) {
+	now := time.Unix(1_700_000_200, 0)
+	svc := newRedisService(t, Config{
+		Entities: []Entity{{ID: "entity-1", EntityType: "movie"}},
+		Clock:    stubClock{now: now},
+		IDGenerator: func() string {
+			return "job-retry"
+		},
+	})
+
+	_, err := svc.TriggerJob(context.Background(), TriggerJobInput{JobType: "scan", TargetID: "entity-1"})
+	if err != nil {
+		t.Fatalf("TriggerJob returned error: %v", err)
+	}
+
+	claimed, err := svc.ClaimJobs(context.Background(), "worker-1", 1, 0)
+	if err != nil {
+		t.Fatalf("ClaimJobs returned error: %v", err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("expected 1 claimed job, got %d", len(claimed))
+	}
+
+	retried, err := svc.RetryJob(context.Background(), claimed[0])
+	if err != nil {
+		t.Fatalf("RetryJob returned error: %v", err)
+	}
+	if retried.State != JobStateQueued {
+		t.Fatalf("expected queued state after retry, got %s", retried.State)
+	}
+
+	claimedAgain, err := svc.ClaimJobs(context.Background(), "worker-1", 1, 0)
+	if err != nil {
+		t.Fatalf("ClaimJobs after retry returned error: %v", err)
+	}
+	if len(claimedAgain) != 1 {
+		t.Fatalf("expected 1 claimed job after retry, got %d", len(claimedAgain))
+	}
+
+	if err := svc.AckJob(context.Background(), claimedAgain[0]); err != nil {
+		t.Fatalf("AckJob after retry returned error: %v", err)
+	}
+
+	jobs, err := svc.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs returned error: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected single job, got %d", len(jobs))
+	}
+
+	history := jobs[0].History
+	if len(history) < 5 {
+		t.Fatalf("expected at least 5 history entries, got %d", len(history))
+	}
+
+	seen := make(map[string]bool)
+	for _, entry := range history {
+		key := fmt.Sprintf("%s-%d", entry.State, entry.Attempt)
+		seen[key] = true
+	}
+	required := []string{
+		fmt.Sprintf("%s-1", JobStateQueued),
+		fmt.Sprintf("%s-1", JobStateRunning),
+		fmt.Sprintf("%s-2", JobStateQueued),
+		fmt.Sprintf("%s-2", JobStateRunning),
+		fmt.Sprintf("%s-2", JobStateDone),
+	}
+	for _, key := range required {
+		if !seen[key] {
+			t.Fatalf("expected history entry %s", key)
+		}
+	}
+}
+
+func TestListJobsPagePaginates(t *testing.T) {
+	repo := NewInMemoryRepository()
+	now := time.Unix(1_700_000_300, 0)
+	for i := 0; i < 3; i++ {
+		jobID := fmt.Sprintf("job-%d", i)
+		submitted := now.Add(-time.Duration(i) * time.Minute)
+		if err := repo.SaveJob(context.Background(), Job{
+			ID:          jobID,
+			JobType:     "scan",
+			TargetID:    "entity-1",
+			State:       JobStateQueued,
+			SubmittedAt: submitted,
+		}); err != nil {
+			t.Fatalf("SaveJob returned error: %v", err)
+		}
+		if err := repo.AppendJobHistory(context.Background(), jobID, JobHistoryRecord{
+			Attempt:    1,
+			State:      JobStateQueued,
+			OccurredAt: submitted,
+		}, JobHistoryRetention{MaxEntries: 10, MaxAge: time.Hour}); err != nil {
+			t.Fatalf("AppendJobHistory returned error: %v", err)
+		}
+	}
+
+	svc, err := NewService(Config{
+		Repository: repo,
+		Entities:   []Entity{{ID: "entity-1", EntityType: "movie"}},
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	page1, err := svc.ListJobsPage(context.Background(), ListJobsPageInput{PageSize: 2, HistoryLimit: 1})
+	if err != nil {
+		t.Fatalf("ListJobsPage returned error: %v", err)
+	}
+	if len(page1.Jobs) != 2 {
+		t.Fatalf("expected 2 jobs on first page, got %d", len(page1.Jobs))
+	}
+	if page1.NextPageToken == "" {
+		t.Fatalf("expected next page token for remaining jobs")
+	}
+	for _, job := range page1.Jobs {
+		if len(job.History) == 0 || len(job.History) > 1 {
+			t.Fatalf("expected history limit 1, got %d", len(job.History))
+		}
+	}
+
+	page2, err := svc.ListJobsPage(context.Background(), ListJobsPageInput{PageToken: page1.NextPageToken})
+	if err != nil {
+		t.Fatalf("ListJobsPage (second page) returned error: %v", err)
+	}
+	if len(page2.Jobs) != 1 {
+		t.Fatalf("expected 1 job on second page, got %d", len(page2.Jobs))
+	}
+	if page2.NextPageToken != "" {
+		t.Fatalf("expected empty token after final page")
+	}
+
+	if _, err := svc.ListJobsPage(context.Background(), ListJobsPageInput{PageToken: "invalid@@@"}); !errors.Is(err, ErrInvalidJobPageToken) {
+		t.Fatalf("expected ErrInvalidJobPageToken, got %v", err)
 	}
 }
 

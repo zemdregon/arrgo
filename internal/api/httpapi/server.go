@@ -141,12 +141,51 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		if _, ok := s.requirePermission(w, r, auth.PermissionLibraryRead); !ok {
 			return
 		}
-		jobs, err := s.service.ListJobs(r.Context())
+
+		query := r.URL.Query()
+		pageSizeParam := strings.TrimSpace(query.Get("page_size"))
+		historyLimitParam := strings.TrimSpace(query.Get("history_limit"))
+		pageToken := strings.TrimSpace(query.Get("page_token"))
+
+		pageSize := 0
+		if pageSizeParam != "" {
+			parsed, err := strconv.Atoi(pageSizeParam)
+			if err != nil || parsed < 0 {
+				respondError(w, http.StatusBadRequest, "page_size must be a non-negative integer")
+				return
+			}
+			pageSize = parsed
+		}
+
+		historyLimit := 0
+		if historyLimitParam != "" {
+			parsed, err := strconv.Atoi(historyLimitParam)
+			if err != nil || parsed < 0 {
+				respondError(w, http.StatusBadRequest, "history_limit must be a non-negative integer")
+				return
+			}
+			historyLimit = parsed
+		}
+
+		page, err := s.service.ListJobsPage(r.Context(), library.ListJobsPageInput{
+			PageToken:    pageToken,
+			PageSize:     pageSize,
+			HistoryLimit: historyLimit,
+		})
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to list jobs")
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, library.ErrInvalidJobPageToken):
+				status = http.StatusBadRequest
+			}
+			respondError(w, status, err.Error())
 			return
 		}
-		respondJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
+
+		respondJSON(w, http.StatusOK, map[string]any{
+			"jobs":            page.Jobs,
+			"next_page_token": page.NextPageToken,
+		})
 	case http.MethodPost:
 		if _, ok := s.requirePermission(w, r, auth.PermissionLibraryWrite); !ok {
 			return
