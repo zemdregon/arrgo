@@ -525,6 +525,334 @@ func (r *PostgresRepository) ListMetadataOverrides(ctx context.Context) (map[str
 	return results, nil
 }
 
+func (r *PostgresRepository) SaveRequest(ctx context.Context, request Request) error {
+	canonical := canonicalizeRequest(request)
+	if canonical.SubmittedAt.IsZero() {
+		canonical.SubmittedAt = time.Now().UTC()
+	}
+	if canonical.UpdatedAt.IsZero() || canonical.UpdatedAt.Before(canonical.SubmittedAt) {
+		canonical.UpdatedAt = canonical.SubmittedAt
+	}
+
+	payload, err := json.Marshal(canonical.ExternalIDs)
+	if err != nil {
+		return fmt.Errorf("library: encode request external ids: %w", err)
+	}
+
+	const stmt = `
+INSERT INTO library_requests (
+    id, kind, title, requested_by, notes, policy, external_ids,
+    quota_remaining, submitted_at, updated_at, sla_deadline, status
+)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12);
+`
+	_, execErr := r.pool.Exec(ctx, stmt,
+		canonical.ID,
+		canonical.Kind,
+		canonical.Title,
+		canonical.RequestedBy,
+		canonical.Notes,
+		canonical.Policy,
+		payload,
+		canonical.QuotaRemaining,
+		canonical.SubmittedAt,
+		canonical.UpdatedAt,
+		nullTime(canonical.SLADeadline),
+		canonical.Status,
+	)
+	if execErr != nil {
+		return fmt.Errorf("library: insert request %q: %w", canonical.ID, execErr)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) UpdateRequest(ctx context.Context, request Request) error {
+	canonical := canonicalizeRequest(request)
+	if canonical.SubmittedAt.IsZero() {
+		canonical.SubmittedAt = time.Now().UTC()
+	}
+	if canonical.UpdatedAt.IsZero() || canonical.UpdatedAt.Before(canonical.SubmittedAt) {
+		canonical.UpdatedAt = canonical.SubmittedAt
+	}
+
+	payload, err := json.Marshal(canonical.ExternalIDs)
+	if err != nil {
+		return fmt.Errorf("library: encode request external ids: %w", err)
+	}
+
+	const stmt = `
+UPDATE library_requests SET
+    kind = $2,
+    title = $3,
+    requested_by = $4,
+    notes = $5,
+    policy = $6,
+    external_ids = $7,
+    quota_remaining = $8,
+    submitted_at = $9,
+    updated_at = $10,
+    sla_deadline = $11,
+    status = $12
+WHERE id = $1;
+`
+	result, execErr := r.pool.Exec(ctx, stmt,
+		canonical.ID,
+		canonical.Kind,
+		canonical.Title,
+		canonical.RequestedBy,
+		canonical.Notes,
+		canonical.Policy,
+		payload,
+		canonical.QuotaRemaining,
+		canonical.SubmittedAt,
+		canonical.UpdatedAt,
+		nullTime(canonical.SLADeadline),
+		canonical.Status,
+	)
+	if execErr != nil {
+		return fmt.Errorf("library: update request %q: %w", canonical.ID, execErr)
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("library: request %q not found", canonical.ID)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) GetRequest(ctx context.Context, id string) (Request, bool, error) {
+	trimmed := strings.TrimSpace(id)
+	if trimmed == "" {
+		return Request{}, false, nil
+	}
+
+	const stmt = `
+SELECT id, kind, title, requested_by, notes, policy, external_ids,
+       quota_remaining, submitted_at, updated_at, sla_deadline, status
+FROM library_requests
+WHERE id = $1;
+`
+	row := r.pool.QueryRow(ctx, stmt, trimmed)
+
+	var canonical Request
+	var idsJSON []byte
+	var sla pgtype.Timestamptz
+	if err := row.Scan(
+		&canonical.ID,
+		&canonical.Kind,
+		&canonical.Title,
+		&canonical.RequestedBy,
+		&canonical.Notes,
+		&canonical.Policy,
+		&idsJSON,
+		&canonical.QuotaRemaining,
+		&canonical.SubmittedAt,
+		&canonical.UpdatedAt,
+		&sla,
+		&canonical.Status,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Request{}, false, nil
+		}
+		return Request{}, false, fmt.Errorf("library: get request %q: %w", trimmed, err)
+	}
+
+	canonical.SubmittedAt = canonical.SubmittedAt.UTC()
+	canonical.UpdatedAt = canonical.UpdatedAt.UTC()
+	if sla.Valid {
+		canonical.SLADeadline = sla.Time.UTC()
+	}
+	if len(idsJSON) > 0 {
+		ids := make(map[string]string)
+		if err := json.Unmarshal(idsJSON, &ids); err != nil {
+			return Request{}, false, fmt.Errorf("library: decode request external ids: %w", err)
+		}
+		if len(ids) > 0 {
+			canonical.ExternalIDs = ids
+		}
+	}
+	return canonical, true, nil
+}
+
+func (r *PostgresRepository) ListRequests(ctx context.Context) ([]Request, error) {
+	const stmt = `
+SELECT id, kind, title, requested_by, notes, policy, external_ids,
+       quota_remaining, submitted_at, updated_at, sla_deadline, status
+FROM library_requests
+ORDER BY submitted_at DESC, id DESC;
+`
+	rows, err := r.pool.Query(ctx, stmt)
+	if err != nil {
+		return nil, fmt.Errorf("library: list requests: %w", err)
+	}
+	defer rows.Close()
+
+	requests := []Request{}
+	for rows.Next() {
+		var record Request
+		var idsJSON []byte
+		var sla pgtype.Timestamptz
+		if scanErr := rows.Scan(
+			&record.ID,
+			&record.Kind,
+			&record.Title,
+			&record.RequestedBy,
+			&record.Notes,
+			&record.Policy,
+			&idsJSON,
+			&record.QuotaRemaining,
+			&record.SubmittedAt,
+			&record.UpdatedAt,
+			&sla,
+			&record.Status,
+		); scanErr != nil {
+			return nil, fmt.Errorf("library: scan request: %w", scanErr)
+		}
+		record.SubmittedAt = record.SubmittedAt.UTC()
+		record.UpdatedAt = record.UpdatedAt.UTC()
+		if sla.Valid {
+			record.SLADeadline = sla.Time.UTC()
+		}
+		if len(idsJSON) > 0 {
+			ids := make(map[string]string)
+			if err := json.Unmarshal(idsJSON, &ids); err != nil {
+				return nil, fmt.Errorf("library: decode request external ids: %w", err)
+			}
+			if len(ids) > 0 {
+				record.ExternalIDs = ids
+			}
+		}
+		requests = append(requests, record)
+	}
+	return requests, nil
+}
+
+func (r *PostgresRepository) AppendRequestApproval(ctx context.Context, event RequestApprovalEvent) error {
+	canonical := canonicalizeRequestApproval(event)
+	if canonical.DecidedAt.IsZero() {
+		canonical.DecidedAt = time.Now().UTC()
+	}
+
+	const stmt = `
+INSERT INTO library_request_approvals (
+    id, request_id, decision, actor, notes, decided_at
+)
+VALUES ($1,$2,$3,$4,$5,$6);
+`
+	_, err := r.pool.Exec(ctx, stmt,
+		canonical.ID,
+		canonical.RequestID,
+		canonical.Decision,
+		canonical.Actor,
+		canonical.Notes,
+		canonical.DecidedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("library: insert request approval %q: %w", canonical.ID, err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) ListRequestApprovals(ctx context.Context, requestID string) ([]RequestApprovalEvent, error) {
+	trimmed := strings.TrimSpace(requestID)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	const stmt = `
+SELECT id, request_id, decision, actor, notes, decided_at
+FROM library_request_approvals
+WHERE request_id = $1
+ORDER BY decided_at ASC, id ASC;
+`
+	rows, err := r.pool.Query(ctx, stmt, trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("library: list request approvals: %w", err)
+	}
+	defer rows.Close()
+
+	approvals := []RequestApprovalEvent{}
+	for rows.Next() {
+		var event RequestApprovalEvent
+		if scanErr := rows.Scan(
+			&event.ID,
+			&event.RequestID,
+			&event.Decision,
+			&event.Actor,
+			&event.Notes,
+			&event.DecidedAt,
+		); scanErr != nil {
+			return nil, fmt.Errorf("library: scan request approval: %w", scanErr)
+		}
+		event.DecidedAt = event.DecidedAt.UTC()
+		approvals = append(approvals, event)
+	}
+	return approvals, nil
+}
+
+func (r *PostgresRepository) AppendRequestNotification(ctx context.Context, notification RequestNotification) error {
+	canonical := canonicalizeRequestNotification(notification)
+	if canonical.AttemptedAt.IsZero() {
+		canonical.AttemptedAt = time.Now().UTC()
+	}
+
+	const stmt = `
+INSERT INTO library_request_notifications (
+    id, request_id, channel, target, status, attempted_at, error_message
+)
+VALUES ($1,$2,$3,$4,$5,$6,$7);
+`
+	_, err := r.pool.Exec(ctx, stmt,
+		canonical.ID,
+		canonical.RequestID,
+		canonical.Channel,
+		canonical.Target,
+		canonical.Status,
+		canonical.AttemptedAt,
+		canonical.ErrorMessage,
+	)
+	if err != nil {
+		return fmt.Errorf("library: insert request notification %q: %w", canonical.ID, err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) ListRequestNotifications(ctx context.Context, requestID string) ([]RequestNotification, error) {
+	trimmed := strings.TrimSpace(requestID)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	const stmt = `
+SELECT id, request_id, channel, target, status, attempted_at, error_message
+FROM library_request_notifications
+WHERE request_id = $1
+ORDER BY attempted_at ASC, id ASC;
+`
+	rows, err := r.pool.Query(ctx, stmt, trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("library: list request notifications: %w", err)
+	}
+	defer rows.Close()
+
+	notifications := []RequestNotification{}
+	for rows.Next() {
+		var notification RequestNotification
+		if scanErr := rows.Scan(
+			&notification.ID,
+			&notification.RequestID,
+			&notification.Channel,
+			&notification.Target,
+			&notification.Status,
+			&notification.AttemptedAt,
+			&notification.ErrorMessage,
+		); scanErr != nil {
+			return nil, fmt.Errorf("library: scan request notification: %w", scanErr)
+		}
+		notification.AttemptedAt = notification.AttemptedAt.UTC()
+		notifications = append(notifications, notification)
+	}
+	return notifications, nil
+}
+
 func canonicalizeJob(job Job) Job {
 	canonical := cloneJob(job)
 	canonical.ID = strings.TrimSpace(canonical.ID)

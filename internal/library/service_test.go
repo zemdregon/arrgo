@@ -148,6 +148,180 @@ func TestTriggerJobEnforcesIdempotency(t *testing.T) {
 	}
 }
 
+func TestSubmitRequestPersistsAndReturnsRecord(t *testing.T) {
+	now := time.Date(2025, 1, 12, 9, 45, 0, 0, time.UTC)
+	idSeq := 0
+	svc, err := NewService(Config{
+		Clock: stubClock{now: now},
+		IDGenerator: func() string {
+			idSeq++
+			return fmt.Sprintf("req-%d", idSeq)
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	request, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
+		Kind:        "Series",
+		Title:       "The Expanse",
+		RequestedBy: "user@example.com",
+		Notes:       "Please monitor 1080p releases",
+		Policy:      "public",
+		ExternalIDs: map[string]string{"TMDB": "63639"},
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest returned error: %v", err)
+	}
+	if request.ID != "req-1" {
+		t.Fatalf("unexpected request id %q", request.ID)
+	}
+	if request.Kind != "series" {
+		t.Fatalf("expected normalized kind, got %q", request.Kind)
+	}
+	if request.Status != RequestStatusPending {
+		t.Fatalf("expected pending status, got %q", request.Status)
+	}
+	if !request.SubmittedAt.Equal(now) {
+		t.Fatalf("expected submission timestamp %v, got %v", now, request.SubmittedAt)
+	}
+	if request.ExternalIDs["tmdb"] != "63639" {
+		t.Fatalf("expected normalized external id, got %v", request.ExternalIDs)
+	}
+
+	list, err := svc.ListRequests(context.Background())
+	if err != nil {
+		t.Fatalf("ListRequests returned error: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(list))
+	}
+	if list[0].ID != request.ID {
+		t.Fatalf("expected request id %q in list, got %q", request.ID, list[0].ID)
+	}
+	if len(list[0].Approvals) != 0 || len(list[0].Notifications) != 0 {
+		t.Fatalf("expected list entry without timeline data")
+	}
+}
+
+func TestRecordRequestApprovalTransitionsStatus(t *testing.T) {
+	now := time.Date(2025, 3, 2, 14, 0, 0, 0, time.UTC)
+	idSeq := 0
+	svc, err := NewService(Config{
+		Clock: stubClock{now: now},
+		IDGenerator: func() string {
+			idSeq++
+			return fmt.Sprintf("req-%d", idSeq)
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	request, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
+		Kind:        "movie",
+		Title:       "Dune",
+		RequestedBy: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest returned error: %v", err)
+	}
+
+	approvalTime := now.Add(2 * time.Hour)
+	svc.clock = stubClock{now: approvalTime}
+
+	updated, err := svc.RecordRequestApproval(context.Background(), request.ID, RecordRequestApprovalInput{
+		Decision: RequestDecisionApproved,
+		Actor:    "approver@example.com",
+		Notes:    "Within quota",
+	})
+	if err != nil {
+		t.Fatalf("RecordRequestApproval returned error: %v", err)
+	}
+	if updated.Status != RequestStatusApproved {
+		t.Fatalf("expected approved status, got %q", updated.Status)
+	}
+	if len(updated.Approvals) != 1 {
+		t.Fatalf("expected 1 approval event, got %d", len(updated.Approvals))
+	}
+	event := updated.Approvals[0]
+	if event.Actor != "approver@example.com" {
+		t.Fatalf("unexpected actor %q", event.Actor)
+	}
+	if event.Decision != RequestDecisionApproved {
+		t.Fatalf("unexpected decision %q", event.Decision)
+	}
+	if !event.DecidedAt.Equal(approvalTime) {
+		t.Fatalf("expected decided at %v, got %v", approvalTime, event.DecidedAt)
+	}
+	if !updated.UpdatedAt.Equal(approvalTime) {
+		t.Fatalf("expected updated timestamp %v, got %v", approvalTime, updated.UpdatedAt)
+	}
+
+	if _, err := svc.RecordRequestApproval(context.Background(), request.ID, RecordRequestApprovalInput{Decision: RequestDecisionApproved, Actor: "ops"}); !errors.Is(err, ErrRequestFinalized) {
+		t.Fatalf("expected ErrRequestFinalized, got %v", err)
+	}
+}
+
+func TestRecordRequestNotificationStoresTimeline(t *testing.T) {
+	now := time.Date(2025, 4, 18, 10, 30, 0, 0, time.UTC)
+	idSeq := 0
+	svc, err := NewService(Config{
+		Clock: stubClock{now: now},
+		IDGenerator: func() string {
+			idSeq++
+			return fmt.Sprintf("req-%d", idSeq)
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	request, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
+		Kind:        "series",
+		Title:       "Foundation",
+		RequestedBy: "admin@example.com",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest returned error: %v", err)
+	}
+
+	notificationTime := now.Add(30 * time.Minute)
+	svc.clock = stubClock{now: notificationTime}
+
+	notification, err := svc.RecordRequestNotification(context.Background(), request.ID, RecordRequestNotificationInput{
+		Channel: "Email",
+		Target:  "admin@example.com",
+		Status:  RequestNotificationStatusQueued,
+	})
+	if err != nil {
+		t.Fatalf("RecordRequestNotification returned error: %v", err)
+	}
+	if notification.ID != "req-2" {
+		t.Fatalf("expected notification id req-2, got %q", notification.ID)
+	}
+	if notification.Channel != "email" {
+		t.Fatalf("expected normalized channel, got %q", notification.Channel)
+	}
+	if !notification.AttemptedAt.Equal(notificationTime) {
+		t.Fatalf("expected attempted at %v, got %v", notificationTime, notification.AttemptedAt)
+	}
+
+	stored, found, err := svc.GetRequest(context.Background(), request.ID)
+	if err != nil {
+		t.Fatalf("GetRequest returned error: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected request to be found")
+	}
+	if len(stored.Notifications) != 1 {
+		t.Fatalf("expected 1 notification, got %d", len(stored.Notifications))
+	}
+	if stored.UpdatedAt != notification.AttemptedAt {
+		t.Fatalf("expected updated timestamp %v, got %v", notification.AttemptedAt, stored.UpdatedAt)
+	}
+}
+
 func TestRunManualSearchAndLatest(t *testing.T) {
 	now := time.Date(2024, 7, 10, 15, 30, 0, 0, time.UTC)
 	svc, err := NewService(Config{

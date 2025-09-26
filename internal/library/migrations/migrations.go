@@ -100,6 +100,54 @@ ON CONFLICT (entity_id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = E
 			return opts.SeedDemoData
 		},
 	},
+	{
+		Version: 3,
+		Name:    "library_request_persistence",
+		Up: []string{
+			`CREATE TABLE IF NOT EXISTS library_requests (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    policy TEXT NOT NULL DEFAULT '',
+    external_ids JSONB NOT NULL DEFAULT '{}'::jsonb,
+    quota_remaining INTEGER NOT NULL DEFAULT 0,
+    submitted_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    sla_deadline TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'pending'
+);`,
+			`CREATE INDEX IF NOT EXISTS library_requests_status_idx ON library_requests(status);`,
+			`CREATE TABLE IF NOT EXISTS library_request_approvals (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL REFERENCES library_requests(id) ON DELETE CASCADE,
+    decision TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    decided_at TIMESTAMPTZ NOT NULL
+);`,
+			`CREATE INDEX IF NOT EXISTS library_request_approvals_request_idx ON library_request_approvals(request_id);`,
+			`CREATE TABLE IF NOT EXISTS library_request_notifications (
+    id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL REFERENCES library_requests(id) ON DELETE CASCADE,
+    channel TEXT NOT NULL,
+    target TEXT NOT NULL,
+    status TEXT NOT NULL,
+    attempted_at TIMESTAMPTZ NOT NULL,
+    error_message TEXT NOT NULL DEFAULT ''
+);`,
+			`CREATE INDEX IF NOT EXISTS library_request_notifications_request_idx ON library_request_notifications(request_id);`,
+		},
+		Down: []string{
+			`DROP INDEX IF EXISTS library_request_notifications_request_idx;`,
+			`DROP TABLE IF EXISTS library_request_notifications;`,
+			`DROP INDEX IF EXISTS library_request_approvals_request_idx;`,
+			`DROP TABLE IF EXISTS library_request_approvals;`,
+			`DROP INDEX IF EXISTS library_requests_status_idx;`,
+			`DROP TABLE IF EXISTS library_requests;`,
+		},
+	},
 }
 
 const migrationsTableDDL = `

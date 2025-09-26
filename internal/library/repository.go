@@ -25,6 +25,14 @@ type Repository interface {
 	DeleteMetadataOverrides(ctx context.Context, entityID string) error
 	GetMetadataOverrides(ctx context.Context, entityID string) (MetadataOverrides, bool, error)
 	ListMetadataOverrides(ctx context.Context) (map[string]MetadataOverrides, error)
+	SaveRequest(ctx context.Context, request Request) error
+	UpdateRequest(ctx context.Context, request Request) error
+	GetRequest(ctx context.Context, id string) (Request, bool, error)
+	ListRequests(ctx context.Context) ([]Request, error)
+	AppendRequestApproval(ctx context.Context, event RequestApprovalEvent) error
+	ListRequestApprovals(ctx context.Context, requestID string) ([]RequestApprovalEvent, error)
+	AppendRequestNotification(ctx context.Context, notification RequestNotification) error
+	ListRequestNotifications(ctx context.Context, requestID string) ([]RequestNotification, error)
 }
 
 // InMemoryRepository provides an in-memory implementation of Repository for tests.
@@ -34,6 +42,9 @@ type InMemoryRepository struct {
 	jobs       map[string]Job
 	jobHistory map[string][]JobHistoryRecord
 	overrides  map[string]MetadataOverrides
+	requests   map[string]Request
+	approvals  map[string][]RequestApprovalEvent
+	notify     map[string][]RequestNotification
 }
 
 // NewInMemoryRepository constructs an empty in-memory repository.
@@ -43,6 +54,9 @@ func NewInMemoryRepository() *InMemoryRepository {
 		jobs:       make(map[string]Job),
 		jobHistory: make(map[string][]JobHistoryRecord),
 		overrides:  make(map[string]MetadataOverrides),
+		requests:   make(map[string]Request),
+		approvals:  make(map[string][]RequestApprovalEvent),
+		notify:     make(map[string][]RequestNotification),
 	}
 }
 
@@ -322,6 +336,218 @@ func (r *InMemoryRepository) ListMetadataOverrides(_ context.Context) (map[strin
 		results[entityID] = cloneMetadataOverrides(overrides)
 	}
 	return results, nil
+}
+
+// SaveRequest inserts a new request record.
+func (r *InMemoryRepository) SaveRequest(_ context.Context, request Request) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	canonical := canonicalizeRequest(request)
+	if canonical.ID == "" {
+		return fmt.Errorf("library: request id is required")
+	}
+	if canonical.Kind == "" {
+		return fmt.Errorf("library: request kind is required")
+	}
+	if canonical.RequestedBy == "" {
+		return fmt.Errorf("library: request requester is required")
+	}
+	if canonical.SubmittedAt.IsZero() {
+		canonical.SubmittedAt = time.Now().UTC()
+	}
+	if canonical.UpdatedAt.IsZero() || canonical.UpdatedAt.Before(canonical.SubmittedAt) {
+		canonical.UpdatedAt = canonical.SubmittedAt
+	}
+
+	if _, exists := r.requests[canonical.ID]; exists {
+		return fmt.Errorf("library: request %q already exists", canonical.ID)
+	}
+	r.requests[canonical.ID] = canonical
+	r.approvals[canonical.ID] = nil
+	r.notify[canonical.ID] = nil
+	return nil
+}
+
+// UpdateRequest replaces an existing request record.
+func (r *InMemoryRepository) UpdateRequest(_ context.Context, request Request) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	canonical := canonicalizeRequest(request)
+	if canonical.ID == "" {
+		return fmt.Errorf("library: request id is required")
+	}
+	if canonical.SubmittedAt.IsZero() {
+		canonical.SubmittedAt = time.Now().UTC()
+	}
+	if canonical.UpdatedAt.IsZero() || canonical.UpdatedAt.Before(canonical.SubmittedAt) {
+		canonical.UpdatedAt = canonical.SubmittedAt
+	}
+
+	if _, exists := r.requests[canonical.ID]; !exists {
+		return fmt.Errorf("library: request %q not found", canonical.ID)
+	}
+	r.requests[canonical.ID] = canonical
+	return nil
+}
+
+// GetRequest returns a single request with associated events.
+func (r *InMemoryRepository) GetRequest(_ context.Context, id string) (Request, bool, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	trimmed := strings.TrimSpace(id)
+	if trimmed == "" {
+		return Request{}, false, nil
+	}
+	request, ok := r.requests[trimmed]
+	if !ok {
+		return Request{}, false, nil
+	}
+	cloned := cloneRequest(request)
+	cloned.Approvals = cloneApprovalsLocked(r.approvals[trimmed])
+	cloned.Notifications = cloneNotificationsLocked(r.notify[trimmed])
+	return cloned, true, nil
+}
+
+// ListRequests returns stored requests ordered by submission time.
+func (r *InMemoryRepository) ListRequests(_ context.Context) ([]Request, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	results := make([]Request, 0, len(r.requests))
+	for _, request := range r.requests {
+		cloned := cloneRequest(request)
+		cloned.Approvals = nil
+		cloned.Notifications = nil
+		results = append(results, cloned)
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].SubmittedAt.Equal(results[j].SubmittedAt) {
+			return results[i].ID > results[j].ID
+		}
+		return results[i].SubmittedAt.After(results[j].SubmittedAt)
+	})
+	return results, nil
+}
+
+// AppendRequestApproval records an approval event.
+func (r *InMemoryRepository) AppendRequestApproval(_ context.Context, event RequestApprovalEvent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	canonical := canonicalizeRequestApproval(event)
+	if canonical.ID == "" {
+		return fmt.Errorf("library: approval id is required")
+	}
+	if canonical.RequestID == "" {
+		return fmt.Errorf("library: approval request id is required")
+	}
+	if canonical.Decision == "" {
+		return fmt.Errorf("library: approval decision is required")
+	}
+	if canonical.Actor == "" {
+		return fmt.Errorf("library: approval actor is required")
+	}
+	if canonical.DecidedAt.IsZero() {
+		canonical.DecidedAt = time.Now().UTC()
+	}
+
+	if _, exists := r.requests[canonical.RequestID]; !exists {
+		return fmt.Errorf("library: request %q not found", canonical.RequestID)
+	}
+	events := r.approvals[canonical.RequestID]
+	for _, existing := range events {
+		if existing.ID == canonical.ID {
+			return fmt.Errorf("library: approval %q already exists", canonical.ID)
+		}
+	}
+	events = append(events, canonical)
+	r.approvals[canonical.RequestID] = sortApprovals(events)
+	return nil
+}
+
+// ListRequestApprovals returns approval events for a request.
+func (r *InMemoryRepository) ListRequestApprovals(_ context.Context, requestID string) ([]RequestApprovalEvent, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	trimmed := strings.TrimSpace(requestID)
+	if trimmed == "" {
+		return nil, nil
+	}
+	return cloneApprovalsLocked(r.approvals[trimmed]), nil
+}
+
+// AppendRequestNotification stores a notification event.
+func (r *InMemoryRepository) AppendRequestNotification(_ context.Context, notification RequestNotification) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	canonical := canonicalizeRequestNotification(notification)
+	if canonical.ID == "" {
+		return fmt.Errorf("library: notification id is required")
+	}
+	if canonical.RequestID == "" {
+		return fmt.Errorf("library: notification request id is required")
+	}
+	if canonical.Channel == "" {
+		return fmt.Errorf("library: notification channel is required")
+	}
+	if canonical.Target == "" {
+		return fmt.Errorf("library: notification target is required")
+	}
+	if canonical.AttemptedAt.IsZero() {
+		canonical.AttemptedAt = time.Now().UTC()
+	}
+
+	if _, exists := r.requests[canonical.RequestID]; !exists {
+		return fmt.Errorf("library: request %q not found", canonical.RequestID)
+	}
+	events := r.notify[canonical.RequestID]
+	for _, existing := range events {
+		if existing.ID == canonical.ID {
+			return fmt.Errorf("library: notification %q already exists", canonical.ID)
+		}
+	}
+	events = append(events, canonical)
+	r.notify[canonical.RequestID] = sortNotifications(events)
+	return nil
+}
+
+// ListRequestNotifications returns notification events for a request.
+func (r *InMemoryRepository) ListRequestNotifications(_ context.Context, requestID string) ([]RequestNotification, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	trimmed := strings.TrimSpace(requestID)
+	if trimmed == "" {
+		return nil, nil
+	}
+	return cloneNotificationsLocked(r.notify[trimmed]), nil
+}
+
+func cloneApprovalsLocked(events []RequestApprovalEvent) []RequestApprovalEvent {
+	if len(events) == 0 {
+		return nil
+	}
+	cloned := make([]RequestApprovalEvent, len(events))
+	for i := range events {
+		cloned[i] = cloneRequestApproval(events[i])
+	}
+	return cloned
+}
+
+func cloneNotificationsLocked(events []RequestNotification) []RequestNotification {
+	if len(events) == 0 {
+		return nil
+	}
+	cloned := make([]RequestNotification, len(events))
+	for i := range events {
+		cloned[i] = cloneRequestNotification(events[i])
+	}
+	return cloned
 }
 
 // GetMetadataOverrides returns overrides for a single entity when present.
