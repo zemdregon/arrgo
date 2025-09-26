@@ -21,11 +21,14 @@ type Permission string
 
 // Well-known permission constants.
 const (
-	PermissionLibraryRead   Permission = "library:read"
-	PermissionLibraryWrite  Permission = "library:write"
-	PermissionWorkerRead    Permission = "worker:read"
-	PermissionWorkerManage  Permission = "worker:manage"
-	PermissionIdentityAdmin Permission = "identity:admin"
+	PermissionLibraryRead    Permission = "library:read"
+	PermissionLibraryWrite   Permission = "library:write"
+	PermissionWorkerRead     Permission = "worker:read"
+	PermissionWorkerManage   Permission = "worker:manage"
+	PermissionIdentityAdmin  Permission = "identity:admin"
+	PermissionRequestsRead   Permission = "requests:read"
+	PermissionRequestsSubmit Permission = "requests:submit"
+	PermissionRequestsManage Permission = "requests:manage"
 )
 
 // Role describes a named collection of permissions available to API keys.
@@ -137,6 +140,9 @@ func DefaultRoles() []Role {
 				PermissionWorkerRead,
 				PermissionWorkerManage,
 				PermissionIdentityAdmin,
+				PermissionRequestsRead,
+				PermissionRequestsSubmit,
+				PermissionRequestsManage,
 			},
 		},
 		{
@@ -147,6 +153,9 @@ func DefaultRoles() []Role {
 				PermissionLibraryWrite,
 				PermissionWorkerRead,
 				PermissionWorkerManage,
+				PermissionRequestsRead,
+				PermissionRequestsSubmit,
+				PermissionRequestsManage,
 			},
 		},
 		{
@@ -155,6 +164,7 @@ func DefaultRoles() []Role {
 			Permissions: []Permission{
 				PermissionLibraryRead,
 				PermissionWorkerRead,
+				PermissionRequestsRead,
 			},
 		},
 	}

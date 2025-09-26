@@ -205,6 +205,126 @@ func TestListJobsEndpointPagination(t *testing.T) {
 	}
 }
 
+func TestRequestEndpoints(t *testing.T) {
+	var idSeq int
+	svc := mustLibraryService(t, library.Config{
+		Clock: stubClock{now: time.Unix(1_700_100_000, 0)},
+		IDGenerator: func() string {
+			idSeq++
+			return fmt.Sprintf("req-%d", idSeq)
+		},
+	})
+	authSvc := mustAuthService(t)
+	adminToken := mustAPIKey(t, authSvc, "admin")
+	observerToken := mustAPIKey(t, authSvc, "observer")
+	srv := NewServer(svc, nil, authSvc)
+
+	submitBody, _ := json.Marshal(map[string]any{
+		"kind":            "series",
+		"title":           "The Expanse",
+		"requested_by":    "user@example.com",
+		"notes":           "Please monitor 1080p releases",
+		"quota_remaining": 5,
+	})
+	submitReq := httptest.NewRequest(http.MethodPost, "/api/v1/requests", bytes.NewReader(submitBody))
+	submitReq.Header.Set("Authorization", "Bearer "+adminToken)
+	submitResp := httptest.NewRecorder()
+
+	srv.handleRequests(submitResp, submitReq)
+
+	if submitResp.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d: %s", submitResp.Code, submitResp.Body.String())
+	}
+
+	var submitPayload struct {
+		Request library.Request `json:"request"`
+	}
+	if err := json.Unmarshal(submitResp.Body.Bytes(), &submitPayload); err != nil {
+		t.Fatalf("failed to decode submit payload: %v", err)
+	}
+	if submitPayload.Request.ID == "" {
+		t.Fatalf("expected request id to be populated")
+	}
+	if submitPayload.Request.Status != library.RequestStatusPending {
+		t.Fatalf("expected pending status, got %s", submitPayload.Request.Status)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/requests", nil)
+	listReq.Header.Set("Authorization", "Bearer "+observerToken)
+	listResp := httptest.NewRecorder()
+
+	srv.handleRequests(listResp, listReq)
+
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", listResp.Code, listResp.Body.String())
+	}
+
+	var listPayload struct {
+		Requests   []library.Request `json:"requests"`
+		NextCursor any               `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(listResp.Body.Bytes(), &listPayload); err != nil {
+		t.Fatalf("failed to decode list payload: %v", err)
+	}
+	if len(listPayload.Requests) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(listPayload.Requests))
+	}
+
+	approveBody, _ := json.Marshal(map[string]string{
+		"approved_by": "ops@arrgo.dev",
+		"notes":       "Fits within quota",
+	})
+	approveURL := fmt.Sprintf("/api/v1/requests/%s/approve", submitPayload.Request.ID)
+	approveReq := httptest.NewRequest(http.MethodPost, approveURL, bytes.NewReader(approveBody))
+	approveReq.Header.Set("Authorization", "Bearer "+adminToken)
+	approveResp := httptest.NewRecorder()
+
+	srv.handleRequestRoutes(approveResp, approveReq)
+
+	if approveResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", approveResp.Code, approveResp.Body.String())
+	}
+
+	var approvePayload struct {
+		Request library.Request `json:"request"`
+	}
+	if err := json.Unmarshal(approveResp.Body.Bytes(), &approvePayload); err != nil {
+		t.Fatalf("failed to decode approval payload: %v", err)
+	}
+	if approvePayload.Request.Status != library.RequestStatusApproved {
+		t.Fatalf("expected approved status, got %s", approvePayload.Request.Status)
+	}
+
+	timelineURL := fmt.Sprintf("/api/v1/requests/%s/timeline", submitPayload.Request.ID)
+	timelineReq := httptest.NewRequest(http.MethodGet, timelineURL, nil)
+	timelineReq.Header.Set("Authorization", "Bearer "+observerToken)
+	timelineResp := httptest.NewRecorder()
+
+	srv.handleRequestRoutes(timelineResp, timelineReq)
+
+	if timelineResp.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", timelineResp.Code, timelineResp.Body.String())
+	}
+
+	var timelinePayload struct {
+		Request       library.Request                `json:"request"`
+		Approvals     []library.RequestApprovalEvent `json:"approvals"`
+		Notifications []library.RequestNotification  `json:"notifications"`
+	}
+	if err := json.Unmarshal(timelineResp.Body.Bytes(), &timelinePayload); err != nil {
+		t.Fatalf("failed to decode timeline payload: %v", err)
+	}
+	if len(timelinePayload.Approvals) != 1 {
+		t.Fatalf("expected 1 approval event, got %d", len(timelinePayload.Approvals))
+	}
+	if timelinePayload.Approvals[0].Decision != library.RequestDecisionApproved {
+		t.Fatalf("expected approval decision, got %s", timelinePayload.Approvals[0].Decision)
+	}
+	if timelinePayload.Request.Status != library.RequestStatusApproved {
+		t.Fatalf("expected approved request status, got %s", timelinePayload.Request.Status)
+	}
+}
+
 func TestManualSearchEndpoints(t *testing.T) {
 	svc := mustLibraryService(t, library.Config{Entities: []library.Entity{{ID: "entity-1", EntityType: "series"}}, Clock: stubClock{now: time.Unix(1700001000, 0)}})
 	authSvc := mustAuthService(t)
