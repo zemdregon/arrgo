@@ -7,7 +7,8 @@ This file tracks the highest-priority roadmap items that still require work befo
 
 ## Backend & Data Plane
 - [x] Finalize PostgreSQL schema migrations with rollback coverage and seed data for demo environments.
-- [ ] Persist job execution history with retention policies and expose it through `/api/v1/jobs` pagination.
+- [x] Persist job execution history with retention policies and expose it through `/api/v1/jobs` pagination.
+  - Job lifecycle events now flow into the dedicated history store with automatic retention pruning, and `/api/v1/jobs` returns paginated listings hydrated with per-job history records.
 - [ ] Land request persistence models (request, approval event, notification) and wire them into the library service.
 - [x] Harden Redis Streams configuration (key rotation, consumer group lag alerts, automated dead-letter handling).
   - Stream namespaces now support version rotation, emit lag warnings, and funnel exhausted jobs into a managed dead-letter queue.
