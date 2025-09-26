@@ -97,8 +97,8 @@ The following documents provide deep dives into the subsystems listed above:
   rules and audit trails.
 - [`docs/dashboard-operations.md`](docs/dashboard-operations.md) — dashboard
   UX, manual overrides, and job drill-downs.
-- [`docs/frontend-todo.md`](docs/frontend-todo.md) — work breakdown for the
-  Next.js dashboard implementation.
+- [`docs/project-functional-todo.md`](docs/project-functional-todo.md) —
+  cross-team checklist for achieving a functional day-one release.
 - [`docs/worker-coordination.md`](docs/worker-coordination.md) — worker
   registration, heartbeat enforcement, and pool configuration.
 - [`docs/media-replication.md`](docs/media-replication.md) — multi-region
@@ -193,7 +193,9 @@ Focus: harden integrations, automation, and security for shared environments.
 - Expanded dashboard capabilities: queue analytics, manual search overrides,
   worker pool editing.
 - Request management portal replacing Overseerr with quota controls, approval
-  workflows, and automation hand-offs into the scheduling engine.
+  workflows, and automation hand-offs into the scheduling engine. Frontend is
+  feature complete; backend persistence and automation are tracked in
+  [`docs/project-functional-todo.md`](docs/project-functional-todo.md).
 - SDKs and contract tests for download clients and list ingestion modules.
 
 ### General Availability — Scale, Reliability, Extensibility
