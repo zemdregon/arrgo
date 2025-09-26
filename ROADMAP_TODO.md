@@ -14,7 +14,8 @@ This file tracks the highest-priority roadmap items that still require work befo
 
 ## API Surface & Request Management
 - [ ] Implement the request endpoints documented in [`docs/api-first-iteration.md`](docs/api-first-iteration.md) with RBAC enforcement.
-- [ ] Add policy evaluation hooks so quotas and automation previews run before requests are approved.
+- [x] Add policy evaluation hooks so quotas and automation previews run before requests are approved.
+  - Library service now evaluates quotas and automation previews ahead of approval to block exhausted policies and capture preview telemetry.
 - [ ] Publish OpenAPI/Buf descriptors for REST and gRPC services once the request APIs stabilize.
 - [ ] Provide contract/integration tests that cover approve/deny/cancel flows and downstream job fan-out.
 

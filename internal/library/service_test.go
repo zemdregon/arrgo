@@ -36,6 +36,56 @@ func (c *capturingAuditSink) Events() []AuditEvent {
 	return out
 }
 
+type stubQuotaEvaluator struct {
+	mu        sync.Mutex
+	count     int
+	result    QuotaEvaluationResult
+	err       error
+	requestID []string
+}
+
+func (s *stubQuotaEvaluator) EvaluateQuota(_ context.Context, request Request) (QuotaEvaluationResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.count++
+	s.requestID = append(s.requestID, request.ID)
+	if s.err != nil {
+		return QuotaEvaluationResult{}, s.err
+	}
+	return s.result, nil
+}
+
+func (s *stubQuotaEvaluator) calls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.count
+}
+
+type stubAutomationPreviewer struct {
+	mu        sync.Mutex
+	count     int
+	result    AutomationPreviewResult
+	err       error
+	requestID []string
+}
+
+func (s *stubAutomationPreviewer) PreviewAutomation(_ context.Context, request Request) (AutomationPreviewResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.count++
+	s.requestID = append(s.requestID, request.ID)
+	if s.err != nil {
+		return AutomationPreviewResult{}, s.err
+	}
+	return s.result, nil
+}
+
+func (s *stubAutomationPreviewer) calls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.count
+}
+
 func newRedisService(t testing.TB, cfg Config) *Service {
 	t.Helper()
 
@@ -260,6 +310,132 @@ func TestRecordRequestApprovalTransitionsStatus(t *testing.T) {
 
 	if _, err := svc.RecordRequestApproval(context.Background(), request.ID, RecordRequestApprovalInput{Decision: RequestDecisionApproved, Actor: "ops"}); !errors.Is(err, ErrRequestFinalized) {
 		t.Fatalf("expected ErrRequestFinalized, got %v", err)
+	}
+}
+
+func TestRecordRequestApprovalRunsPolicyHooks(t *testing.T) {
+	remaining := 3
+	quota := &stubQuotaEvaluator{result: QuotaEvaluationResult{Remaining: &remaining}}
+	preview := &stubAutomationPreviewer{result: AutomationPreviewResult{Jobs: []AutomationPreviewJob{{JobType: "import", TargetID: "entity-42", Summary: "Import requested entity"}}}}
+
+	svc, err := NewService(Config{
+		QuotaEvaluator:      quota,
+		AutomationPreviewer: preview,
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	request, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
+		Kind:        "movie",
+		Title:       "Dune",
+		RequestedBy: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest returned error: %v", err)
+	}
+
+	updated, err := svc.RecordRequestApproval(context.Background(), request.ID, RecordRequestApprovalInput{
+		Decision: RequestDecisionApproved,
+		Actor:    "approver@example.com",
+	})
+	if err != nil {
+		t.Fatalf("RecordRequestApproval returned error: %v", err)
+	}
+
+	if quota.calls() != 1 {
+		t.Fatalf("expected quota evaluator to be invoked once, got %d", quota.calls())
+	}
+	if preview.calls() != 1 {
+		t.Fatalf("expected automation previewer to be invoked once, got %d", preview.calls())
+	}
+	if updated.QuotaRemaining != remaining {
+		t.Fatalf("expected quota remaining %d, got %d", remaining, updated.QuotaRemaining)
+	}
+
+	stored, found, err := svc.GetRequest(context.Background(), request.ID)
+	if err != nil {
+		t.Fatalf("GetRequest returned error: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected request to be found")
+	}
+	if stored.QuotaRemaining != remaining {
+		t.Fatalf("expected persisted quota remaining %d, got %d", remaining, stored.QuotaRemaining)
+	}
+}
+
+func TestRecordRequestApprovalSkipsPolicyHooksForNonApprovals(t *testing.T) {
+	quota := &stubQuotaEvaluator{}
+	preview := &stubAutomationPreviewer{}
+
+	svc, err := NewService(Config{
+		QuotaEvaluator:      quota,
+		AutomationPreviewer: preview,
+	})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	request, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
+		Kind:        "series",
+		RequestedBy: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest returned error: %v", err)
+	}
+
+	updated, err := svc.RecordRequestApproval(context.Background(), request.ID, RecordRequestApprovalInput{
+		Decision: RequestDecisionDenied,
+		Actor:    "approver@example.com",
+	})
+	if err != nil {
+		t.Fatalf("RecordRequestApproval returned error: %v", err)
+	}
+	if updated.Status != RequestStatusDenied {
+		t.Fatalf("expected denied status, got %s", updated.Status)
+	}
+	if quota.calls() != 0 {
+		t.Fatalf("expected quota evaluator not to be called, got %d", quota.calls())
+	}
+	if preview.calls() != 0 {
+		t.Fatalf("expected automation previewer not to be called, got %d", preview.calls())
+	}
+}
+
+func TestRecordRequestApprovalFailsWhenQuotaHookErrors(t *testing.T) {
+	evalErr := errors.New("quota exhausted")
+	quota := &stubQuotaEvaluator{err: evalErr}
+
+	svc, err := NewService(Config{QuotaEvaluator: quota})
+	if err != nil {
+		t.Fatalf("NewService returned error: %v", err)
+	}
+
+	request, err := svc.SubmitRequest(context.Background(), SubmitRequestInput{
+		Kind:        "movie",
+		RequestedBy: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatalf("SubmitRequest returned error: %v", err)
+	}
+
+	if _, err := svc.RecordRequestApproval(context.Background(), request.ID, RecordRequestApprovalInput{Decision: RequestDecisionApproved, Actor: "approver@example.com"}); !errors.Is(err, evalErr) {
+		t.Fatalf("expected quota error to propagate, got %v", err)
+	}
+
+	stored, found, err := svc.GetRequest(context.Background(), request.ID)
+	if err != nil {
+		t.Fatalf("GetRequest returned error: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected request to be found")
+	}
+	if stored.Status != RequestStatusPending {
+		t.Fatalf("expected request to remain pending, got %s", stored.Status)
+	}
+	if len(stored.Approvals) != 0 {
+		t.Fatalf("expected no approval events to be recorded")
 	}
 }
 

@@ -14,7 +14,8 @@ The items below consolidate cross-team follow-ups required to ship a cohesive, p
 
 ## API Surface & Request Management
 - [x] Implement the request endpoints documented in [`docs/api-first-iteration.md`](api-first-iteration.md) with RBAC enforcement.
-- [ ] Add policy evaluation hooks so quotas and automation previews run before requests are approved.
+ - [x] Add policy evaluation hooks so quotas and automation previews run before requests are approved.
+   - Library service injects quota and automation preview evaluators that run prior to approvals, updating persisted quota state and surfacing preview telemetry.
 - [ ] Publish OpenAPI/Buf descriptors for REST and gRPC services once the request APIs stabilize.
 - [ ] Provide contract/integration tests that cover approve/deny/cancel flows and downstream job fan-out.
 

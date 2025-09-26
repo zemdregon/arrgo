@@ -195,6 +195,8 @@ type Config struct {
 	RenameTemplates      RenameTemplates
 	LibraryFiles         map[string][]LibraryFile
 	MetadataOverrides    map[string]MetadataOverrides
+	QuotaEvaluator       QuotaEvaluator
+	AutomationPreviewer  AutomationPreviewer
 }
 
 // Errors returned by the Service APIs.
@@ -223,21 +225,23 @@ var (
 
 // Service exposes read/write helpers that back both REST and gRPC front-ends.
 type Service struct {
-	mu              sync.RWMutex
-	repository      Repository
-	clock           timeutil.Clock
-	idGen           IDGenerator
-	queue           *OrchestrationQueue
-	logger          *slog.Logger
-	auditSink       AuditSink
-	tracer          trace.Tracer
-	manualSearches  map[string]ManualSearchResult
-	manualReleases  map[string]ManualSearchRelease
-	renameTemplates RenameTemplates
-	renameHistory   map[string][]RenameJobRecord
-	renameState     map[string]map[string]renameState
-	libraryFiles    map[string][]LibraryFile
-	libraryFileIdx  map[string]map[string]int
+	mu                  sync.RWMutex
+	repository          Repository
+	clock               timeutil.Clock
+	idGen               IDGenerator
+	queue               *OrchestrationQueue
+	logger              *slog.Logger
+	auditSink           AuditSink
+	tracer              trace.Tracer
+	manualSearches      map[string]ManualSearchResult
+	manualReleases      map[string]ManualSearchRelease
+	renameTemplates     RenameTemplates
+	renameHistory       map[string][]RenameJobRecord
+	renameState         map[string]map[string]renameState
+	libraryFiles        map[string][]LibraryFile
+	libraryFileIdx      map[string]map[string]int
+	quotaEvaluator      QuotaEvaluator
+	automationPreviewer AutomationPreviewer
 }
 
 // NewService constructs a library orchestration service with optional seed data.
@@ -269,6 +273,8 @@ func NewService(cfg Config) (*Service, error) {
 	if svc.tracer == nil {
 		svc.tracer = otel.Tracer("github.com/arrgo/arrgo/internal/library")
 	}
+	svc.quotaEvaluator = cfg.QuotaEvaluator
+	svc.automationPreviewer = cfg.AutomationPreviewer
 
 	svc.manualSearches = make(map[string]ManualSearchResult)
 	svc.manualReleases = make(map[string]ManualSearchRelease)
@@ -742,6 +748,35 @@ func (s *Service) GetRequest(ctx context.Context, id string) (request Request, f
 	return request, true, nil
 }
 
+func (s *Service) runApprovalPolicies(ctx context.Context, span trace.Span, request *Request) error {
+	if s.quotaEvaluator != nil {
+		result, err := s.quotaEvaluator.EvaluateQuota(ctx, cloneRequest(*request))
+		if err != nil {
+			span.RecordError(err, trace.WithAttributes(attribute.String("library.policy_stage", "quota")))
+			span.SetStatus(codes.Error, "quota evaluation failed")
+			return fmt.Errorf("evaluate quota: %w", err)
+		}
+		if result.Remaining != nil {
+			request.QuotaRemaining = *result.Remaining
+			span.SetAttributes(attribute.Int("library.policy.quota_remaining", request.QuotaRemaining))
+		}
+	}
+
+	if s.automationPreviewer != nil {
+		preview, err := s.automationPreviewer.PreviewAutomation(ctx, cloneRequest(*request))
+		if err != nil {
+			span.RecordError(err, trace.WithAttributes(attribute.String("library.policy_stage", "automation_preview")))
+			span.SetStatus(codes.Error, "automation preview failed")
+			return fmt.Errorf("preview automation: %w", err)
+		}
+		span.AddEvent("library.request.automation_preview", trace.WithAttributes(
+			attribute.Int("library.policy.preview_jobs", len(preview.Jobs)),
+		))
+	}
+
+	return nil
+}
+
 // RecordRequestApproval applies an approval decision to a request and returns the updated record.
 func (s *Service) RecordRequestApproval(ctx context.Context, requestID string, input RecordRequestApprovalInput) (request Request, err error) {
 	trimmedID := strings.TrimSpace(requestID)
@@ -778,6 +813,13 @@ func (s *Service) RecordRequestApproval(ctx context.Context, requestID string, i
 	if isTerminalRequestStatus(normalizeRequestStatus(base.Status)) {
 		err = ErrRequestFinalized
 		return
+	}
+
+	if decision == RequestDecisionApproved {
+		if evalErr := s.runApprovalPolicies(ctx, span, &base); evalErr != nil {
+			err = fmt.Errorf("library: %w", evalErr)
+			return
+		}
 	}
 
 	decidedAt := input.DecidedAt
