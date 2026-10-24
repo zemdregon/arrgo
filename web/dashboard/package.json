@@ -41,7 +41,7 @@
     "axe-core": "^4.9.1",
     "eslint": "8.56.0",
     "eslint-config-next": "14.1.0",
-    "storybook": "8.3.4",
+    "storybook": "8.6.19",
     "typescript": "5.9.2"
   }
 }
